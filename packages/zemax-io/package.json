@@ -1,0 +1,26 @@
+{
+  "name": "@isaac/zemax-io",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reader for ZEMAX/OpticStudio .zmx lens files, mapping them onto the optical-core data model.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test 'tests/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "dependencies": {
+    "@isaac/optical-core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1"
+  }
+}

@@ -1,0 +1,9 @@
+# Dependencies
+node_modules/
+
+# macOS
+.DS_Store
+
+# Editor / tooling local state
+.claude/settings.local.json
+*.log

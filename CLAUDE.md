@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo with two packages: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine, and `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files. `Architecture.md` is the source of truth for scope, conventions, and the still-planned packages (`glass-catalog`, `three-optics`, `apps/web`).
+Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo with three packages: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files; and `@isaac/glass-catalog` (`packages/glass-catalog`), the SCHOTT glass data. `Architecture.md` is the source of truth for scope, conventions, and the still-planned packages (`three-optics`, `apps/web`).
 
 ## Commands
 
@@ -38,6 +38,17 @@ Reads `.zmx` files in two stages, so unknown tokens are never guessed at:
 Token semantics: `CURV` is curvature (invert for radius), `DISZ` is thickness (`INFINITY` allowed), `DIAM` is the **semi**-diameter (`0` = no aperture ⇒ `Infinity`), `GLAS` names the medium *after* the surface, `STOP` is a bare flag, `WAVM n λ w` is in **micrometres**, `PWAV` is 1-based, and `FTYP <fieldType> <telecentric> <nFields> <nWaves>` gives the counts that trim the padded `WAVM`/`XFLN`/`YFLN` lists. Aperture tokens: `ENPD`/`FNUM`/`OBNA`/`FLOA`.
 
 The format has **no public specification** (dropped from the Zemax help system ~2005), so the rule is: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modelled (non-`STANDARD` surface types, non-zero `CONI`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
+
+### `glass-catalog`
+
+`src/schott.ts` is **generated** — never hand-edit it. `npm run regenerate --workspace @isaac/glass-catalog` refetches from the refractiveindex.info database (public domain/CC0, generated from SCHOTT's own Zemax catalogue) via `scripts/fetch-schott.ts`.
+
+Only entries published as refractiveindex.info "formula 2" — the three-term Sellmeier `n² − 1 = Σ Bᵢλ²/(λ² − Cᵢ)` that `optical-core` implements — are emitted; 162 of SCHOTT's 171 make it. The 9 skipped ones carry a constant term or are tabulated-only, and the generator lists them in the file header rather than approximating them.
+
+- `SCHOTT` is the ready-made catalogue; `GlassCatalog.get(name)` normalizes case and separators (`N-BK7` = `n bk7` = `NBK7`), and construction throws if two names collide once normalized.
+- `GlassMaterial.indexAt` **throws outside the published fit range** by default (`{ strictRange: false }` to extrapolate) — a Sellmeier fit far outside its range looks plausible and is meaningless. `nd`/`abbeNumber` throw when the fit misses the F and C lines.
+- Obsolete names (`BK7`) resolve only under `{ allowLegacyNames: true }`, which follows SCHOTT's own `N-` convention for lead-free replacements and reports the substitution in `lookup().substitutedFor`. It is off by default because the replacement is not the same glass.
+- `catalog.resolver()` returns exactly the function `zemax-io`'s `resolveMaterial` option wants — that is the intended wiring, and `zemax-io` still must not depend on this package.
 
 ### Conventions that span files
 

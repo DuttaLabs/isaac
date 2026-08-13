@@ -1,0 +1,28 @@
+{
+  "name": "@isaac/glass-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optical glass data (SCHOTT) as optical-core materials, with name resolution for lens-file import.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test 'tests/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "regenerate": "node --experimental-strip-types scripts/fetch-schott.ts"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "dependencies": {
+    "@isaac/optical-core": "*"
+  },
+  "devDependencies": {
+    "@isaac/zemax-io": "*",
+    "@types/node": "^22.20.1"
+  }
+}

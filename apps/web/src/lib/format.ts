@@ -1,7 +1,11 @@
-/** Formats a length for the editor and readouts, keeping INFINITY readable. */
+/**
+ * Formats a length for an editor cell. Infinity is shown as the symbol: it is
+ * what a lens table conventionally prints, and spelling it out costs a column
+ * more width than the number it replaces.
+ */
 export function formatLength(value: number, digits = 4): string {
   if (!Number.isFinite(value)) {
-    return value > 0 ? 'Infinity' : '-Infinity';
+    return value > 0 ? '∞' : '−∞';
   }
   if (value === 0) {
     return '0';
@@ -15,8 +19,14 @@ export function parseLength(text: string, fallback: number): number {
   if (trimmed === '') {
     return fallback;
   }
-  if (/^-?inf(inity)?$/i.test(trimmed)) {
-    return trimmed.startsWith('-') ? -Infinity : Infinity;
+  // Accept the symbol we print, the word, and the minus sign we render.
+  if (/^[-−]?(inf(inity)?|∞)$/i.test(trimmed)) {
+    return /^[-−]/.test(trimmed) ? -Infinity : Infinity;
+  }
+  const normalized = trimmed.replace(/^−/, '-');
+  const parsedNormalized = Number(normalized);
+  if (!Number.isNaN(parsedNormalized)) {
+    return parsedNormalized;
   }
   const parsed = Number(trimmed);
   return Number.isNaN(parsed) ? fallback : parsed;

@@ -16,6 +16,8 @@ export function updateSurface(
     thickness?: number;
     semiDiameter?: number;
     material?: Material;
+    /** Zemax's per-surface comment. Pass '' to clear it. */
+    comment?: string;
   },
 ): Result<OpticalSystem> {
   return attempt(() => system.withSurfaceAt(index, system.surfaceAt(index).with(changes)));

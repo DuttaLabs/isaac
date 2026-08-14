@@ -44,6 +44,7 @@ export function defaultSystem(): OpticalSystem {
         semiDiameter: 15,
         material: crown,
         isStop: true,
+        comment: 'Crown front',
       }),
       new Surface({
         id: 's2',
@@ -52,8 +53,16 @@ export function defaultSystem(): OpticalSystem {
         thickness: 3,
         semiDiameter: 15,
         material: flint,
+        comment: 'Cemented interface',
       }),
-      new Surface({ id: 's3', type: 'STANDARD', radius: -78.197, thickness: 97.376, semiDiameter: 15 }),
+      new Surface({
+        id: 's3',
+        type: 'STANDARD',
+        radius: -78.197,
+        thickness: 97.376,
+        semiDiameter: 15,
+        comment: 'Flint rear',
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
     ],
   });

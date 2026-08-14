@@ -1,6 +1,10 @@
-import { useState } from 'react';
-import type { OpticalSystem } from '@isaac/optical-core';
-import { GLASS_CATALOG, glassName, resolveGlass } from '../lib/default-system.ts';
+import { useState } from "react";
+import type { OpticalSystem } from "@isaac/optical-core";
+import {
+  GLASS_CATALOG,
+  glassName,
+  resolveGlass,
+} from "../lib/default-system.ts";
 import {
   insertSurfaceAfter,
   normalizeRadius,
@@ -8,12 +12,13 @@ import {
   removeSurface,
   setStop,
   updateSurface,
-} from '../lib/edits.ts';
-import type { Result } from '../lib/result.ts';
-import { ErrorNote, Panel } from './Panel.tsx';
-import { NumericCell } from './NumericCell.tsx';
+} from "../lib/edits.ts";
+import type { Result } from "../lib/result.ts";
+import { ErrorNote, Panel } from "./Panel.tsx";
+import { NumericCell } from "./NumericCell.tsx";
+import { TextCell } from "./TextCell.tsx";
 
-const GLASS_LIST_ID = 'glass-names';
+const GLASS_LIST_ID = "glass-names";
 
 /**
  * The spreadsheet the design is actually edited in. Every cell edit produces a
@@ -54,112 +59,134 @@ export function LensDataEditor({
         ))}
       </datalist>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Surface</th>
-            <th>Radius</th>
-            <th>Thickness</th>
-            <th>Glass</th>
-            <th>Semi-dia</th>
-            <th>Stop</th>
-            <th aria-label="Row actions" />
-          </tr>
-        </thead>
-        <tbody>
-          {system.surfaces.map((surface, index) => {
-            const isObject = surface.type === 'OBJECT';
-            const isImage = surface.type === 'IMAGE';
-            const label = isObject ? 'OBJ' : isImage ? 'IMG' : String(index);
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th className="text-column">Label</th>
+              <th>Radius</th>
+              <th>Thickness</th>
+              <th>Glass</th>
+              <th>Semi-dia</th>
+              <th>Stop</th>
+              <th aria-label="Row actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {system.surfaces.map((surface, index) => {
+              const isObject = surface.type === "OBJECT";
+              const isImage = surface.type === "IMAGE";
+              const label = isObject ? "OBJ" : isImage ? "IMG" : String(index);
 
-            return (
-              <tr key={surface.id}>
-                <td className="row-label">
-                  {label}
-                  {surface.comment ? <span className="hint"> {surface.comment}</span> : null}
-                </td>
+              return (
+                <tr key={surface.id}>
+                  <td className="row-label">{label}</td>
 
-                <td>
-                  <NumericCell
-                    value={surface.radius}
-                    ariaLabel={`Radius of surface ${label}`}
-                    title="Radius of curvature. 0 or blank means flat."
-                    disabled={isObject || isImage}
-                    onCommit={(next) =>
-                      apply(updateSurface(system, index, { radius: normalizeRadius(next) }))
-                    }
-                  />
-                </td>
+                  <td className="text-column">
+                    <TextCell
+                      value={surface.comment ?? ""}
+                      placeholder="—"
+                      ariaLabel={`Label for surface ${label}`}
+                      title="A note naming this surface. Imported from and written as Zemax's COMM record."
+                      onCommit={(next) =>
+                        apply(updateSurface(system, index, { comment: next }))
+                      }
+                    />
+                  </td>
 
-                <td>
-                  <NumericCell
-                    value={surface.thickness}
-                    ariaLabel={`Thickness after surface ${label}`}
-                    title="Distance to the next surface. The object may be Infinity."
-                    disabled={isImage}
-                    onCommit={(next) => apply(updateSurface(system, index, { thickness: next }))}
-                  />
-                </td>
+                  <td>
+                    <NumericCell
+                      value={surface.radius}
+                      ariaLabel={`Radius of surface ${label}`}
+                      title="Radius of curvature. 0 or blank means flat."
+                      disabled={isObject || isImage}
+                      onCommit={(next) =>
+                        apply(
+                          updateSurface(system, index, {
+                            radius: normalizeRadius(next),
+                          }),
+                        )
+                      }
+                    />
+                  </td>
 
-                <td>
-                  <GlassCell
-                    surfaceName={glassName(surface.material)}
-                    disabled={isImage}
-                    onCommit={(material) => apply(updateSurface(system, index, { material }))}
-                  />
-                </td>
+                  <td>
+                    <NumericCell
+                      value={surface.thickness}
+                      ariaLabel={`Thickness after surface ${label}`}
+                      title="Distance to the next surface. The object may be Infinity."
+                      disabled={isImage}
+                      onCommit={(next) =>
+                        apply(updateSurface(system, index, { thickness: next }))
+                      }
+                    />
+                  </td>
 
-                <td>
-                  <NumericCell
-                    value={surface.semiDiameter}
-                    ariaLabel={`Semi-diameter of surface ${label}`}
-                    title="Clear aperture radius. 0 or blank means unapertured."
-                    onCommit={(next) =>
-                      apply(
-                        updateSurface(system, index, { semiDiameter: normalizeSemiDiameter(next) }),
-                      )
-                    }
-                  />
-                </td>
+                  <td>
+                    <GlassCell
+                      surfaceName={glassName(surface.material)}
+                      disabled={isImage}
+                      onCommit={(material) =>
+                        apply(updateSurface(system, index, { material }))
+                      }
+                    />
+                  </td>
 
-                <td className="stop-cell">
-                  <input
-                    type="radio"
-                    name="stop-surface"
-                    checked={surface.isStop}
-                    disabled={surface.type !== 'STANDARD'}
-                    aria-label={`Make surface ${label} the aperture stop`}
-                    onChange={() => apply(setStop(system, index))}
-                  />
-                </td>
+                  <td>
+                    <NumericCell
+                      value={surface.semiDiameter}
+                      ariaLabel={`Semi-diameter of surface ${label}`}
+                      title="Clear aperture radius. 0 or blank means unapertured."
+                      onCommit={(next) =>
+                        apply(
+                          updateSurface(system, index, {
+                            semiDiameter: normalizeSemiDiameter(next),
+                          }),
+                        )
+                      }
+                    />
+                  </td>
 
-                <td>
-                  <button
-                    className="subtle"
-                    title="Insert a surface after this one"
-                    aria-label={`Insert a surface after ${label}`}
-                    onClick={() => apply(insertSurfaceAfter(system, index))}
-                  >
-                    +
-                  </button>
-                  <button
-                    className="subtle"
-                    title="Delete this surface"
-                    aria-label={`Delete surface ${label}`}
-                    disabled={surface.type !== 'STANDARD'}
-                    onClick={() => apply(removeSurface(system, index))}
-                  >
-                    ×
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                  <td className="stop-cell">
+                    <input
+                      type="radio"
+                      name="stop-surface"
+                      checked={surface.isStop}
+                      disabled={surface.type !== "STANDARD"}
+                      aria-label={`Make surface ${label} the aperture stop`}
+                      onChange={() => apply(setStop(system, index))}
+                    />
+                  </td>
+
+                  <td>
+                    <button
+                      className="subtle"
+                      title="Insert a surface after this one"
+                      aria-label={`Insert a surface after ${label}`}
+                      onClick={() => apply(insertSurfaceAfter(system, index))}
+                    >
+                      +
+                    </button>
+                    <button
+                      className="subtle"
+                      title="Delete this surface"
+                      aria-label={`Delete surface ${label}`}
+                      disabled={surface.type !== "STANDARD"}
+                      onClick={() => apply(removeSurface(system, index))}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {error ? (
-        <div style={{ padding: '10px 12px' }}>
+        <div style={{ padding: "10px 12px" }}>
           <ErrorNote message={error} />
         </div>
       ) : null}
@@ -189,7 +216,7 @@ function GlassCell({
       disabled={disabled}
       placeholder="air"
       aria-label="Glass"
-      className={resolved ? undefined : 'invalid'}
+      className={resolved ? undefined : "invalid"}
       title={resolved ? undefined : `"${shown}" is not in the catalogue`}
       onChange={(event) => {
         setEditing(true);
@@ -207,9 +234,9 @@ function GlassCell({
         }
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') {
+        if (event.key === "Enter") {
           event.currentTarget.blur();
-        } else if (event.key === 'Escape') {
+        } else if (event.key === "Escape") {
           setEditing(false);
           event.currentTarget.blur();
         }

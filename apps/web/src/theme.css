@@ -1,0 +1,464 @@
+/*
+ * Theme tokens. Light is defined on bare :root; dark is redefined under both the
+ * OS media query and an explicit [data-theme] stamp, so the in-app toggle wins
+ * in either direction.
+ */
+:root {
+  color-scheme: light;
+
+  --surface-0: #f4f4f2;
+  --surface-1: #fcfcfb;
+  --surface-2: #efefec;
+  --border: #d9d8d2;
+  --border-strong: #b5b4ac;
+
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #78766f;
+
+  --accent: #2a78d6;
+  --danger: #c0362f;
+  --danger-surface: #fbeceb;
+
+  /* Wavelength series: F reads blue, d green, C red. Validated ramp steps. */
+  --wave-blue: #2a78d6;
+  --wave-green: #008300;
+  --wave-red: #e34948;
+
+  --glass-fill: rgba(42, 120, 214, 0.13);
+  --glass-stroke: #6f6d66;
+  --axis: #b5b4ac;
+  --grid: #e4e3de;
+  --stop-mark: #0b0b0b;
+
+  --radius: 6px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+    --border: #35342f;
+    --border-strong: #4e4d46;
+
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #92908a;
+
+    --accent: #3987e5;
+    --danger: #f08a84;
+    --danger-surface: #3a201e;
+
+    --wave-blue: #3987e5;
+    --wave-green: #008300;
+    --wave-red: #e66767;
+
+    --glass-fill: rgba(57, 135, 229, 0.18);
+    --glass-stroke: #8e8c84;
+    --axis: #4e4d46;
+    --grid: #2b2b29;
+    --stop-mark: #ffffff;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --surface-0: #121211;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --border: #35342f;
+  --border-strong: #4e4d46;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #92908a;
+
+  --accent: #3987e5;
+  --danger: #f08a84;
+  --danger-surface: #3a201e;
+
+  --wave-blue: #3987e5;
+  --wave-green: #008300;
+  --wave-red: #e66767;
+
+  --glass-fill: rgba(57, 135, 229, 0.18);
+  --glass-stroke: #8e8c84;
+  --axis: #4e4d46;
+  --grid: #2b2b29;
+  --stop-mark: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ---------- App frame ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-wrap: wrap;
+}
+
+.app-title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.app-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.app-bar-spacer {
+  flex: 1;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(380px, 1fr) minmax(520px, 1.6fr);
+  gap: 12px;
+  padding: 12px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---------- Panels ---------- */
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.panel-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.panel-body {
+  padding: 12px;
+}
+
+.panel-body.flush {
+  padding: 0;
+}
+
+/* ---------- Controls ---------- */
+
+button {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.subtle {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+}
+
+button.subtle:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+input,
+select {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input.numeric {
+  font-family: var(--mono);
+  text-align: right;
+}
+
+input.invalid {
+  border-color: var(--danger);
+  background: var(--danger-surface);
+}
+
+label {
+  color: var(--text-secondary);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.field-row:last-child {
+  margin-bottom: 0;
+}
+
+.inline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* A list row: optional primary radio, the value, then its delete control. */
+.list-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 110px) auto;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.list-row > input[type='radio'] {
+  justify-self: start;
+}
+
+.list-row > input.numeric {
+  width: 100%;
+}
+
+/* ---------- Tables ---------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+th {
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-align: right;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  text-align: left;
+}
+
+td {
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+
+tbody tr:hover {
+  background: var(--surface-2);
+}
+
+td input {
+  width: 100%;
+}
+
+.row-label {
+  padding-left: 8px;
+  color: var(--text-secondary);
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.stop-cell {
+  text-align: center;
+}
+
+/* ---------- Readouts ---------- */
+
+.readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-value {
+  font-family: var(--mono);
+  font-size: 15px;
+  margin-top: 2px;
+}
+
+/* ---------- Messages ---------- */
+
+.error {
+  border: 1px solid var(--danger);
+  background: var(--danger-surface);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.empty {
+  color: var(--text-muted);
+  padding: 16px;
+  text-align: center;
+}
+
+/* ---------- Plots ---------- */
+
+.plot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+svg.plot,
+svg.layout {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.axis-line {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.grid-line {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.tick-text {
+  fill: var(--text-muted);
+  font-size: 9px;
+  font-family: var(--mono);
+}
+
+.axis-title {
+  fill: var(--text-secondary);
+  font-size: 10px;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 12px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}

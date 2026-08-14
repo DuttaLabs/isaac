@@ -4,16 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo with three packages: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files; and `@isaac/glass-catalog` (`packages/glass-catalog`), the SCHOTT glass data. `Architecture.md` is the source of truth for scope, conventions, and the still-planned packages (`three-optics`, `apps/web`).
+Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo. Three engine packages live under `packages/`, and the React UI is `apps/web`: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files; and `@isaac/glass-catalog` (`packages/glass-catalog`), the SCHOTT glass data. `Architecture.md` is the source of truth for scope and conventions; `three-optics` (the Three.js layer) is still unbuilt.
 
 ## Commands
 
-Requires Node >= 22.6. There is **no build/bundler step** — TypeScript runs directly via Node's `--experimental-strip-types`, and `.ts` files import each other with explicit `.ts` extensions (`allowImportingTsExtensions`).
+Requires Node >= 22.6. The **engine packages have no build step** — TypeScript runs directly via Node's `--experimental-strip-types`, and `.ts` files import each other with explicit `.ts` extensions (`allowImportingTsExtensions`). Only `apps/web` is bundled, by Vite, because a browser cannot execute `.ts`.
+
+TypeScript is pinned at the root (`typescript@^7`). Before that pin the repo silently used whatever `tsc` was on the machine; TS 7 also needs `"types": ["node"]` in each engine package's tsconfig, without which `@types/node` is not picked up and every `node:*` import fails to resolve.
 
 - `npm test` — run all workspace tests (root).
 - `npm run typecheck` — `tsc --noEmit` across workspaces; the only type-safety gate, since nothing is compiled.
 - Run one test file: `node --experimental-strip-types --test packages/optical-core/tests/trace.test.ts`
 - Run one package: `npm test --workspace @isaac/zemax-io`
+- Run the UI: `npm run dev --workspace @isaac/web` (Vite, http://localhost:5173). `npm run build --workspace @isaac/web` is the only bundling in the repo.
 - Tests use the built-in `node:test` runner + `node:assert` — no test framework is installed.
 - Cross-package imports (`@isaac/optical-core` from `zemax-io`) work through the workspace symlink; run `npm install` at the root after adding a package so the link exists.
 
@@ -49,6 +52,15 @@ Only entries published as refractiveindex.info "formula 2" — the three-term Se
 - `GlassMaterial.indexAt` **throws outside the published fit range** by default (`{ strictRange: false }` to extrapolate) — a Sellmeier fit far outside its range looks plausible and is meaningless. `nd`/`abbeNumber` throw when the fit misses the F and C lines.
 - Obsolete names (`BK7`) resolve only under `{ allowLegacyNames: true }`, which follows SCHOTT's own `N-` convention for lead-free replacements and reports the substitution in `lookup().substitutedFor`. It is off by default because the replacement is not the same glass.
 - `catalog.resolver()` returns exactly the function `zemax-io`'s `resolveMaterial` option wants — that is the intended wiring, and `zemax-io` still must not depend on this package.
+
+### `apps/web`
+
+React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `traceRay`, and the generators — no optical maths lives here.
+
+- **The engine throws by design, so the UI must never assume success.** Every engine call goes through `lib/result.ts` (`attempt()` → `Result<T>`), and each panel is wrapped in an `ErrorBoundary`. A telecentric pupil, an unknown glass, or a wavelength outside a glass's fit range becomes a message in one panel, not a blank screen.
+- **State is one immutable `OpticalSystem` plus an undo stack.** Edits call `.with()` / `withSurfaceAt()` and push a new system; `useMemo` keyed on the system re-derives traces only when the design actually changes. `lib/edits.ts` holds the edit operations, each returning `Result<OpticalSystem>` so a rejected edit leaves the previous design on screen.
+- **Wavelength is the series dimension**, coloured F-blue / d-green / C-red by physics convention. That pairing sits in the 6–8 ΔE band under protanopia, so colour is never the only cue: plots also carry dash patterns and marker shapes, and the legend is always present. Layout rays drop the dash when only one wavelength is drawn.
+- Plots are hand-drawn SVG (`lib/plot.ts` has the scale and tick helpers); there is no charting dependency.
 
 ### Conventions that span files
 

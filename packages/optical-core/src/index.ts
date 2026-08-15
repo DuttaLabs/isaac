@@ -12,12 +12,15 @@ export type { RayOptions, RayChanges, RayStatus } from './model/ray.ts';
 export {
   ConstantMaterial,
   SellmeierMaterial,
+  ModelGlassMaterial,
+  SPECTRAL_LINES,
+  normalLinePartialDispersion,
   AIR,
   VACUUM,
   N_BK7,
   MATERIAL_CATALOG,
 } from './model/material.ts';
-export type { Material, SellmeierCoefficients } from './model/material.ts';
+export type { Material, SellmeierCoefficients, ModelGlassOptions } from './model/material.ts';
 export { Surface } from './model/surface.ts';
 export type { SurfaceConfig, SurfaceType } from './model/surface.ts';
 export { OpticalSystem } from './model/optical-system.ts';

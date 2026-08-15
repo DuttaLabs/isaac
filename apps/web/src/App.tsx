@@ -18,13 +18,26 @@ import { WavelengthLegend } from './components/WavelengthLegend.tsx';
 const HISTORY_LIMIT = 50;
 type Theme = 'system' | 'light' | 'dark';
 
+interface Notice {
+  kind: 'error' | 'info';
+  text: string;
+  /** Things the file said that the reader could not honour exactly. */
+  warnings?: readonly string[];
+  /**
+   * Record types the reader skipped. These are annotation — notes, tolerancing,
+   * display and analysis settings — not prescription, so they are shown folded
+   * away: a long list is normal and says nothing about the imported design.
+   */
+  ignoredTokens?: readonly string[];
+}
+
 export function App() {
   const [history, setHistory] = useState(() => ({ stack: [defaultSystem()], index: 0 }));
   const [theme, setTheme] = useState<Theme>('system');
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [allWavelengths, setAllWavelengths] = useState(false);
-  const [notice, setNotice] = useState<{ kind: 'error' | 'info'; text: string } | undefined>();
+  const [notice, setNotice] = useState<Notice | undefined>();
 
   const system = history.stack[history.index]!;
   const canUndo = history.index > 0;
@@ -70,16 +83,14 @@ export function App() {
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
       pushSystem(result.system);
       setFieldIndex(0);
-      const ignored = result.ignoredTokens.length;
+      const { system: loaded, warnings, ignoredTokens } = result;
       setNotice({
         kind: 'info',
-        text: [
-          `Loaded ${file.name}.`,
-          result.warnings.join(' '),
-          ignored ? `${ignored} unsupported tokens were ignored.` : '',
-        ]
-          .filter(Boolean)
-          .join(' '),
+        text:
+          `Loaded ${file.name} — ${loaded.surfaces.length} surfaces, ${loaded.fields.length} fields, ` +
+          `${loaded.wavelengthsNm.length} wavelengths.`,
+        warnings,
+        ignoredTokens,
       });
     } catch (error) {
       setNotice({ kind: 'error', text: `${file.name}: ${describeError(error)}` });
@@ -147,12 +158,30 @@ export function App() {
           {notice.kind === 'error' ? (
             <ErrorNote message={notice.text} />
           ) : (
-            <p className="hint" style={{ margin: 0 }}>
-              {notice.text}{' '}
-              <button className="subtle" onClick={() => setNotice(undefined)}>
-                dismiss
-              </button>
-            </p>
+            <div className="hint">
+              <p style={{ margin: 0 }}>
+                {notice.text}{' '}
+                <button className="subtle" onClick={() => setNotice(undefined)}>
+                  dismiss
+                </button>
+              </p>
+              {notice.warnings && notice.warnings.length > 0 ? (
+                <ul className="notice-warnings">
+                  {notice.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {notice.ignoredTokens && notice.ignoredTokens.length > 0 ? (
+                <details className="notice-details">
+                  <summary>
+                    {notice.ignoredTokens.length} record types outside the optical prescription were not
+                    imported
+                  </summary>
+                  <p style={{ margin: '4px 0 0' }}>{notice.ignoredTokens.join(', ')}</p>
+                </details>
+              ) : null}
+            </div>
           )}
         </div>
       ) : null}

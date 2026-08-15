@@ -54,10 +54,14 @@ test('a lens file resolves its glasses straight from the catalogue', () => {
   const catalog = SCHOTT.with({ allowLegacyNames: true });
   const { system, glasses, warnings } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
 
-  assert.deepEqual(warnings, []);
+  // The legacy substitution is an approximation, so the import reports it
+  // rather than quietly tracing a different glass from the one the file names.
+  assert.deepEqual(warnings, [
+    'Glass "BK7" is not in the catalogue and was traced as "N-BK7"; it is a substitute, not the same glass.',
+  ]);
   assert.deepEqual(glasses, [
-    { name: 'BK7', surfaceNumber: 1, resolved: true }, // via the N-BK7 substitution
-    { name: 'F2', surfaceNumber: 2, resolved: true },
+    { name: 'BK7', surfaceNumber: 1, resolved: true, resolvedAs: 'N-BK7' },
+    { name: 'F2', surfaceNumber: 2, resolved: true }, // still in the catalogue under its own name
   ]);
   assert.equal(system.surfaceAt(1).material.name, 'N-BK7');
   assert.equal(system.surfaceAt(2).material.name, 'F2');

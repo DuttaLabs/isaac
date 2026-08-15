@@ -301,6 +301,21 @@ label {
   font-size: 12px;
 }
 
+/*
+ * Import feedback. Warnings are the part worth reading — things the file asked
+ * for that the engine could not honour — so they get full-contrast text, while
+ * the list of skipped record types stays folded away and muted.
+ */
+.notice-warnings {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.notice-details > summary {
+  cursor: pointer;
+}
+
 /* A list row: optional primary radio, the value, then its delete control. */
 .list-row {
   display: grid;

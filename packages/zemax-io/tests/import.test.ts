@@ -111,6 +111,107 @@ test('resolved glasses are reported alongside the system', () => {
   ]);
 });
 
+test('a glass the resolver substitutes is reported once, not left implicit', () => {
+  // A catalogue answering "SK16" with its lead-free replacement is making an
+  // approximation, so the import must say so even though the lookup succeeded.
+  const substituting = (name: string): Material | undefined =>
+    name.trim().toUpperCase() === 'BK7' ? new ConstantMaterial('N-BK7', 1.5168) : resolveMaterial(name);
+  const { warnings, glasses } = importZmx(DOUBLET, { resolveMaterial: substituting });
+
+  assert.deepEqual(glasses[0], { name: 'BK7', surfaceNumber: 1, resolved: true, resolvedAs: 'N-BK7' });
+  assert.equal(glasses[1]!.resolvedAs, undefined); // F2 resolved to F2
+  const substitutions = warnings.filter((warning) => /is a substitute/.test(warning));
+  assert.equal(substitutions.length, 1);
+  assert.match(substitutions[0]!, /"BK7" is not in the catalogue and was traced as "N-BK7"/);
+
+  // Case and separators are spelling, not substitution: catalogues answer
+  // "BK7" with "bk-7" and "F2" with "f 2" without changing the glass.
+  const spelled = (name: string): Material | undefined =>
+    new ConstantMaterial(name.trim().toLowerCase().replace(/(\d)/, '-$1'), 1.5);
+  assert.deepEqual(importZmx(DOUBLET, { resolveMaterial: spelled }).warnings, []);
+});
+
+test('a glass described inline becomes a model glass', () => {
+  // How a design taken from a patent names its glass: an index and an Abbe
+  // number, no catalogue entry. 1.5168/64.17 is N-BK7 described rather than named.
+  const modelled = DOUBLET.replace(
+    'GLAS BK7 0 0 0 0 0 0 0 0 0 0',
+    'GLAS ___BLANK 1 0 1.5168 6.417E+1 0 0 0 0 0 0',
+  );
+  const { system, glasses, warnings } = importZmx(modelled, { resolveMaterial });
+
+  assert.deepEqual(glasses[0], {
+    name: '___BLANK 1.5168/64.17',
+    surfaceNumber: 1,
+    resolved: true,
+    isModelGlass: true,
+  });
+
+  const glass = system.surfaceAt(1).material;
+  assert.ok(Math.abs(glass.indexAt(587.5618) - 1.5168) < 1e-12);
+  assert.ok(glass.indexAt(486.1327) > glass.indexAt(656.2725), 'must disperse the right way');
+  assert.ok(warnings.some((warning) => /model glass/.test(warning)));
+});
+
+test('a model glass with no dispersion is traced as non-dispersive', () => {
+  // Vd = 0 cannot be an Abbe number, so it means the file gave only an index.
+  const flat = DOUBLET.replace(
+    'GLAS BK7 0 0 0 0 0 0 0 0 0 0',
+    'GLAS ___BLANK 1 0 1.56049116 0 0 0 0 0 0 0',
+  );
+  const { system, glasses, warnings } = importZmx(flat, { resolveMaterial });
+
+  assert.equal(glasses[0]!.isNonDispersive, true);
+  const glass = system.surfaceAt(1).material;
+  assert.equal(glass.indexAt(486.1327), glass.indexAt(656.2725));
+  assert.ok(warnings.some((warning) => /no dispersion \(Vd = 0\)/.test(warning)));
+});
+
+test('model glasses are reported once, however many surfaces use them', () => {
+  const both = DOUBLET.replace('GLAS BK7 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0 1.5168 6.417E+1 0')
+    .replace('GLAS F2 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0 1.62 3.637E+1 0');
+  const { warnings } = importZmx(both, { resolveMaterial });
+
+  const reports = warnings.filter((warning) => /use a model glass/.test(warning));
+  assert.equal(reports.length, 1);
+  assert.match(reports[0]!, /2 surfaces/);
+});
+
+test('a model glass without usable numbers is refused, not guessed at', () => {
+  assert.throws(
+    () => importZmx(DOUBLET.replace('GLAS BK7 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0'), {
+      resolveMaterial,
+    }),
+    /model glass with no usable index and Abbe number/,
+  );
+});
+
+test('surface records that would change the geometry become warnings', () => {
+  // CLAP is a second, tighter aperture on the surface: ignoring it silently
+  // would trace rays the real lens vignettes away.
+  const withClap = importDoublet(DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP', '  CLAP 0 5.0 0\n  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP'));
+  assert.ok(
+    withClap.warnings.some((warning) => /Surface 1 has a CLAP record/.test(warning)),
+    `expected a CLAP warning, got ${JSON.stringify(withClap.warnings)}`,
+  );
+
+  // Records that only annotate the surface stay quiet.
+  assert.deepEqual(importDoublet().warnings, []);
+});
+
+test('header settings that change how rays are launched become warnings', () => {
+  const vignetted = importDoublet(DOUBLET.replace('VDYN 0 0 0', 'VDYN 0.2 0 0'));
+  assert.ok(vignetted.warnings.some((warning) => /Vignetting factors are set \(VDYN\)/.test(warning)));
+
+  const aimed = importDoublet(DOUBLET.replace('RAIM 0 0 1', 'RAIM 1 0 1'));
+  assert.ok(aimed.warnings.some((warning) => /requests ray aiming \(RAIM 1\)/.test(warning)));
+
+  // The file's own ENVD is the standard environment, which the catalogue
+  // indices already assume, so only a departure from it is reported.
+  const hot = importDoublet(DOUBLET.replace('ENVD 2.0E+1 1 0', 'ENVD 5.0E+1 1 0'));
+  assert.ok(hot.warnings.some((warning) => /non-standard environment \(50 °C, 1 atm\)/.test(warning)));
+});
+
 test('tokens the reader does not interpret are reported, not silently dropped', () => {
   const { ignoredTokens } = importDoublet();
 

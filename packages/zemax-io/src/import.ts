@@ -2,6 +2,7 @@ import {
   AIR,
   ConstantMaterial,
   MATERIAL_CATALOG,
+  ModelGlassMaterial,
   OpticalSystem,
   Surface,
   type Aperture,
@@ -46,6 +47,12 @@ export interface ZmxGlassReference {
   name: string;
   surfaceNumber: number;
   resolved: boolean;
+  /** The material the resolver returned, when it is not the name the file used. */
+  resolvedAs?: string;
+  /** True when the file described the glass inline rather than naming it. */
+  isModelGlass?: boolean;
+  /** True when that description gave an index but no dispersion. */
+  isNonDispersive?: boolean;
 }
 
 export interface ZmxImportResult {
@@ -54,7 +61,14 @@ export interface ZmxImportResult {
   warnings: string[];
   /** Every glass the file names, and whether it resolved to a material. */
   glasses: readonly ZmxGlassReference[];
-  /** Distinct tokens present in the file that this reader ignored. */
+  /**
+   * Distinct tokens present in the file that this reader ignored. Almost all of
+   * them are annotation rather than prescription — notes, tolerancing, display,
+   * multi-configuration and physical-optics settings — so a long list is normal
+   * and does not by itself mean the imported system is wrong. Anything ignored
+   * that *would* change the traced result is additionally reported in
+   * {@link warnings}; see {@link UNMODELLED_SURFACE_TOKENS}.
+   */
   ignoredTokens: readonly string[];
   /** The raw parsed document, for callers needing data this mapping drops. */
   document: ZmxDocument;
@@ -62,6 +76,14 @@ export interface ZmxImportResult {
 
 /** Refractive index substituted for an unresolved glass under `allowUnknownGlass`. */
 export const UNKNOWN_GLASS_INDEX = 1.5;
+
+/**
+ * The name a `GLAS` record carries when the glass is described inline by its
+ * index and Abbe number rather than named. It is a literal placeholder, not a
+ * catalogue entry, so it is matched on the name rather than on the record's
+ * flag columns, whose meaning has not been verified.
+ */
+export const MODEL_GLASS_NAME = '___BLANK';
 
 /** Tokens this reader interprets; everything else is reported as ignored. */
 const HANDLED_HEADER_TOKENS = new Set([
@@ -79,6 +101,36 @@ const HANDLED_HEADER_TOKENS = new Set([
   'FLOA',
 ]);
 const HANDLED_SURFACE_TOKENS = new Set(['TYPE', 'CURV', 'DISZ', 'DIAM', 'GLAS', 'STOP', 'CONI']);
+
+/**
+ * Surface records that carry *geometry* this reader does not model, mapped to a
+ * description of what would be lost. These are the only ignored surface tokens
+ * that can change where a ray goes, so their presence becomes a warning naming
+ * the surface rather than one more entry in `ignoredTokens`. Everything else a
+ * surface block can hold — display flags, coating names, scatter data — leaves
+ * the traced result untouched.
+ */
+const UNMODELLED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
+  ['CLAP', 'an additional circular clear aperture'],
+  ['SQAP', 'a rectangular aperture'],
+  ['OBDC', 'a decentred aperture'],
+  ['UDAD', 'a user-defined aperture'],
+  ['USAP', 'a user-defined aperture'],
+  ['PKUP', 'a pickup solve'],
+  ['XDAT', 'extra (toroidal/grid) surface data'],
+  ['YDAT', 'extra (toroidal/grid) surface data'],
+]);
+
+/**
+ * `VDXN`/`VDYN` decentre the pupil per field, `VCXN`/`VCYN` compress it and
+ * `VANN` rotates it. All-zero — the usual case — means no vignetting, so only
+ * a non-zero factor is worth reporting.
+ */
+const VIGNETTING_TOKENS = ['VDXN', 'VDYN', 'VCXN', 'VCYN', 'VANN'];
+
+/** Zemax's standard environment, which the catalogue indices already assume. */
+const STANDARD_TEMPERATURE_C = 20;
+const STANDARD_PRESSURE_ATM = 1;
 
 /** Aperture tokens, mapped to the core's aperture types. */
 const APERTURE_TOKENS: ReadonlyMap<string, ApertureType> = new Map([
@@ -132,6 +184,9 @@ export function zmxDocumentToSystem(
   const surfaces = document.surfaces.map((block, index) =>
     toSurface(block, index, document.surfaces.length, { resolve, options, warnings, glasses }),
   );
+  warnHeaderSettings(document, warnings);
+  warnGlassSubstitutions(glasses, warnings);
+  warnModelGlasses(glasses, warnings);
 
   const system = new OpticalSystem({
     name: readName(document) ?? 'Imported ZMX system',
@@ -193,6 +248,8 @@ function toSurface(
   const isImage = index === count - 1;
   const type = isObject ? 'OBJECT' : isImage ? 'IMAGE' : 'STANDARD';
 
+  warnUnmodelledGeometry(records, number, context.warnings);
+
   let isStop = hasRecord(records, 'STOP');
   if (isStop && type !== 'STANDARD') {
     context.warnings.push(`Surface ${number} is marked STOP but is the ${type} surface; ignoring the stop.`);
@@ -209,6 +266,65 @@ function toSurface(
     isStop,
     comment: readComment(records),
   });
+}
+
+/**
+ * Reports surface records that describe geometry outside the model. Dropping
+ * these changes the trace, so they must not disappear into `ignoredTokens`.
+ */
+function warnUnmodelledGeometry(
+  records: readonly ZmxRecord[],
+  surfaceNumber: number,
+  warnings: string[],
+): void {
+  for (const [token, description] of UNMODELLED_SURFACE_TOKENS) {
+    if (hasRecord(records, token)) {
+      warnings.push(
+        `Surface ${surfaceNumber} has a ${token} record (${description}), which this reader does not model; ` +
+          'the surface uses its DIAM semi-diameter alone.',
+      );
+    }
+  }
+}
+
+/**
+ * Reports header settings that would change how rays are launched or how glass
+ * indices are evaluated. Each is only worth a warning when it departs from the
+ * value that means "no effect", which is what nearly every file carries.
+ */
+function warnHeaderSettings(document: ZmxDocument, warnings: string[]): void {
+  const vignetting = VIGNETTING_TOKENS.filter((token) =>
+    readFieldValues(document, token).some((value) => value !== 0),
+  );
+  if (vignetting.length > 0) {
+    warnings.push(
+      `Vignetting factors are set (${vignetting.join(', ')}) but are not modelled; off-axis fields ` +
+        'will be traced through the full pupil, so they will look worse than the design intends.',
+    );
+  }
+
+  const rayAiming = numericValue(firstValue(document.header, 'RAIM'));
+  if (rayAiming !== undefined && rayAiming !== 0) {
+    warnings.push(
+      `The file requests ray aiming (RAIM ${rayAiming}); rays here are aimed paraxially, so rays near ` +
+        'the pupil edge can be clipped at the stop.',
+    );
+  }
+
+  const environment = findRecord(document.header, 'ENVD');
+  if (environment) {
+    const temperature = numericValue(environment.values[0]);
+    const pressure = numericValue(environment.values[1]);
+    if (
+      (temperature !== undefined && temperature !== STANDARD_TEMPERATURE_C) ||
+      (pressure !== undefined && pressure !== STANDARD_PRESSURE_ATM)
+    ) {
+      warnings.push(
+        `ENVD gives a non-standard environment (${temperature} °C, ${pressure} atm); indices are used as ` +
+          `published, at ${STANDARD_TEMPERATURE_C} °C and ${STANDARD_PRESSURE_ATM} atm.`,
+      );
+    }
+  }
 }
 
 function readThickness(records: readonly ZmxRecord[], surfaceNumber: number): number {
@@ -231,16 +347,31 @@ function readMaterial(
   surfaceNumber: number,
   context: SurfaceContext,
 ): Material {
-  const glassName = firstValue(records, 'GLAS');
-  if (glassName === undefined) {
+  const glass = findRecord(records, 'GLAS');
+  const glassName = glass?.values[0];
+  if (glass === undefined || glassName === undefined) {
     return AIR;
   }
 
+  if (glassName === MODEL_GLASS_NAME) {
+    return readModelGlass(glass, surfaceNumber, context);
+  }
+
   const material = context.resolve(glassName);
-  context.glasses.push({ name: glassName, surfaceNumber, resolved: material !== undefined });
   if (material) {
+    // A resolver may answer with a different glass — a catalogue substituting a
+    // modern equivalent for an obsolete name, say. That is an approximation the
+    // caller has to know about, so it is reported rather than left implicit.
+    const substituted = !sameGlassName(glassName, material.name);
+    context.glasses.push({
+      name: glassName,
+      surfaceNumber,
+      resolved: true,
+      ...(substituted ? { resolvedAs: material.name } : {}),
+    });
     return material;
   }
+  context.glasses.push({ name: glassName, surfaceNumber, resolved: false });
 
   if (!context.options.allowUnknownGlass) {
     throw new ZmxImportError(
@@ -253,6 +384,105 @@ function readMaterial(
       'The system will not trace correctly.',
   );
   return new ConstantMaterial(glassName, UNKNOWN_GLASS_INDEX);
+}
+
+/**
+ * Reads a model glass: one the file describes by its index and Abbe number
+ * instead of naming, which is how a design taken from a patent specifies glass.
+ *
+ * Only `nd` and `Vd` are read. The record's remaining columns are left alone
+ * because their meaning has not been verified — one file in the sample corpus
+ * carries a stray value in the column where ΔPg,F might live, and it is plainly
+ * the Abbe number of an unrelated glass left behind by an edit. Reading it as a
+ * partial dispersion would quietly distort the colour correction, so the glass
+ * is built on the normal line instead.
+ */
+function readModelGlass(
+  glass: ZmxRecord,
+  surfaceNumber: number,
+  context: SurfaceContext,
+): Material {
+  const nd = numericValue(glass.values[3]);
+  const abbeNumber = numericValue(glass.values[4]);
+
+  if (nd === undefined || nd <= 0 || abbeNumber === undefined || abbeNumber < 0) {
+    throw new ZmxImportError(
+      `Surface ${surfaceNumber} has a model glass with no usable index and Abbe number ` +
+        `(read "${glass.values.slice(0, 5).join(' ')}").`,
+    );
+  }
+
+  // Vd = 0 cannot be an Abbe number — it would mean infinite dispersion — so it
+  // is the file saying the glass has none: an index and nothing more.
+  if (abbeNumber === 0) {
+    const name = `${MODEL_GLASS_NAME} n=${nd.toFixed(4)}`;
+    context.glasses.push({
+      name,
+      surfaceNumber,
+      resolved: true,
+      isModelGlass: true,
+      isNonDispersive: true,
+    });
+    return new ConstantMaterial(name, nd);
+  }
+
+  const name = `${MODEL_GLASS_NAME} ${nd.toFixed(4)}/${abbeNumber.toFixed(2)}`;
+  context.glasses.push({ name, surfaceNumber, resolved: true, isModelGlass: true });
+  return new ModelGlassMaterial(name, nd, abbeNumber);
+}
+
+/**
+ * A resolver may answer with a different glass — a catalogue substituting a
+ * modern equivalent for an obsolete name, say. That is an approximation the
+ * caller has to know about, so it is reported once per glass rather than left
+ * implicit or repeated for every surface the glass appears on.
+ */
+/**
+ * Model glasses are an approximation of a real melt, so the import says how many
+ * it built rather than letting them pass for catalogue glass. Reported once
+ * rather than per surface — a file can carry dozens.
+ */
+function warnModelGlasses(glasses: readonly ZmxGlassReference[], warnings: string[]): void {
+  const model = glasses.filter((glass) => glass.isModelGlass);
+  if (model.length === 0) {
+    return;
+  }
+
+  const surfaces = model.length === 1 ? '1 surface' : `${model.length} surfaces`;
+  warnings.push(
+    `${surfaces} use a model glass: an index and Abbe number rather than a named glass. ` +
+      'Indices are approximated to about 1e-4 in the visible, which is fine for layout and ' +
+      'first-order work but not for judging colour correction.',
+  );
+
+  const nonDispersive = model.filter((glass) => glass.isNonDispersive);
+  if (nonDispersive.length > 0) {
+    warnings.push(
+      `${nonDispersive.length} of those give an index but no dispersion (Vd = 0), so they are ` +
+        'traced as non-dispersive: the design will show no chromatic aberration from them.',
+    );
+  }
+}
+
+function warnGlassSubstitutions(glasses: readonly ZmxGlassReference[], warnings: string[]): void {
+  const substitutions = new Map<string, string>();
+  for (const glass of glasses) {
+    if (glass.resolvedAs) {
+      substitutions.set(glass.name, glass.resolvedAs);
+    }
+  }
+  for (const [name, resolvedAs] of substitutions) {
+    warnings.push(
+      `Glass "${name}" is not in the catalogue and was traced as "${resolvedAs}"; ` +
+        'it is a substitute, not the same glass.',
+    );
+  }
+}
+
+/** Files spell the same glass `N-BK7`, `N BK7` or `nbk7`; none of those is a substitution. */
+function sameGlassName(a: string, b: string): boolean {
+  const normalize = (name: string): string => name.trim().toUpperCase().replace(/[\s_-]+/g, '');
+  return normalize(a) === normalize(b);
 }
 
 function readComment(records: readonly ZmxRecord[]): string | undefined {

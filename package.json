@@ -11,12 +11,15 @@
   "scripts": {
     "dev": "npm run dev --workspace @isaac/web",
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=22.6"
   },
   "devDependencies": {
+    "prettier": "3.9.6",
     "typescript": "^7.0.2"
   }
 }

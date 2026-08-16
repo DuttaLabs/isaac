@@ -1,0 +1,17 @@
+# Generated — regenerate with `npm run regenerate --workspace @isaac/glass-catalog`
+# rather than reformatting; the generator owns this file's layout.
+packages/glass-catalog/src/schott.ts
+
+# Lens files are an input format, not source we control.
+ZMX files/
+
+# Build output. Ignored by apps/web/.gitignore, but Prettier only reads the
+# root .gitignore, so it has to be named again here.
+dist/
+
+# Prose is hand-formatted, and Prettier actively damages it: the directory
+# trees in Architecture.md are indented plain lines, which it flattens.
+*.md
+
+package-lock.json
+node_modules/

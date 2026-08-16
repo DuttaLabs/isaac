@@ -77,10 +77,7 @@ export function firstValue(records: readonly ZmxRecord[], token: string): string
 }
 
 /** The first record with this token, or `undefined`. */
-export function findRecord(
-  records: readonly ZmxRecord[],
-  token: string,
-): ZmxRecord | undefined {
+export function findRecord(records: readonly ZmxRecord[], token: string): ZmxRecord | undefined {
   return records.find((record) => record.token === token);
 }
 

@@ -59,7 +59,10 @@ export function SourcePanel({
                 onCommit={(next) =>
                   apply(
                     attempt(() =>
-                      system.withSurfaceAt(0, system.objectSurface.with({ thickness: Math.abs(next) })),
+                      system.withSurfaceAt(
+                        0,
+                        system.objectSurface.with({ thickness: Math.abs(next) }),
+                      ),
                     ),
                   )
                 }
@@ -75,9 +78,7 @@ export function SourcePanel({
           <select
             id="aperture-type"
             value={aperture?.type ?? 'ENTRANCE_PUPIL_DIAMETER'}
-            onChange={(event) =>
-              apply(setApertureType(system, event.target.value as ApertureType))
-            }
+            onChange={(event) => apply(setApertureType(system, event.target.value as ApertureType))}
           >
             {Object.entries(APERTURE_LABELS).map(([type, label]) => (
               <option value={type} key={type}>
@@ -108,7 +109,9 @@ export function SourcePanel({
           apply(
             attempt(() =>
               system.with({
-                fields: values.map((value): Field => (atInfinity ? { angleDeg: value } : { objectHeight: value })),
+                fields: values.map((value): Field =>
+                  atInfinity ? { angleDeg: value } : { objectHeight: value },
+                ),
               }),
             ),
           )
@@ -183,7 +186,10 @@ function ListEditor({
             </button>
           </div>
         ))}
-        <button className="subtle" onClick={() => onChange([...values, values[values.length - 1] ?? 0])}>
+        <button
+          className="subtle"
+          onClick={() => onChange([...values, values[values.length - 1] ?? 0])}
+        >
           + add
         </button>
       </div>
@@ -228,7 +234,8 @@ function setApertureType(system: OpticalSystem, type: ApertureType): Result<Opti
       OBJECT_SPACE_NA: 0.1,
     };
     const existing = system.aperture;
-    const value = existing && existing.type === type ? (existing.value ?? defaults[type]) : defaults[type];
+    const value =
+      existing && existing.type === type ? (existing.value ?? defaults[type]) : defaults[type];
     return system.with({ aperture: { type, value } });
   });
 }

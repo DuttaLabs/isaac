@@ -102,5 +102,8 @@ export class GlassCatalog {
  * an alias table.
  */
 export function normalizeGlassName(name: string): string {
-  return name.trim().toUpperCase().replace(/[\s_-]+/g, '');
+  return name
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, '');
 }

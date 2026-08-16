@@ -1,4 +1,4 @@
-import { AIR, type Material } from "./material.ts";
+import { AIR, type Material } from './material.ts';
 
 /**
  * Surface types understood by the sequential tracer.
@@ -9,7 +9,7 @@ import { AIR, type Material } from "./material.ts";
  * manufacturable surface. ASPHERIC, COORDINATE_BREAK, MIRROR, and other
  * Zemax-compatible types are planned but intentionally absent.
  */
-export type SurfaceType = "OBJECT" | "STANDARD" | "PARAXIAL" | "IMAGE";
+export type SurfaceType = 'OBJECT' | 'STANDARD' | 'PARAXIAL' | 'IMAGE';
 
 export interface SurfaceConfig {
   /** Stable identifier (e.g. a UUID from the editor). */
@@ -68,40 +68,42 @@ export class Surface {
 
   public constructor(config: SurfaceConfig) {
     if (!config.id) {
-      throw new TypeError("Surface requires a non-empty id.");
+      throw new TypeError('Surface requires a non-empty id.');
     }
     const radius = config.radius ?? Infinity;
     if (Number.isNaN(radius) || radius === 0) {
-      throw new RangeError("Surface radius must be non-zero (use Infinity for a plane).");
+      throw new RangeError('Surface radius must be non-zero (use Infinity for a plane).');
     }
     if (!Number.isFinite(config.thickness)) {
       // Object thickness may be Infinity (object at infinity); everything else must be finite.
-      if (!(config.type === "OBJECT" && config.thickness === Infinity)) {
-        throw new RangeError("Surface thickness must be finite (except an OBJECT at infinity).");
+      if (!(config.type === 'OBJECT' && config.thickness === Infinity)) {
+        throw new RangeError('Surface thickness must be finite (except an OBJECT at infinity).');
       }
     }
     const semiDiameter = config.semiDiameter ?? Infinity;
     if (Number.isNaN(semiDiameter) || semiDiameter <= 0) {
-      throw new RangeError("semiDiameter must be a positive number (or Infinity for no aperture).");
+      throw new RangeError('semiDiameter must be a positive number (or Infinity for no aperture).');
     }
 
     // A PARAXIAL surface takes its power from focalLength, so a radius would be
     // a second, contradictory source of the same thing; reject rather than ignore.
-    if (config.type === "PARAXIAL") {
+    if (config.type === 'PARAXIAL') {
       if (config.focalLength === undefined) {
-        throw new TypeError("A PARAXIAL surface requires a focalLength.");
+        throw new TypeError('A PARAXIAL surface requires a focalLength.');
       }
       if (!Number.isFinite(config.focalLength) || config.focalLength === 0) {
-        throw new RangeError("PARAXIAL focalLength must be finite and non-zero.");
+        throw new RangeError('PARAXIAL focalLength must be finite and non-zero.');
       }
       if (Number.isFinite(radius)) {
-        throw new RangeError("A PARAXIAL surface is a plane; its power comes from focalLength, not a radius.");
+        throw new RangeError(
+          'A PARAXIAL surface is a plane; its power comes from focalLength, not a radius.',
+        );
       }
       if (config.reflective) {
-        throw new RangeError("A PARAXIAL surface cannot be reflective.");
+        throw new RangeError('A PARAXIAL surface cannot be reflective.');
       }
     } else if (config.focalLength !== undefined) {
-      throw new RangeError("focalLength is only meaningful on a PARAXIAL surface.");
+      throw new RangeError('focalLength is only meaningful on a PARAXIAL surface.');
     }
 
     this.id = config.id;

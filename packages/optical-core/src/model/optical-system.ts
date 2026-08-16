@@ -11,10 +11,7 @@ export interface Field {
 }
 
 export type ApertureType =
-  | 'ENTRANCE_PUPIL_DIAMETER'
-  | 'IMAGE_SPACE_FNUM'
-  | 'OBJECT_SPACE_NA'
-  | 'FLOAT_BY_STOP';
+  'ENTRANCE_PUPIL_DIAMETER' | 'IMAGE_SPACE_FNUM' | 'OBJECT_SPACE_NA' | 'FLOAT_BY_STOP';
 
 export interface Aperture {
   type: ApertureType;

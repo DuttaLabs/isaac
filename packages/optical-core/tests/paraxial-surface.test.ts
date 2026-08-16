@@ -77,7 +77,8 @@ test('the model rejects a paraxial surface that is over- or under-specified', ()
     /power comes from focalLength/,
   );
   assert.throws(
-    () => new Surface({ id: 'p', type: 'PARAXIAL', focalLength: 50, thickness: 10, reflective: true }),
+    () =>
+      new Surface({ id: 'p', type: 'PARAXIAL', focalLength: 50, thickness: 10, reflective: true }),
     /cannot be reflective/,
   );
   assert.throws(
@@ -169,7 +170,11 @@ test('a paraxial surface carries the stop and defines the pupils', () => {
   assert.ok(Math.abs(pupil.magnification - 1) < 1e-12);
 
   // Generated rays aim at that pupil and get through.
-  const fan = generateRayFan(system, { field: system.fields[1]!, wavelengthNm: WAVELENGTH_NM, count: 5 });
+  const fan = generateRayFan(system, {
+    field: system.fields[1]!,
+    wavelengthNm: WAVELENGTH_NM,
+    count: 5,
+  });
   for (const ray of fan) {
     assert.equal(traceRay(system, ray).status, 'TERMINATED');
   }
@@ -199,20 +204,14 @@ test('a paraxial surface in glass focuses at n′·f, the reciprocal of its powe
   const properties = paraxialProperties(system, WAVELENGTH_NM);
   assert.ok(Math.abs(properties.backFocalDistance - 150) < 1e-12);
 
-  const result = traceRay(
-    system,
-    rayAt(8, new Vector3(0, 0, 1)),
-  );
+  const result = traceRay(system, rayAt(8, new Vector3(0, 0, 1)));
   assert.equal(result.status, 'TERMINATED');
   assert.ok(Math.abs(result.finalRay.origin.y) < 1e-9);
 });
 
 test('an ideal lens still blocks rays outside its clear aperture', () => {
   const system = idealLens(100);
-  const result = traceRay(
-    system,
-    rayAt(30, new Vector3(0, 0, 1)),
-  );
+  const result = traceRay(system, rayAt(30, new Vector3(0, 0, 1)));
   assert.equal(result.status, 'BLOCKED');
   assert.equal(result.terminatedAtSurface, 1);
 });

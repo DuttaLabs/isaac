@@ -21,8 +21,22 @@ const WAVELENGTH_NM = 587.5618;
 /** An equiconvex thin lens of focal length 50, as a pair of surfaces. */
 function thinLensSurfaces(gapAfter: number, semiDiameter = 25): Surface[] {
   return [
-    new Surface({ id: 'l1', type: 'STANDARD', radius: 50, thickness: 1e-9, semiDiameter, material: GLASS }),
-    new Surface({ id: 'l2', type: 'STANDARD', radius: -50, thickness: gapAfter, semiDiameter, material: AIR }),
+    new Surface({
+      id: 'l1',
+      type: 'STANDARD',
+      radius: 50,
+      thickness: 1e-9,
+      semiDiameter,
+      material: GLASS,
+    }),
+    new Surface({
+      id: 'l2',
+      type: 'STANDARD',
+      radius: -50,
+      thickness: gapAfter,
+      semiDiameter,
+      material: AIR,
+    }),
   ];
 }
 
@@ -88,8 +102,22 @@ test('the model accepts exactly one stop, and only on a surface that can carry o
       new OpticalSystem({
         surfaces: [
           new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
-          new Surface({ id: 'a', type: 'STANDARD', radius: 50, thickness: 5, semiDiameter: 5, isStop: true }),
-          new Surface({ id: 'b', type: 'STANDARD', radius: -50, thickness: 5, semiDiameter: 5, isStop: true }),
+          new Surface({
+            id: 'a',
+            type: 'STANDARD',
+            radius: 50,
+            thickness: 5,
+            semiDiameter: 5,
+            isStop: true,
+          }),
+          new Surface({
+            id: 'b',
+            type: 'STANDARD',
+            radius: -50,
+            thickness: 5,
+            semiDiameter: 5,
+            isStop: true,
+          }),
           new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
         ],
       }),
@@ -135,8 +163,22 @@ test('a stop at the rear focal plane makes object space telecentric', () => {
     wavelengthsNm: [WAVELENGTH_NM],
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 150, semiDiameter: 25, material: GLASS }),
-      new Surface({ id: 'stop', type: 'STANDARD', radius: Infinity, thickness: 10, semiDiameter: 5, isStop: true }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 150,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 'stop',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 10,
+        semiDiameter: 5,
+        isStop: true,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
     ],
   });
@@ -186,9 +228,29 @@ function singletWithInternalStop(): OpticalSystem {
     aperture: { type: 'FLOAT_BY_STOP' },
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 5, semiDiameter: 25, material: GLASS }),
-      new Surface({ id: 's2', type: 'STANDARD', radius: Infinity, thickness: 20, semiDiameter: 25 }),
-      new Surface({ id: 'stop', type: 'STANDARD', radius: Infinity, thickness: 80, semiDiameter: 3, isStop: true }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 5,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 20,
+        semiDiameter: 25,
+      }),
+      new Surface({
+        id: 'stop',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 80,
+        semiDiameter: 3,
+        isStop: true,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
     ],
   });

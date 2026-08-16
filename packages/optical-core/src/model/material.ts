@@ -58,8 +58,7 @@ export class SellmeierMaterial implements Material {
     }
     const l2 = (wavelengthNm / 1000) ** 2; // micrometres, squared
     const { b1, b2, b3, c1, c2, c3 } = this.coefficients;
-    const nSquared =
-      1 + (b1 * l2) / (l2 - c1) + (b2 * l2) / (l2 - c2) + (b3 * l2) / (l2 - c3);
+    const nSquared = 1 + (b1 * l2) / (l2 - c1) + (b2 * l2) / (l2 - c2) + (b3 * l2) / (l2 - c3);
     if (!(nSquared > 0)) {
       throw new RangeError(`Sellmeier model produced a non-physical index for ${this.name}.`);
     }
@@ -143,7 +142,12 @@ export class ModelGlassMaterial implements Material {
   private readonly nu1: number;
   private readonly nu2: number;
 
-  public constructor(name: string, nd: number, abbeNumber: number, options: ModelGlassOptions = {}) {
+  public constructor(
+    name: string,
+    nd: number,
+    abbeNumber: number,
+    options: ModelGlassOptions = {},
+  ) {
     if (!Number.isFinite(nd) || nd <= 0) {
       throw new RangeError(`Model glass "${name}" needs a positive, finite nd; got ${nd}.`);
     }

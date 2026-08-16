@@ -48,7 +48,14 @@ export function LayoutView({
       role="img"
       aria-label={`Layout of ${system.name}, ${system.surfaces.length} surfaces`}
     >
-      <line className="axis-line" x1={PADDING} y1={axisY} x2={WIDTH - PADDING} y2={axisY} strokeDasharray="4 4" />
+      <line
+        className="axis-line"
+        x1={PADDING}
+        y1={axisY}
+        x2={WIDTH - PADDING}
+        y2={axisY}
+        strokeDasharray="4 4"
+      />
 
       {geometry.bodies.map((body, index) => (
         <path
@@ -60,7 +67,10 @@ export function LayoutView({
       ))}
 
       {geometry.rayPaths.map((path, index) => {
-        const style = wavelengthStyle(system.wavelengthsNm[path.wavelengthIndex] ?? 550, path.wavelengthIndex);
+        const style = wavelengthStyle(
+          system.wavelengthsNm[path.wavelengthIndex] ?? 550,
+          path.wavelengthIndex,
+        );
         // Rays are drawn solid when only one wavelength is on screen: with
         // nothing to tell apart, a dash pattern just reads as a broken ray.
         const dash = multipleWavelengths ? style.dash : undefined;

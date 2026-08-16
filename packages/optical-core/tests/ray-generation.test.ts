@@ -19,18 +19,15 @@ const GLASS = new ConstantMaterial('DEMO-GLASS', 1.5);
 const WAVELENGTH_NM = 587.5618;
 
 /** The plano-convex singlet of trace.test.ts, with an aperture and fields attached. */
-function singlet(overrides: {
-  epd?: number;
-  objectThickness?: number;
-  radius?: number;
-  semiDiameter?: number;
-} = {}): OpticalSystem {
-  const {
-    epd = 10,
-    objectThickness = Infinity,
-    radius = 50,
-    semiDiameter = 25,
-  } = overrides;
+function singlet(
+  overrides: {
+    epd?: number;
+    objectThickness?: number;
+    radius?: number;
+    semiDiameter?: number;
+  } = {},
+): OpticalSystem {
+  const { epd = 10, objectThickness = Infinity, radius = 50, semiDiameter = 25 } = overrides;
   return new OpticalSystem({
     name: 'Plano-convex singlet',
     wavelengthsNm: [WAVELENGTH_NM],
@@ -38,8 +35,22 @@ function singlet(overrides: {
     fields: [{ angleDeg: 0 }, { angleDeg: 5 }],
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: objectThickness, material: AIR }),
-      new Surface({ id: 's1', type: 'STANDARD', radius, thickness: 5, semiDiameter, material: GLASS }),
-      new Surface({ id: 's2', type: 'STANDARD', radius: Infinity, thickness: 96.6667, semiDiameter, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius,
+        thickness: 5,
+        semiDiameter,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 96.6667,
+        semiDiameter,
+        material: AIR,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, material: AIR }),
     ],
   });
@@ -63,7 +74,14 @@ test('object-space NA sizes the pupil from the object distance', () => {
     aperture: { type: 'OBJECT_SPACE_NA', value: 0.1 },
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: 100 }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 5, semiDiameter: 25, material: GLASS }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 5,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
     ],
   });
@@ -76,7 +94,10 @@ test('FLOAT_BY_STOP is sized by the stop surface', () => {
   assert.throws(() => entrancePupilRadius(noStop), /no surface marked as the aperture stop/);
 
   // With the stop on the first surface the entrance pupil is the stop itself.
-  const withStop = noStop.withSurfaceAt(1, noStop.surfaceAt(1).with({ semiDiameter: 4, isStop: true }));
+  const withStop = noStop.withSurfaceAt(
+    1,
+    noStop.surfaceAt(1).with({ semiDiameter: 4, isStop: true }),
+  );
   assert.equal(entrancePupilRadius(withStop), 4);
 });
 
@@ -124,10 +145,14 @@ test('field definitions must match the object conjugate', () => {
     /field angles/,
   );
   assert.throws(
-    () => generateRay(singlet({ objectThickness: 200 }), { px: 0, py: 0 }, { field: { angleDeg: 5 } }),
+    () =>
+      generateRay(singlet({ objectThickness: 200 }), { px: 0, py: 0 }, { field: { angleDeg: 5 } }),
     /object heights/,
   );
-  assert.throws(() => generateRay(singlet(), { px: 0, py: 0 }, { field: 7 }), /No field at index 7/);
+  assert.throws(
+    () => generateRay(singlet(), { px: 0, py: 0 }, { field: 7 }),
+    /No field at index 7/,
+  );
 });
 
 test('the default launch plane clears a first surface that bulges toward the object', () => {
@@ -137,7 +162,10 @@ test('the default launch plane clears a first surface that bulges toward the obj
   // Sag of R = −50 at the pupil rim h = 5 is negative, so the edge is ahead of the vertex.
   const sagAtRim = (-0.02 * 25) / (1 + Math.sqrt(1 - 0.02 * 0.02 * 25));
   assert.ok(sagAtRim < 0);
-  assert.ok(ray.origin.z < sagAtRim, `launch plane z=${ray.origin.z} is not ahead of sag ${sagAtRim}`);
+  assert.ok(
+    ray.origin.z < sagAtRim,
+    `launch plane z=${ray.origin.z} is not ahead of sag ${sagAtRim}`,
+  );
 });
 
 test('a ray fan samples the pupil diameter symmetrically', () => {
@@ -158,7 +186,10 @@ test('a ray fan samples the pupil diameter symmetrically', () => {
   );
   assert.ok(sagittal.every((ray) => ray.origin.y === 0));
 
-  assert.deepEqual(generateRayFan(system, { count: 1 }).map((ray) => ray.origin.y), [0]);
+  assert.deepEqual(
+    generateRayFan(system, { count: 1 }).map((ray) => ray.origin.y),
+    [0],
+  );
   assert.throws(() => generateRayFan(system, { count: 0 }), /positive integer/);
 });
 

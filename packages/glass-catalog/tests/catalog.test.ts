@@ -44,7 +44,10 @@ test('computed nd and Abbe numbers match the published datasheet values', () => 
   for (const [name, nd, vd] of PUBLISHED) {
     const glass = SCHOTT.get(name);
     assert.ok(glass, `${name} is missing from the catalogue`);
-    assert.ok(Math.abs(glass.nd - nd) < 5e-5, `${name}: nd ${glass.nd.toFixed(5)}, published ${nd}`);
+    assert.ok(
+      Math.abs(glass.nd - nd) < 5e-5,
+      `${name}: nd ${glass.nd.toFixed(5)}, published ${nd}`,
+    );
     assert.ok(
       Math.abs(glass.abbeNumber - vd) < 0.01,
       `${name}: vd ${glass.abbeNumber.toFixed(2)}, published ${vd}`,

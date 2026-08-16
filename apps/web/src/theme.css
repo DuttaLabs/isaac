@@ -32,7 +32,7 @@
   --stop-mark: #0b0b0b;
 
   --radius: 6px;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -101,7 +101,11 @@ body {
   margin: 0;
   background: var(--surface-0);
   color: var(--text-primary);
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font:
+    13px/1.45 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
 }
 
 /* ---------- App frame ---------- */

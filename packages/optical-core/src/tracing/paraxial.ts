@@ -139,7 +139,8 @@ export function paraxialProperties(
   // Collimated ray in from the left: gives EFL and the back focal distance.
   const forward = paraxialTrace(system, { height: 1, angle: 0 }, wavelengthNm);
   const exit = forward[forward.length - 1]!;
-  const effectiveFocalLength = exit.angleAfter === 0 ? Infinity : -forward[0]!.height / exit.angleAfter;
+  const effectiveFocalLength =
+    exit.angleAfter === 0 ? Infinity : -forward[0]!.height / exit.angleAfter;
   const backFocalDistance = exit.angleAfter === 0 ? Infinity : -exit.height / exit.angleAfter;
 
   // Collimated ray in from the right (reversed system): gives the front focal distance.
@@ -154,13 +155,10 @@ export function paraxialProperties(
   } else {
     // Marginal ray from the axial object point: y = 0 at the object, unit slope.
     const objectIndex = system.objectSurface.material.indexAt(wavelengthNm);
-    const conjugate = paraxialTrace(
-      system,
-      { height: objectThickness, angle: 1 },
-      wavelengthNm,
-    );
+    const conjugate = paraxialTrace(system, { height: objectThickness, angle: 1 }, wavelengthNm);
     const conjugateExit = conjugate[conjugate.length - 1]!;
-    imageDistance = conjugateExit.angleAfter === 0 ? Infinity : -conjugateExit.height / conjugateExit.angleAfter;
+    imageDistance =
+      conjugateExit.angleAfter === 0 ? Infinity : -conjugateExit.height / conjugateExit.angleAfter;
     magnification =
       conjugateExit.angleAfter === 0
         ? 0
@@ -196,7 +194,10 @@ export function withImageAtParaxialFocus(
     throw new RangeError('An afocal system has no paraxial image plane to solve for.');
   }
   const last = properties.lastRefractingSurface;
-  return system.withSurfaceAt(last, system.surfaceAt(last).with({ thickness: properties.imageDistance }));
+  return system.withSurfaceAt(
+    last,
+    system.surfaceAt(last).with({ thickness: properties.imageDistance }),
+  );
 }
 
 /** A paraxial image of the aperture stop: where it appears, and how big. */
@@ -250,7 +251,12 @@ export function entrancePupil(
   const z = system.vertexZAt(1) - zeta;
   const heightAtPupil = edge.height + edge.slope * zeta;
 
-  return { z, radius: Math.abs(heightAtPupil), magnification: heightAtPupil / stopRadius, stopIndex };
+  return {
+    z,
+    radius: Math.abs(heightAtPupil),
+    magnification: heightAtPupil / stopRadius,
+    stopIndex,
+  };
 }
 
 /**

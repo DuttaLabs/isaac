@@ -16,7 +16,7 @@ test('ConstantMaterial is non-dispersive and validated', () => {
 
 test('N-BK7 reproduces catalogue indices via Sellmeier', () => {
   // Reference values for Schott N-BK7 at the standard spectral lines.
-  assert.ok(Math.abs(N_BK7.indexAt(587.5618) - 1.51680) < 1e-4); // d-line
+  assert.ok(Math.abs(N_BK7.indexAt(587.5618) - 1.5168) < 1e-4); // d-line
   assert.ok(Math.abs(N_BK7.indexAt(486.1327) - 1.52238) < 1e-4); // F-line
   assert.ok(Math.abs(N_BK7.indexAt(656.2725) - 1.51432) < 1e-4); // C-line
   // Normal dispersion: shorter wavelength → higher index.

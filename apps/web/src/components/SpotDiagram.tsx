@@ -24,8 +24,20 @@ export function SpotDiagram({ data, title }: { data: SpotData; title: string }) 
       <svg className="plot" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={title}>
         {ticks.map((tick) => (
           <g key={`grid-${tick}`}>
-            <line className="grid-line" x1={x(tick)} y1={MARGIN.top} x2={x(tick)} y2={SIZE - MARGIN.bottom} />
-            <line className="grid-line" x1={MARGIN.left} y1={y(tick)} x2={SIZE - MARGIN.right} y2={y(tick)} />
+            <line
+              className="grid-line"
+              x1={x(tick)}
+              y1={MARGIN.top}
+              x2={x(tick)}
+              y2={SIZE - MARGIN.bottom}
+            />
+            <line
+              className="grid-line"
+              x1={MARGIN.left}
+              y1={y(tick)}
+              x2={SIZE - MARGIN.right}
+              y2={y(tick)}
+            />
             <text className="tick-text" x={MARGIN.left - 5} y={y(tick) + 3} textAnchor="end">
               {tick}
             </text>

@@ -33,17 +33,28 @@ export function FirstOrderPanel({
       actions={<span className="hint">at {system.primaryWavelengthNm.toFixed(1)} nm</span>}
     >
       <div className="readout">
-        <Stat label="Focal length" value={formatOptional(properties.effectiveFocalLength, 4, ` ${unit}`)} />
-        <Stat label="Back focal dist." value={formatOptional(properties.backFocalDistance, 4, ` ${unit}`)} />
+        <Stat
+          label="Focal length"
+          value={formatOptional(properties.effectiveFocalLength, 4, ` ${unit}`)}
+        />
+        <Stat
+          label="Back focal dist."
+          value={formatOptional(properties.backFocalDistance, 4, ` ${unit}`)}
+        />
         <Stat label="F/#" value={fNumber === undefined ? '—' : `f/${fNumber.toFixed(2)}`} />
-        <Stat label="Entrance pupil ⌀" value={formatOptional(2 * entrancePupilRadius, 3, ` ${unit}`)} />
+        <Stat
+          label="Entrance pupil ⌀"
+          value={formatOptional(2 * entrancePupilRadius, 3, ` ${unit}`)}
+        />
         <Stat
           label="Image distance"
           value={formatOptional(properties.imageDistance, 4, ` ${unit}`)}
         />
         <Stat
           label="Magnification"
-          value={properties.magnification === 0 ? '— (object at ∞)' : properties.magnification.toFixed(4)}
+          value={
+            properties.magnification === 0 ? '— (object at ∞)' : properties.magnification.toFixed(4)
+          }
         />
         <Stat
           label="Defocus"

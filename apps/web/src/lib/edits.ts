@@ -86,7 +86,9 @@ export function setStop(system: OpticalSystem, index: number): Result<OpticalSys
 export function insertSurfaceAfter(system: OpticalSystem, index: number): Result<OpticalSystem> {
   return attempt(() => {
     const surfaces = [...system.surfaces];
-    surfaces.splice(index + 1, 0,
+    surfaces.splice(
+      index + 1,
+      0,
       new Surface({
         id: newSurfaceId(),
         type: 'STANDARD',

@@ -1,10 +1,6 @@
-import { useState } from "react";
-import type { OpticalSystem } from "@isaac/optical-core";
-import {
-  GLASS_CATALOG,
-  glassName,
-  resolveGlass,
-} from "../lib/default-system.ts";
+import { useState } from 'react';
+import type { OpticalSystem } from '@isaac/optical-core';
+import { GLASS_CATALOG, glassName, resolveGlass } from '../lib/default-system.ts';
 import {
   insertSurfaceAfter,
   normalizeRadius,
@@ -14,13 +10,13 @@ import {
   setSurfaceType,
   updateSurface,
   type EditableSurfaceType,
-} from "../lib/edits.ts";
-import type { Result } from "../lib/result.ts";
-import { ErrorNote, Panel } from "./Panel.tsx";
-import { NumericCell } from "./NumericCell.tsx";
-import { TextCell } from "./TextCell.tsx";
+} from '../lib/edits.ts';
+import type { Result } from '../lib/result.ts';
+import { ErrorNote, Panel } from './Panel.tsx';
+import { NumericCell } from './NumericCell.tsx';
+import { TextCell } from './TextCell.tsx';
 
-const GLASS_LIST_ID = "glass-names";
+const GLASS_LIST_ID = 'glass-names';
 
 /**
  * The spreadsheet the design is actually edited in. Every cell edit produces a
@@ -79,18 +75,18 @@ export function LensDataEditor({
           </thead>
           <tbody>
             {system.surfaces.map((surface, index) => {
-              const isObject = surface.type === "OBJECT";
-              const isImage = surface.type === "IMAGE";
-              const isParaxial = surface.type === "PARAXIAL";
+              const isObject = surface.type === 'OBJECT';
+              const isImage = surface.type === 'IMAGE';
+              const isParaxial = surface.type === 'PARAXIAL';
               const isFixed = isObject || isImage;
               // Zemax names the ends of the system and the stop rather than
               // numbering them; everything else is its surface number.
               const label = isObject
-                ? "OBJ"
+                ? 'OBJ'
                 : isImage
-                  ? "IMA"
+                  ? 'IMA'
                   : surface.isStop
-                    ? "STO"
+                    ? 'STO'
                     : String(index);
 
               return (
@@ -104,21 +100,17 @@ export function LensDataEditor({
                       type={surface.type}
                       fixed={isFixed}
                       ariaLabel={`Type of surface ${label}`}
-                      onChange={(next) =>
-                        apply(setSurfaceType(system, index, next))
-                      }
+                      onChange={(next) => apply(setSurfaceType(system, index, next))}
                     />
                   </td>
 
                   <td className="text-column">
                     <TextCell
-                      value={surface.comment ?? ""}
+                      value={surface.comment ?? ''}
                       placeholder="—"
                       ariaLabel={`Label for surface ${label}`}
                       title="A note naming this surface. Imported from and written as Zemax's COMM record."
-                      onCommit={(next) =>
-                        apply(updateSurface(system, index, { comment: next }))
-                      }
+                      onCommit={(next) => apply(updateSurface(system, index, { comment: next }))}
                     />
                   </td>
 
@@ -165,9 +157,7 @@ export function LensDataEditor({
                       ariaLabel={`Thickness after surface ${label}`}
                       title="Distance to the next surface. The object may be Infinity."
                       disabled={isImage}
-                      onCommit={(next) =>
-                        apply(updateSurface(system, index, { thickness: next }))
-                      }
+                      onCommit={(next) => apply(updateSurface(system, index, { thickness: next }))}
                     />
                   </td>
 
@@ -175,9 +165,7 @@ export function LensDataEditor({
                     <GlassCell
                       surfaceName={glassName(surface.material)}
                       disabled={isImage}
-                      onCommit={(material) =>
-                        apply(updateSurface(system, index, { material }))
-                      }
+                      onCommit={(material) => apply(updateSurface(system, index, { material }))}
                     />
                   </td>
 
@@ -234,7 +222,7 @@ export function LensDataEditor({
       </div>
 
       {error ? (
-        <div style={{ padding: "10px 12px" }}>
+        <div style={{ padding: '10px 12px' }}>
           <ErrorNote message={error} />
         </div>
       ) : null}
@@ -243,7 +231,7 @@ export function LensDataEditor({
 }
 
 /** The types a user may pick between, in the order they appear in the dropdown. */
-const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = ["STANDARD", "PARAXIAL"];
+const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = ['STANDARD', 'PARAXIAL'];
 
 /**
  * Surface type. OBJECT and IMAGE are fixed by their position in the system, so
@@ -314,7 +302,7 @@ function GlassCell({
       disabled={disabled}
       placeholder="air"
       aria-label="Glass"
-      className={resolved ? undefined : "invalid"}
+      className={resolved ? undefined : 'invalid'}
       title={resolved ? undefined : `"${shown}" is not in the catalogue`}
       onChange={(event) => {
         setEditing(true);
@@ -332,9 +320,9 @@ function GlassCell({
         }
       }}
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        if (event.key === 'Enter') {
           event.currentTarget.blur();
-        } else if (event.key === "Escape") {
+        } else if (event.key === 'Escape') {
           setEditing(false);
           event.currentTarget.blur();
         }

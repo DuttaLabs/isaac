@@ -35,7 +35,8 @@ const MARKERS: readonly WavelengthStyle['marker'][] = [
 ];
 
 export function wavelengthStyle(wavelengthNm: number, index: number): WavelengthStyle {
-  const band = SPECTRAL_BANDS.find((candidate) => wavelengthNm <= candidate.maxNm) ?? SPECTRAL_BANDS[2]!;
+  const band =
+    SPECTRAL_BANDS.find((candidate) => wavelengthNm <= candidate.maxNm) ?? SPECTRAL_BANDS[2]!;
   return {
     color: `var(${band.variable})`,
     dash: DASHES[index % DASHES.length],

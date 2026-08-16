@@ -79,7 +79,8 @@ test('a paraxial surface with no focal length is refused, not defaulted', () => 
   );
 
   assert.throws(
-    () => importZmx(paraxialFile(['  TYPE PARAXIAL', '  PARM 1 0'].join('\n')), { resolveMaterial }),
+    () =>
+      importZmx(paraxialFile(['  TYPE PARAXIAL', '  PARM 1 0'].join('\n')), { resolveMaterial }),
     (error: unknown) => error instanceof ZmxImportError && /focal length of 0/.test(error.message),
   );
 });
@@ -90,16 +91,15 @@ test('an unrecognised PARM on a paraxial surface is refused rather than guessed 
       importZmx(paraxialFile(['  TYPE PARAXIAL', '  PARM 1 1.0E+2', '  PARM 3 7'].join('\n')), {
         resolveMaterial,
       }),
-    (error: unknown) => error instanceof ZmxImportError && /unrecognised PARM 3/.test(error.message),
+    (error: unknown) =>
+      error instanceof ZmxImportError && /unrecognised PARM 3/.test(error.message),
   );
 });
 
 test('a paraxial surface immersed in glass is refused, since the convention is unverified', () => {
-  const inGlass = [
-    '  TYPE PARAXIAL',
-    '  PARM 1 1.0E+2',
-    '  GLAS BK7 0 0 0 0 0 0 0 0 0 0',
-  ].join('\n');
+  const inGlass = ['  TYPE PARAXIAL', '  PARM 1 1.0E+2', '  GLAS BK7 0 0 0 0 0 0 0 0 0 0'].join(
+    '\n',
+  );
 
   assert.throws(
     () => importZmx(paraxialFile(inGlass), { resolveMaterial }),

@@ -1,10 +1,7 @@
 // Geometry primitives
 export { Vector3 } from './geometry/vector3.ts';
 export { Point3 } from './geometry/point3.ts';
-export {
-  intersectSphericalSurface,
-  type SurfaceHit,
-} from './geometry/surface-intersection.ts';
+export { intersectSphericalSurface, type SurfaceHit } from './geometry/surface-intersection.ts';
 
 // Optical model
 export { Ray } from './model/ray.ts';
@@ -35,11 +32,7 @@ export type {
 // Ray tracing
 export { refract, reflect, angleOfIncidence } from './tracing/optics.ts';
 export { traceRay } from './tracing/trace.ts';
-export type {
-  Intersection,
-  InteractionKind,
-  RayTraceResult,
-} from './tracing/trace.ts';
+export type { Intersection, InteractionKind, RayTraceResult } from './tracing/trace.ts';
 export {
   surfacePower,
   paraxialTrace,

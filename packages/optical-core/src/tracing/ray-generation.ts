@@ -188,7 +188,9 @@ export function generateRay(
   }
   const origin = new Point3(0, field.objectHeight ?? 0, system.vertexZAt(0));
   if (pupilZ <= origin.z) {
-    throw new RangeError('The entrance pupil lies at or behind the object plane; rays cannot be aimed at it.');
+    throw new RangeError(
+      'The entrance pupil lies at or behind the object plane; rays cannot be aimed at it.',
+    );
   }
   const direction = pupilPoint.subtract(origin);
   return new Ray(origin, direction, rayOptions);

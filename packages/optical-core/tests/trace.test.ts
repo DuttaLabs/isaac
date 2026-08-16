@@ -32,8 +32,22 @@ function planoConvexSinglet(semiDiameter = 25): OpticalSystem {
     wavelengthsNm: [587.5618],
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 5, semiDiameter, material: GLASS }),
-      new Surface({ id: 's2', type: 'STANDARD', radius: Infinity, thickness: 100, semiDiameter, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 5,
+        semiDiameter,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 100,
+        semiDiameter,
+        material: AIR,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, material: AIR }),
     ],
   });
@@ -82,7 +96,10 @@ test('rays at two paraxial heights focus at the same axial point', () => {
   const nearer = traceRay(planoConvexSinglet(), collimatedRay(0.2));
 
   const a = axisCrossingZ(near.intersections[1]!.point, near.intersections[1]!.outgoingDirection);
-  const b = axisCrossingZ(nearer.intersections[1]!.point, nearer.intersections[1]!.outgoingDirection);
+  const b = axisCrossingZ(
+    nearer.intersections[1]!.point,
+    nearer.intersections[1]!.outgoingDirection,
+  );
   assert.ok(Math.abs(a - b) < 1e-3, `focus drift ${Math.abs(a - b)} too large`);
 });
 

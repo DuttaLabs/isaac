@@ -188,7 +188,13 @@ function interact(
   const indexAfter = surface.material.indexAt(wavelengthNm);
   const refracted = refract(incoming, normal, indexBefore, indexAfter);
   if (refracted === null) {
-    return { status: 'TIR', direction: incoming, medium: surface.material.name, indexAfter, kind: 'REFLECT' };
+    return {
+      status: 'TIR',
+      direction: incoming,
+      medium: surface.material.name,
+      indexAfter,
+      kind: 'REFLECT',
+    };
   }
   return {
     status: 'OK',

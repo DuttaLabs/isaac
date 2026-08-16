@@ -27,8 +27,22 @@ function planoConvexSinglet(): OpticalSystem {
     aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 5, semiDiameter: 25, material: GLASS }),
-      new Surface({ id: 's2', type: 'STANDARD', radius: Infinity, thickness: 80, semiDiameter: 25, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 5,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 80,
+        semiDiameter: 25,
+        material: AIR,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, material: AIR }),
     ],
   });
@@ -41,8 +55,22 @@ function thinLens(objectThickness = Infinity): OpticalSystem {
     aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: objectThickness, material: AIR }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 1e-9, semiDiameter: 25, material: GLASS }),
-      new Surface({ id: 's2', type: 'STANDARD', radius: -50, thickness: 50, semiDiameter: 25, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 1e-9,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: -50,
+        thickness: 50,
+        semiDiameter: 25,
+        material: AIR,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, material: AIR }),
     ],
   });
@@ -81,9 +109,12 @@ test('the paraxial image plane agrees with a real ray traced near the axis', () 
   const system = planoConvexSinglet();
   const properties = paraxialProperties(system);
 
-  const ray = new Ray(new Point3(0, 1e-4, -10), new Vector3(0, 0, 1), { wavelengthNm: WAVELENGTH_NM });
+  const ray = new Ray(new Point3(0, 1e-4, -10), new Vector3(0, 0, 1), {
+    wavelengthNm: WAVELENGTH_NM,
+  });
   const exit = traceRay(system, ray).intersections[1]!; // leaving the rear surface
-  const crossingZ = exit.point.z - (exit.point.y / exit.outgoingDirection.y) * exit.outgoingDirection.z;
+  const crossingZ =
+    exit.point.z - (exit.point.y / exit.outgoingDirection.y) * exit.outgoingDirection.z;
 
   assert.ok(
     Math.abs(crossingZ - properties.paraxialImageZ) < 1e-6,
@@ -121,7 +152,9 @@ test('solving the last thickness puts the image surface at the paraxial focus', 
   assert.equal(system.surfaceAt(2).thickness, 80);
 
   // A near-axis real ray now lands on the image surface essentially on axis.
-  const ray = new Ray(new Point3(0, 1e-4, -10), new Vector3(0, 0, 1), { wavelengthNm: WAVELENGTH_NM });
+  const ray = new Ray(new Point3(0, 1e-4, -10), new Vector3(0, 0, 1), {
+    wavelengthNm: WAVELENGTH_NM,
+  });
   const result = traceRay(solved, ray);
   assert.equal(result.status, 'TERMINATED');
   assert.ok(Math.abs(result.finalRay.origin.y) < 1e-9);
@@ -139,7 +172,8 @@ test('an image-space F/# aperture is sized from the effective focal length', () 
   assert.ok(Math.abs(imageSpaceFNumber(byDiameter) - 4) < 1e-6);
 
   assert.throws(
-    () => entrancePupilRadius(thinLens(100).with({ aperture: { type: 'IMAGE_SPACE_FNUM', value: 4 } })),
+    () =>
+      entrancePupilRadius(thinLens(100).with({ aperture: { type: 'IMAGE_SPACE_FNUM', value: 4 } })),
     /object at infinity/,
   );
 });
@@ -150,8 +184,22 @@ test('dispersion shifts the focal length with wavelength', () => {
     primaryWavelengthIndex: 1,
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
-      new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 4, semiDiameter: 12, material: N_BK7 }),
-      new Surface({ id: 's2', type: 'STANDARD', radius: -50, thickness: 45, semiDiameter: 12, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 4,
+        semiDiameter: 12,
+        material: N_BK7,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: -50,
+        thickness: 45,
+        semiDiameter: 12,
+        material: AIR,
+      }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
     ],
   });
@@ -161,8 +209,14 @@ test('dispersion shifts the focal length with wavelength', () => {
   const red = paraxialProperties(system, 656.2725).effectiveFocalLength;
 
   // Normal dispersion: shorter wavelengths are refracted more, so they focus shorter.
-  assert.ok(blue < green && green < red, `expected f(blue) < f(green) < f(red), got ${blue}, ${green}, ${red}`);
-  assert.ok(Math.abs(green - paraxialProperties(system, system.primaryWavelengthNm).effectiveFocalLength) < 1e-12);
+  assert.ok(
+    blue < green && green < red,
+    `expected f(blue) < f(green) < f(red), got ${blue}, ${green}, ${red}`,
+  );
+  assert.ok(
+    Math.abs(green - paraxialProperties(system, system.primaryWavelengthNm).effectiveFocalLength) <
+      1e-12,
+  );
 });
 
 test('paraxial analysis refuses systems it cannot model yet', () => {
@@ -182,7 +236,13 @@ test('paraxial analysis refuses systems it cannot model yet', () => {
 });
 
 test('Surface.with and OpticalSystem.withSurfaceAt copy rather than mutate', () => {
-  const surface = new Surface({ id: 's1', type: 'STANDARD', radius: 50, thickness: 5, semiDiameter: 25 });
+  const surface = new Surface({
+    id: 's1',
+    type: 'STANDARD',
+    radius: 50,
+    thickness: 5,
+    semiDiameter: 25,
+  });
   const moved = surface.with({ thickness: 7 });
 
   assert.equal(surface.thickness, 5);

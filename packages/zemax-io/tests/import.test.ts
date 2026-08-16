@@ -11,14 +11,18 @@ import {
 } from '@isaac/optical-core';
 import { UNKNOWN_GLASS_INDEX, ZmxImportError, importZmx } from '../src/index.ts';
 
-const DOUBLET = readFileSync(fileURLToPath(new URL('./fixtures/doublet.zmx', import.meta.url)), 'utf8');
+const DOUBLET = readFileSync(
+  fileURLToPath(new URL('./fixtures/doublet.zmx', import.meta.url)),
+  'utf8',
+);
 
 /** The file names SCHOTT BK7 and F2, which the core catalogue does not carry. */
 const SCHOTT: ReadonlyMap<string, Material> = new Map([
   ['BK7', new ConstantMaterial('BK7', 1.5168)],
   ['F2', new ConstantMaterial('F2', 1.62)],
 ]);
-const resolveMaterial = (name: string): Material | undefined => SCHOTT.get(name.trim().toUpperCase());
+const resolveMaterial = (name: string): Material | undefined =>
+  SCHOTT.get(name.trim().toUpperCase());
 
 function importDoublet(overrides = DOUBLET) {
   return importZmx(overrides, { resolveMaterial });
@@ -88,11 +92,14 @@ test('rays trace through the imported system to a real focus', () => {
 });
 
 test('unresolved glass fails the import unless explicitly allowed', () => {
-  assert.throws(() => importZmx(DOUBLET), (error: unknown) => {
-    assert.ok(error instanceof ZmxImportError);
-    assert.match(error.message, /Unknown glass "BK7" on surface 1/);
-    return true;
-  });
+  assert.throws(
+    () => importZmx(DOUBLET),
+    (error: unknown) => {
+      assert.ok(error instanceof ZmxImportError);
+      assert.match(error.message, /Unknown glass "BK7" on surface 1/);
+      return true;
+    },
+  );
 
   const { system, warnings, glasses } = importZmx(DOUBLET, { allowUnknownGlass: true });
   assert.equal(system.surfaceAt(1).material.indexAt(589), UNKNOWN_GLASS_INDEX);
@@ -115,10 +122,17 @@ test('a glass the resolver substitutes is reported once, not left implicit', () 
   // A catalogue answering "SK16" with its lead-free replacement is making an
   // approximation, so the import must say so even though the lookup succeeded.
   const substituting = (name: string): Material | undefined =>
-    name.trim().toUpperCase() === 'BK7' ? new ConstantMaterial('N-BK7', 1.5168) : resolveMaterial(name);
+    name.trim().toUpperCase() === 'BK7'
+      ? new ConstantMaterial('N-BK7', 1.5168)
+      : resolveMaterial(name);
   const { warnings, glasses } = importZmx(DOUBLET, { resolveMaterial: substituting });
 
-  assert.deepEqual(glasses[0], { name: 'BK7', surfaceNumber: 1, resolved: true, resolvedAs: 'N-BK7' });
+  assert.deepEqual(glasses[0], {
+    name: 'BK7',
+    surfaceNumber: 1,
+    resolved: true,
+    resolvedAs: 'N-BK7',
+  });
   assert.equal(glasses[1]!.resolvedAs, undefined); // F2 resolved to F2
   const substitutions = warnings.filter((warning) => /is a substitute/.test(warning));
   assert.equal(substitutions.length, 1);
@@ -168,8 +182,10 @@ test('a model glass with no dispersion is traced as non-dispersive', () => {
 });
 
 test('model glasses are reported once, however many surfaces use them', () => {
-  const both = DOUBLET.replace('GLAS BK7 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0 1.5168 6.417E+1 0')
-    .replace('GLAS F2 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0 1.62 3.637E+1 0');
+  const both = DOUBLET.replace(
+    'GLAS BK7 0 0 0 0 0 0 0 0 0 0',
+    'GLAS ___BLANK 1 0 1.5168 6.417E+1 0',
+  ).replace('GLAS F2 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0 1.62 3.637E+1 0');
   const { warnings } = importZmx(both, { resolveMaterial });
 
   const reports = warnings.filter((warning) => /use a model glass/.test(warning));
@@ -179,9 +195,10 @@ test('model glasses are reported once, however many surfaces use them', () => {
 
 test('a model glass without usable numbers is refused, not guessed at', () => {
   assert.throws(
-    () => importZmx(DOUBLET.replace('GLAS BK7 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0'), {
-      resolveMaterial,
-    }),
+    () =>
+      importZmx(DOUBLET.replace('GLAS BK7 0 0 0 0 0 0 0 0 0 0', 'GLAS ___BLANK 1 0'), {
+        resolveMaterial,
+      }),
     /model glass with no usable index and Abbe number/,
   );
 });
@@ -189,7 +206,12 @@ test('a model glass without usable numbers is refused, not guessed at', () => {
 test('surface records that would change the geometry become warnings', () => {
   // CLAP is a second, tighter aperture on the surface: ignoring it silently
   // would trace rays the real lens vignettes away.
-  const withClap = importDoublet(DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP', '  CLAP 0 5.0 0\n  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP'));
+  const withClap = importDoublet(
+    DOUBLET.replace(
+      '  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP',
+      '  CLAP 0 5.0 0\n  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP',
+    ),
+  );
   assert.ok(
     withClap.warnings.some((warning) => /Surface 1 has a CLAP record/.test(warning)),
     `expected a CLAP warning, got ${JSON.stringify(withClap.warnings)}`,
@@ -201,7 +223,9 @@ test('surface records that would change the geometry become warnings', () => {
 
 test('header settings that change how rays are launched become warnings', () => {
   const vignetted = importDoublet(DOUBLET.replace('VDYN 0 0 0', 'VDYN 0.2 0 0'));
-  assert.ok(vignetted.warnings.some((warning) => /Vignetting factors are set \(VDYN\)/.test(warning)));
+  assert.ok(
+    vignetted.warnings.some((warning) => /Vignetting factors are set \(VDYN\)/.test(warning)),
+  );
 
   const aimed = importDoublet(DOUBLET.replace('RAIM 0 0 1', 'RAIM 1 0 1'));
   assert.ok(aimed.warnings.some((warning) => /requests ray aiming \(RAIM 1\)/.test(warning)));
@@ -209,7 +233,9 @@ test('header settings that change how rays are launched become warnings', () => 
   // The file's own ENVD is the standard environment, which the catalogue
   // indices already assume, so only a departure from it is reported.
   const hot = importDoublet(DOUBLET.replace('ENVD 2.0E+1 1 0', 'ENVD 5.0E+1 1 0'));
-  assert.ok(hot.warnings.some((warning) => /non-standard environment \(50 °C, 1 atm\)/.test(warning)));
+  assert.ok(
+    hot.warnings.some((warning) => /non-standard environment \(50 °C, 1 atm\)/.test(warning)),
+  );
 });
 
 test('tokens the reader does not interpret are reported, not silently dropped', () => {
@@ -225,12 +251,12 @@ test('tokens the reader does not interpret are reported, not silently dropped', 
 });
 
 test('geometry the core cannot model is rejected rather than approximated', () => {
+  assert.throws(() => importDoublet(DOUBLET.replace('MODE SEQ', 'MODE NONSEQ')), /Only sequential/);
   assert.throws(
-    () => importDoublet(DOUBLET.replace('MODE SEQ', 'MODE NONSEQ')),
-    /Only sequential/,
-  );
-  assert.throws(
-    () => importDoublet(DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE EVENASPH\n  CURV 1.07')),
+    () =>
+      importDoublet(
+        DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE EVENASPH\n  CURV 1.07'),
+      ),
     /only STANDARD and PARAXIAL surfaces/,
   );
   // A conic constant would change the surface shape, so it cannot be ignored.
@@ -238,7 +264,10 @@ test('geometry the core cannot model is rejected rather than approximated', () =
     () => importDoublet(DOUBLET.replace('  DISZ 6.0', '  CONI -1.0\n  DISZ 6.0')),
     /conic constant/,
   );
-  assert.throws(() => importDoublet('MODE SEQ\nSURF 0\n  DISZ 0\n'), /at least an object and an image/);
+  assert.throws(
+    () => importDoublet('MODE SEQ\nSURF 0\n  DISZ 0\n'),
+    /at least an object and an image/,
+  );
 });
 
 test('ambiguous or unsupported header data becomes a warning', () => {
@@ -255,7 +284,9 @@ test('ambiguous or unsupported header data becomes a warning', () => {
   // A stop marked on the image surface cannot be honoured.
   const stopOnImage = importDoublet(DOUBLET.replace('SURF 4\n  TYPE', 'SURF 4\n  STOP\n  TYPE'));
   assert.equal(stopOnImage.system.stopIndex, 1); // still surface 1
-  assert.ok(stopOnImage.warnings.some((warning) => /marked STOP but is the IMAGE surface/.test(warning)));
+  assert.ok(
+    stopOnImage.warnings.some((warning) => /marked STOP but is the IMAGE surface/.test(warning)),
+  );
 
   const oddUnits = importDoublet(DOUBLET.replace('UNIT MM', 'UNIT FURLONG'));
   assert.equal(oddUnits.system.units, 'mm');

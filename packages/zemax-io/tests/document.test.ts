@@ -11,7 +11,10 @@ import {
   parseZmxDocument,
 } from '../src/index.ts';
 
-const DOUBLET = readFileSync(fileURLToPath(new URL('./fixtures/doublet.zmx', import.meta.url)), 'utf8');
+const DOUBLET = readFileSync(
+  fileURLToPath(new URL('./fixtures/doublet.zmx', import.meta.url)),
+  'utf8',
+);
 
 test('a document splits into header, surface blocks, and trailer', () => {
   const document = parseZmxDocument(DOUBLET);

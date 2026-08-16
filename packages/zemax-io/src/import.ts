@@ -169,7 +169,9 @@ export function zmxDocumentToSystem(
   if (mode === undefined) {
     warnings.push('No MODE record; assuming a sequential system.');
   } else if (mode.toUpperCase() !== 'SEQ') {
-    throw new ZmxImportError(`Only sequential (MODE SEQ) files are supported; this file is MODE ${mode}.`);
+    throw new ZmxImportError(
+      `Only sequential (MODE SEQ) files are supported; this file is MODE ${mode}.`,
+    );
   }
 
   if (document.surfaces.length < 2) {
@@ -262,7 +264,9 @@ function toSurface(
 
   let isStop = hasRecord(records, 'STOP');
   if (isStop && type !== 'STANDARD' && type !== 'PARAXIAL') {
-    context.warnings.push(`Surface ${number} is marked STOP but is the ${type} surface; ignoring the stop.`);
+    context.warnings.push(
+      `Surface ${number} is marked STOP but is the ${type} surface; ignoring the stop.`,
+    );
     isStop = false;
   }
 
@@ -563,7 +567,11 @@ function warnGlassSubstitutions(glasses: readonly ZmxGlassReference[], warnings:
 
 /** Files spell the same glass `N-BK7`, `N BK7` or `nbk7`; none of those is a substitution. */
 function sameGlassName(a: string, b: string): boolean {
-  const normalize = (name: string): string => name.trim().toUpperCase().replace(/[\s_-]+/g, '');
+  const normalize = (name: string): string =>
+    name
+      .trim()
+      .toUpperCase()
+      .replace(/[\s_-]+/g, '');
   return normalize(a) === normalize(b);
 }
 
@@ -653,7 +661,9 @@ function readFields(document: ZmxDocument, warnings: string[]): Field[] {
   const count = declared !== undefined ? Math.min(declared, yFields.length) : yFields.length;
 
   if (xFields.slice(0, count).some((value) => value !== 0)) {
-    warnings.push('X field points are present but the core models Y fields only; X values were dropped.');
+    warnings.push(
+      'X field points are present but the core models Y fields only; X values were dropped.',
+    );
   }
 
   return yFields

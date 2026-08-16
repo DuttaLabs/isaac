@@ -42,12 +42,9 @@ test('a model glass reproduces a real measured glass across the visible', () => 
   // against the measured Sellmeier fit the core carries.
   const nd = N_BK7.indexAt(d);
   const vd = abbeNumberOf(N_BK7);
-  const model = new ModelGlassMaterial(
-    'N-BK7 (model)',
-    nd,
-    vd,
-    { deltaPgF: partialDispersionOf(N_BK7) - normalLinePartialDispersion(vd) },
-  );
+  const model = new ModelGlassMaterial('N-BK7 (model)', nd, vd, {
+    deltaPgF: partialDispersionOf(N_BK7) - normalLinePartialDispersion(vd),
+  });
 
   let worst = 0;
   for (let nm = 400; nm <= 700; nm += 5) {

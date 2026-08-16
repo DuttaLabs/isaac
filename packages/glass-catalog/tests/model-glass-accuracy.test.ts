@@ -43,7 +43,10 @@ function measuredGlasses(): Measured[] {
 }
 
 /** Worst and median absolute index error over the visible band. */
-function drift(glasses: Measured[], useDeltaPgF: boolean): { median: number; worst: number; worstName: string } {
+function drift(
+  glasses: Measured[],
+  useDeltaPgF: boolean,
+): { median: number; worst: number; worstName: string } {
   const errors: number[] = [];
   let worst = 0;
   let worstName = '';
@@ -103,5 +106,8 @@ test('every catalogue glass sits near the normal line', () => {
   const typical = glasses.filter((row) => Math.abs(row.deltaPgF) < 0.02).length;
 
   assert.ok(typical / glasses.length > 0.6, `only ${typical}/${glasses.length} near the line`);
-  assert.ok(glasses.every((row) => Math.abs(row.deltaPgF) < 0.1), 'no glass should be far off');
+  assert.ok(
+    glasses.every((row) => Math.abs(row.deltaPgF) < 0.1),
+    'no glass should be far off',
+  );
 });

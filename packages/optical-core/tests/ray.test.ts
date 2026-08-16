@@ -31,6 +31,9 @@ test('Ray validates physical inputs', () => {
   const origin = new Point3(0, 0, 0);
   const direction = new Vector3(0, 0, 1);
   assert.throws(() => new Ray(origin, direction, { wavelengthNm: 0 }), /wavelengthNm/);
-  assert.throws(() => new Ray(origin, direction, { wavelengthNm: 550, intensity: -0.1 }), /intensity/);
+  assert.throws(
+    () => new Ray(origin, direction, { wavelengthNm: 550, intensity: -0.1 }),
+    /intensity/,
+  );
   assert.throws(() => new Ray(origin, Vector3.zero(), { wavelengthNm: 550 }), /zero-length/);
 });

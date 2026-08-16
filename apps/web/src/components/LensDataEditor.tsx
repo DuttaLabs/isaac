@@ -11,7 +11,9 @@ import {
   normalizeSemiDiameter,
   removeSurface,
   setStop,
+  setSurfaceType,
   updateSurface,
+  type EditableSurfaceType,
 } from "../lib/edits.ts";
 import type { Result } from "../lib/result.ts";
 import { ErrorNote, Panel } from "./Panel.tsx";
@@ -64,8 +66,10 @@ export function LensDataEditor({
           <thead>
             <tr>
               <th>Surface</th>
+              <th>Surface Type</th>
               <th className="text-column">Label</th>
               <th>Radius</th>
+              <th>Focal length</th>
               <th>Thickness</th>
               <th>Glass</th>
               <th>Semi-dia</th>
@@ -77,11 +81,34 @@ export function LensDataEditor({
             {system.surfaces.map((surface, index) => {
               const isObject = surface.type === "OBJECT";
               const isImage = surface.type === "IMAGE";
-              const label = isObject ? "OBJ" : isImage ? "IMG" : String(index);
+              const isParaxial = surface.type === "PARAXIAL";
+              const isFixed = isObject || isImage;
+              // Zemax names the ends of the system and the stop rather than
+              // numbering them; everything else is its surface number.
+              const label = isObject
+                ? "OBJ"
+                : isImage
+                  ? "IMA"
+                  : surface.isStop
+                    ? "STO"
+                    : String(index);
 
               return (
                 <tr key={surface.id}>
-                  <td className="row-label">{label}</td>
+                  <td className="row-label" title={`Surface ${index}`}>
+                    {label}
+                  </td>
+
+                  <td>
+                    <SurfaceTypeCell
+                      type={surface.type}
+                      fixed={isFixed}
+                      ariaLabel={`Type of surface ${label}`}
+                      onChange={(next) =>
+                        apply(setSurfaceType(system, index, next))
+                      }
+                    />
+                  </td>
 
                   <td className="text-column">
                     <TextCell
@@ -95,20 +122,41 @@ export function LensDataEditor({
                     />
                   </td>
 
+                  {/* Radius and focal length are the two ways a surface can carry
+                      power, and no surface has both; the inapplicable one is blank. */}
                   <td>
-                    <NumericCell
-                      value={surface.radius}
-                      ariaLabel={`Radius of surface ${label}`}
-                      title="Radius of curvature. 0 or blank means flat."
-                      disabled={isObject || isImage}
-                      onCommit={(next) =>
-                        apply(
-                          updateSurface(system, index, {
-                            radius: normalizeRadius(next),
-                          }),
-                        )
-                      }
-                    />
+                    {isParaxial ? (
+                      <EmptyCell reason="A paraxial surface is a plane; its power is its focal length." />
+                    ) : (
+                      <NumericCell
+                        value={surface.radius}
+                        ariaLabel={`Radius of surface ${label}`}
+                        title="Radius of curvature. 0 or blank means flat."
+                        disabled={isFixed}
+                        onCommit={(next) =>
+                          apply(
+                            updateSurface(system, index, {
+                              radius: normalizeRadius(next),
+                            }),
+                          )
+                        }
+                      />
+                    )}
+                  </td>
+
+                  <td>
+                    {isParaxial ? (
+                      <NumericCell
+                        value={surface.focalLength ?? 0}
+                        ariaLabel={`Focal length of surface ${label}`}
+                        title="Focal length of the ideal thin lens. Negative diverges."
+                        onCommit={(next) =>
+                          apply(updateSurface(system, index, { focalLength: next }))
+                        }
+                      />
+                    ) : (
+                      <EmptyCell reason="Only a paraxial surface has a focal length." />
+                    )}
                   </td>
 
                   <td>
@@ -153,7 +201,7 @@ export function LensDataEditor({
                       type="radio"
                       name="stop-surface"
                       checked={surface.isStop}
-                      disabled={surface.type !== "STANDARD"}
+                      disabled={isFixed}
                       aria-label={`Make surface ${label} the aperture stop`}
                       onChange={() => apply(setStop(system, index))}
                     />
@@ -172,7 +220,7 @@ export function LensDataEditor({
                       className="subtle"
                       title="Delete this surface"
                       aria-label={`Delete surface ${label}`}
-                      disabled={surface.type !== "STANDARD"}
+                      disabled={isFixed}
                       onClick={() => apply(removeSurface(system, index))}
                     >
                       ×
@@ -191,6 +239,56 @@ export function LensDataEditor({
         </div>
       ) : null}
     </Panel>
+  );
+}
+
+/** The types a user may pick between, in the order they appear in the dropdown. */
+const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = ["STANDARD", "PARAXIAL"];
+
+/**
+ * Surface type. OBJECT and IMAGE are fixed by their position in the system, so
+ * they are shown as text rather than offered as choices that would be refused.
+ */
+function SurfaceTypeCell({
+  type,
+  fixed,
+  ariaLabel,
+  onChange,
+}: {
+  type: string;
+  fixed: boolean;
+  ariaLabel: string;
+  onChange: (type: EditableSurfaceType) => void;
+}) {
+  if (fixed) {
+    return (
+      <span className="fixed-type" title="The ends of the system are fixed by position.">
+        {type}
+      </span>
+    );
+  }
+
+  return (
+    <select
+      value={type}
+      aria-label={ariaLabel}
+      onChange={(event) => onChange(event.target.value as EditableSurfaceType)}
+    >
+      {EDITABLE_SURFACE_TYPES.map((name) => (
+        <option value={name} key={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** A column that does not apply to this surface type. */
+function EmptyCell({ reason }: { reason: string }) {
+  return (
+    <span className="empty-cell" title={reason} aria-label={reason}>
+      —
+    </span>
   );
 }
 

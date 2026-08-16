@@ -73,7 +73,7 @@ function stopBeforeLens(): OpticalSystem {
   });
 }
 
-test('the model accepts exactly one stop, and only on a standard surface', () => {
+test('the model accepts exactly one stop, and only on a surface that can carry one', () => {
   const system = stopBehindLens();
   assert.equal(system.stopIndex, 3);
   assert.equal(system.surfaceAt(3).isStop, true);
@@ -81,7 +81,7 @@ test('the model accepts exactly one stop, and only on a standard surface', () =>
 
   assert.throws(
     () => new Surface({ id: 'img', type: 'IMAGE', thickness: 0, isStop: true }),
-    /Only a STANDARD surface/,
+    /Only a STANDARD or PARAXIAL surface/,
   );
   assert.throws(
     () =>

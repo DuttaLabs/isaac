@@ -184,6 +184,7 @@ export function zmxDocumentToSystem(
   const surfaces = document.surfaces.map((block, index) =>
     toSurface(block, index, document.surfaces.length, { resolve, options, warnings, glasses }),
   );
+  requireParaxialSurfacesInAir(surfaces);
   warnHeaderSettings(document, warnings);
   warnGlassSubstitutions(glasses, warnings);
   warnModelGlasses(glasses, warnings);
@@ -223,11 +224,12 @@ function toSurface(
   const { records, number } = block;
 
   const surfaceType = firstValue(records, 'TYPE')?.toUpperCase() ?? 'STANDARD';
-  if (surfaceType !== 'STANDARD') {
+  if (surfaceType !== 'STANDARD' && surfaceType !== 'PARAXIAL') {
     throw new ZmxImportError(
-      `Surface ${number} is TYPE ${surfaceType}; only STANDARD surfaces are supported so far.`,
+      `Surface ${number} is TYPE ${surfaceType}; only STANDARD and PARAXIAL surfaces are supported so far.`,
     );
   }
+  const isParaxial = surfaceType === 'PARAXIAL';
 
   const conic = numericValue(firstValue(records, 'CONI')) ?? 0;
   if (conic !== 0) {
@@ -246,14 +248,35 @@ function toSurface(
 
   const isObject = index === 0;
   const isImage = index === count - 1;
-  const type = isObject ? 'OBJECT' : isImage ? 'IMAGE' : 'STANDARD';
+  const type = isObject ? 'OBJECT' : isImage ? 'IMAGE' : isParaxial ? 'PARAXIAL' : 'STANDARD';
+
+  // A PARAXIAL object or image surface is a contradiction: those two ends of the
+  // system record rays, they do not bend them.
+  if (isParaxial && (isObject || isImage)) {
+    throw new ZmxImportError(
+      `Surface ${number} is TYPE PARAXIAL but is the ${isObject ? 'object' : 'image'} surface.`,
+    );
+  }
 
   warnUnmodelledGeometry(records, number, context.warnings);
 
   let isStop = hasRecord(records, 'STOP');
-  if (isStop && type !== 'STANDARD') {
+  if (isStop && type !== 'STANDARD' && type !== 'PARAXIAL') {
     context.warnings.push(`Surface ${number} is marked STOP but is the ${type} surface; ignoring the stop.`);
     isStop = false;
+  }
+
+  if (type === 'PARAXIAL') {
+    return new Surface({
+      id: `surf-${number}`,
+      type,
+      focalLength: readParaxialFocalLength(records, number),
+      thickness,
+      semiDiameter,
+      material: readMaterial(records, number, context),
+      isStop,
+      comment: readComment(records),
+    });
   }
 
   return new Surface({
@@ -266,6 +289,65 @@ function toSurface(
     isStop,
     comment: readComment(records),
   });
+}
+
+/**
+ * Focal length of a PARAXIAL surface, written as `PARM 1 <focal length>`.
+ *
+ * `PARM 2` is the OPD mode, which selects how the surface reports optical path;
+ * it does not move a ray, so it is left to `ignoredTokens`. Any other parameter
+ * on a paraxial surface is unverified, and is refused rather than guessed at.
+ */
+function readParaxialFocalLength(records: readonly ZmxRecord[], surfaceNumber: number): number {
+  let focalLength: number | undefined;
+  for (const record of findRecords(records, 'PARM')) {
+    const parameter = numericValue(record.values[0]);
+    if (parameter === 1) {
+      focalLength = numericValue(record.values[1]);
+    } else if (parameter !== 2) {
+      throw new ZmxImportError(
+        `Surface ${surfaceNumber} is TYPE PARAXIAL with an unrecognised PARM ${record.values[0]}; ` +
+          'only PARM 1 (focal length) and PARM 2 (OPD mode) are understood.',
+      );
+    }
+  }
+
+  if (focalLength === undefined) {
+    throw new ZmxImportError(
+      `Surface ${surfaceNumber} is TYPE PARAXIAL but carries no PARM 1 record giving its focal length.`,
+    );
+  }
+  if (!Number.isFinite(focalLength) || focalLength === 0) {
+    throw new ZmxImportError(
+      `Surface ${surfaceNumber} is TYPE PARAXIAL with a focal length of ${focalLength}, which has no meaning.`,
+    );
+  }
+  return focalLength;
+}
+
+/**
+ * Refuses a paraxial surface that does not sit in air on both sides.
+ *
+ * A paraxial surface's power is φ = 1/f, so what its focal length means in a
+ * medium of index n depends on whether the file quotes 1/φ or n'/φ. The two
+ * agree in air, which is how ideal-lens placeholders are used in practice, and
+ * the format has no specification to settle the other case — so refuse it
+ * rather than pick a convention and be silently wrong.
+ */
+function requireParaxialSurfacesInAir(surfaces: readonly Surface[]): void {
+  for (let index = 0; index < surfaces.length; index += 1) {
+    if (surfaces[index]!.type !== 'PARAXIAL') {
+      continue;
+    }
+    const before = surfaces[index - 1]!.material;
+    const after = surfaces[index]!.material;
+    if (before !== AIR || after !== AIR) {
+      throw new ZmxImportError(
+        `Surface ${index} is TYPE PARAXIAL but is immersed in glass (${before.name} → ${after.name}); ` +
+          'the meaning of its focal length outside air is not established for this format.',
+      );
+    }
+  }
 }
 
 /**
@@ -631,10 +713,17 @@ function collectIgnoredTokens(document: ZmxDocument): string[] {
     }
   }
   for (const block of document.surfaces) {
+    // PARM carries the focal length on a paraxial surface and something
+    // unverified everywhere else, so it counts as handled only there.
+    const isParaxial = firstValue(block.records, 'TYPE')?.toUpperCase() === 'PARAXIAL';
     for (const record of block.records) {
-      if (!HANDLED_SURFACE_TOKENS.has(record.token) && record.token !== 'COMM') {
-        ignored.add(record.token);
+      if (record.token === 'COMM' || HANDLED_SURFACE_TOKENS.has(record.token)) {
+        continue;
       }
+      if (record.token === 'PARM' && isParaxial) {
+        continue;
+      }
+      ignored.add(record.token);
     }
   }
   for (const record of document.trailer) {

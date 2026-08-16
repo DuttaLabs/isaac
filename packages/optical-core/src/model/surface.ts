@@ -3,10 +3,13 @@ import { AIR, type Material } from "./material.ts";
 /**
  * Surface types understood by the sequential tracer.
  *
- * Only the three foundational types exist for now; ASPHERIC, COORDINATE_BREAK,
- * MIRROR, and other Zemax-compatible types are planned but intentionally absent.
+ * `PARAXIAL` is an ideal thin lens: a plane that bends rays by the paraxial law
+ * alone, with no glass and no aberration. Designers use it as a placeholder for
+ * a lens group not yet designed, so it is a modelling element rather than a
+ * manufacturable surface. ASPHERIC, COORDINATE_BREAK, MIRROR, and other
+ * Zemax-compatible types are planned but intentionally absent.
  */
-export type SurfaceType = "OBJECT" | "STANDARD" | "IMAGE";
+export type SurfaceType = "OBJECT" | "STANDARD" | "PARAXIAL" | "IMAGE";
 
 export interface SurfaceConfig {
   /** Stable identifier (e.g. a UUID from the editor). */
@@ -21,6 +24,12 @@ export interface SurfaceConfig {
   thickness: number;
   /** Clear-aperture semi-diameter. Rays beyond this radius are blocked. */
   semiDiameter?: number;
+  /**
+   * Focal length of the ideal thin lens, for `PARAXIAL` surfaces only, where it
+   * replaces the radius as the source of the surface's power (φ = 1/focalLength).
+   * Required on a `PARAXIAL` surface and rejected on every other type.
+   */
+  focalLength?: number;
   /** Medium immediately after this surface (toward +Z). Defaults to AIR. */
   material?: Material;
   /**
@@ -48,6 +57,8 @@ export class Surface {
   public readonly radius: number;
   public readonly thickness: number;
   public readonly semiDiameter: number;
+  /** Ideal-lens focal length; defined only on a `PARAXIAL` surface. */
+  public readonly focalLength: number | undefined;
   /** Medium immediately after the surface (toward +Z). */
   public readonly material: Material;
   public readonly reflective: boolean;
@@ -74,16 +85,36 @@ export class Surface {
       throw new RangeError("semiDiameter must be a positive number (or Infinity for no aperture).");
     }
 
+    // A PARAXIAL surface takes its power from focalLength, so a radius would be
+    // a second, contradictory source of the same thing; reject rather than ignore.
+    if (config.type === "PARAXIAL") {
+      if (config.focalLength === undefined) {
+        throw new TypeError("A PARAXIAL surface requires a focalLength.");
+      }
+      if (!Number.isFinite(config.focalLength) || config.focalLength === 0) {
+        throw new RangeError("PARAXIAL focalLength must be finite and non-zero.");
+      }
+      if (Number.isFinite(radius)) {
+        throw new RangeError("A PARAXIAL surface is a plane; its power comes from focalLength, not a radius.");
+      }
+      if (config.reflective) {
+        throw new RangeError("A PARAXIAL surface cannot be reflective.");
+      }
+    } else if (config.focalLength !== undefined) {
+      throw new RangeError("focalLength is only meaningful on a PARAXIAL surface.");
+    }
+
     this.id = config.id;
     this.type = config.type;
     this.radius = radius;
+    this.focalLength = config.focalLength;
     this.thickness = config.thickness;
     this.semiDiameter = semiDiameter;
     this.material = config.material ?? AIR;
     this.reflective = config.reflective ?? false;
     this.isStop = config.isStop ?? false;
-    if (this.isStop && config.type !== 'STANDARD') {
-      throw new RangeError('Only a STANDARD surface can be the aperture stop.');
+    if (this.isStop && config.type !== 'STANDARD' && config.type !== 'PARAXIAL') {
+      throw new RangeError('Only a STANDARD or PARAXIAL surface can be the aperture stop.');
     }
     this.comment = config.comment;
   }
@@ -96,6 +127,7 @@ export class Surface {
       radius: changes.radius ?? this.radius,
       thickness: changes.thickness ?? this.thickness,
       semiDiameter: changes.semiDiameter ?? this.semiDiameter,
+      focalLength: changes.focalLength ?? this.focalLength,
       material: changes.material ?? this.material,
       reflective: changes.reflective ?? this.reflective,
       isStop: changes.isStop ?? this.isStop,

@@ -13,6 +13,8 @@ export function updateSurface(
   index: number,
   changes: {
     radius?: number;
+    /** Ideal-lens focal length; only a PARAXIAL surface accepts one. */
+    focalLength?: number;
     thickness?: number;
     semiDiameter?: number;
     material?: Material;
@@ -21,6 +23,54 @@ export function updateSurface(
   },
 ): Result<OpticalSystem> {
   return attempt(() => system.withSurfaceAt(index, system.surfaceAt(index).with(changes)));
+}
+
+/** Focal length a surface starts with when it is first made paraxial. */
+export const DEFAULT_PARAXIAL_FOCAL_LENGTH = 100;
+
+/** The surface types a user can choose between; OBJECT and IMAGE are fixed by position. */
+export type EditableSurfaceType = 'STANDARD' | 'PARAXIAL';
+
+/**
+ * Switches a surface between STANDARD and PARAXIAL.
+ *
+ * This rebuilds the surface rather than going through `.with()`, because the two
+ * types carry mutually exclusive geometry: a STANDARD surface has a radius and
+ * no focal length, a PARAXIAL surface the reverse, and `.with()` can only add
+ * fields, never drop them. Going paraxial therefore discards the radius, and
+ * coming back leaves a plane — there is no index-independent way to turn one
+ * into the other, so neither is silently invented.
+ */
+export function setSurfaceType(
+  system: OpticalSystem,
+  index: number,
+  type: EditableSurfaceType,
+): Result<OpticalSystem> {
+  return attempt(() => {
+    const surface = system.surfaceAt(index);
+    if (surface.type === 'OBJECT' || surface.type === 'IMAGE') {
+      throw new RangeError('The object and image surfaces cannot change type.');
+    }
+    if (surface.type === type) {
+      return system;
+    }
+
+    return system.withSurfaceAt(
+      index,
+      new Surface({
+        id: surface.id,
+        type,
+        thickness: surface.thickness,
+        semiDiameter: surface.semiDiameter,
+        material: surface.material,
+        isStop: surface.isStop,
+        comment: surface.comment,
+        ...(type === 'PARAXIAL'
+          ? { focalLength: DEFAULT_PARAXIAL_FOCAL_LENGTH }
+          : { radius: Infinity }),
+      }),
+    );
+  });
 }
 
 /** Moves the stop to one surface, clearing it everywhere else. */
@@ -53,7 +103,7 @@ export function insertSurfaceAfter(system: OpticalSystem, index: number): Result
 export function removeSurface(system: OpticalSystem, index: number): Result<OpticalSystem> {
   return attempt(() => {
     const surface = system.surfaceAt(index);
-    if (surface.type !== 'STANDARD') {
+    if (surface.type === 'OBJECT' || surface.type === 'IMAGE') {
       throw new RangeError('The object and image surfaces cannot be removed.');
     }
     return system.with({ surfaces: system.surfaces.filter((_, i) => i !== index) });

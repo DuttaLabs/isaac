@@ -41,6 +41,7 @@ export type {
   RayTraceResult,
 } from './tracing/trace.ts';
 export {
+  surfacePower,
   paraxialTrace,
   paraxialProperties,
   withImageAtParaxialFocus,

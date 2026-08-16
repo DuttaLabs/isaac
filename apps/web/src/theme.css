@@ -391,7 +391,7 @@ input.text-input {
 .table-scroll > table {
   /* Enough for every column to show its value untruncated; the container
      scrolls horizontally only if the pane is somehow narrower than this. */
-  min-width: 620px;
+  min-width: 820px;
 }
 
 .row-label {
@@ -399,6 +399,28 @@ input.text-input {
   color: var(--text-secondary);
   font-family: system-ui, sans-serif;
   white-space: nowrap;
+}
+
+/* Surface type is a fixed vocabulary, so its column need only fit the longest
+   word rather than stretch like the free-text and numeric cells. */
+td select {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.fixed-type {
+  display: inline-block;
+  padding: 0 4px;
+  color: var(--text-muted);
+}
+
+/* A column that does not apply to this surface type: present, so the grid stays
+   aligned, but plainly not an empty value waiting to be filled in. */
+.empty-cell {
+  display: inline-block;
+  padding: 0 8px;
+  color: var(--text-muted);
 }
 
 .stop-cell {

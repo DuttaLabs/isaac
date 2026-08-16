@@ -231,7 +231,7 @@ test('geometry the core cannot model is rejected rather than approximated', () =
   );
   assert.throws(
     () => importDoublet(DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE EVENASPH\n  CURV 1.07')),
-    /only STANDARD surfaces/,
+    /only STANDARD and PARAXIAL surfaces/,
   );
   // A conic constant would change the surface shape, so it cannot be ignored.
   assert.throws(

@@ -1,7 +1,29 @@
 import type { OpticalSystem } from '../model/optical-system.ts';
+import type { Surface } from '../model/surface.ts';
 
 /** Slopes below this are treated as parallel to the axis (afocal / telecentric). */
 const PARAXIAL_EPSILON = 1e-14;
+
+/**
+ * Optical power of a surface, the φ in `n'u' = nu − yφ`.
+ *
+ * A refracting surface gets it from its curvature and the media it separates; a
+ * `PARAXIAL` surface is given it directly as φ = 1/f. The focal length is read
+ * as the reciprocal of the power, so a paraxial surface between media of unequal
+ * index focuses at `n'·f` rather than `f` — the two readings agree whenever the
+ * surface sits in air, which is how ideal-lens placeholders are almost always used.
+ *
+ * Power is unchanged by reversing the system: swapping the media and flipping
+ * the curvature leaves `(n' − n)c` alone, and a thin lens has the same power
+ * either way round. Pass the media in *forward* order even when tracing
+ * backwards.
+ */
+export function surfacePower(surface: Surface, indexBefore: number, indexAfter: number): number {
+  if (surface.type === 'PARAXIAL') {
+    return 1 / surface.focalLength!;
+  }
+  return (indexAfter - indexBefore) * surface.curvature;
+}
 
 /**
  * State of a paraxial ray at one surface. Angles are paraxial slopes (dy/dz),
@@ -76,7 +98,7 @@ export function paraxialTrace(
     requireNoMirror(surface.reflective);
     const indexBefore = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
     const indexAfter = surface.material.indexAt(wavelengthNm);
-    const power = (indexAfter - indexBefore) * surface.curvature;
+    const power = surfacePower(surface, indexBefore, indexAfter);
 
     // Paraxial refraction: n'u' = nu − yφ.
     const angleAfter = (indexBefore * angle - height * power) / indexAfter;
@@ -212,10 +234,10 @@ export function entrancePupil(
     axial = { height: axial.height + axial.slope * gap, slope: axial.slope };
     edge = { height: edge.height + edge.slope * gap, slope: edge.slope };
 
-    // Reversed refraction: media swap and the curvature changes sign.
+    // Reversed refraction: the media swap, and the power is direction-independent.
     const indexBefore = surface.material.indexAt(wavelengthNm);
     const indexAfter = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
-    const power = (indexAfter - indexBefore) * -surface.curvature;
+    const power = surfacePower(surface, indexAfter, indexBefore);
     axial.slope = (indexBefore * axial.slope - axial.height * power) / indexAfter;
     edge.slope = (indexBefore * edge.slope - edge.height * power) / indexAfter;
   }
@@ -255,7 +277,7 @@ export function exitPupil(
 
     const indexBefore = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
     const indexAfter = surface.material.indexAt(wavelengthNm);
-    const power = (indexAfter - indexBefore) * surface.curvature;
+    const power = surfacePower(surface, indexBefore, indexAfter);
     axial.slope = (indexBefore * axial.slope - axial.height * power) / indexAfter;
     edge.slope = (indexBefore * edge.slope - edge.height * power) / indexAfter;
   }
@@ -319,7 +341,7 @@ function computeFrontFocalDistance(system: OpticalSystem, wavelengthNm: number):
     // Travelling backwards: the medium after the surface is the one we come from.
     const indexBefore = surface.material.indexAt(wavelengthNm);
     const indexAfter = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
-    const power = (indexAfter - indexBefore) * -surface.curvature;
+    const power = surfacePower(surface, indexAfter, indexBefore);
 
     angle = (indexBefore * angle - height * power) / indexAfter;
     if (index > 1) {

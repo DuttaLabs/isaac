@@ -9,6 +9,7 @@
     "apps/*"
   ],
   "scripts": {
+    "dev": "npm run dev --workspace @isaac/web",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

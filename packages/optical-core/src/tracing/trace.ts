@@ -5,9 +5,10 @@ import type { OpticalSystem } from '../model/optical-system.ts';
 import { Ray, type RayStatus } from '../model/ray.ts';
 import type { Surface } from '../model/surface.ts';
 import { angleOfIncidence, reflect, refract } from './optics.ts';
+import { surfacePower } from './paraxial.ts';
 
 /** What happened to the ray at one surface. */
-export type InteractionKind = 'REFRACT' | 'REFLECT' | 'RECORD';
+export type InteractionKind = 'REFRACT' | 'REFLECT' | 'RECORD' | 'PARAXIAL';
 
 /** A single ray–surface interaction, carrying everything a visualizer needs. */
 export interface Intersection {
@@ -85,7 +86,7 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
     const incoming = ray.direction;
     const aoi = angleOfIncidence(incoming, hit.normal);
 
-    const outcome = interact(surface, incoming, hit.normal, indexBefore, wavelengthNm);
+    const outcome = interact(surface, incoming, hit.normal, indexBefore, wavelengthNm, hit.point);
     if (outcome.status === 'TIR') {
       intersections.push({
         surfaceIndex: index,
@@ -144,13 +145,14 @@ interface Interaction {
   kind: InteractionKind;
 }
 
-/** Decides what the ray does at a surface: record, reflect, or refract. */
+/** Decides what the ray does at a surface: record, bend ideally, reflect, or refract. */
 function interact(
   surface: Surface,
   incoming: Vector3,
   normal: Vector3,
   indexBefore: number,
   wavelengthNm: number,
+  localPoint: Point3,
 ): Interaction {
   if (surface.type === 'IMAGE') {
     return {
@@ -159,6 +161,17 @@ function interact(
       medium: surface.material.name,
       indexAfter: indexBefore,
       kind: 'RECORD',
+    };
+  }
+
+  if (surface.type === 'PARAXIAL') {
+    const indexAfter = surface.material.indexAt(wavelengthNm);
+    return {
+      status: 'OK',
+      direction: bendIdeally(surface, incoming, localPoint, indexBefore, indexAfter),
+      medium: surface.material.name,
+      indexAfter,
+      kind: 'PARAXIAL',
     };
   }
 
@@ -184,6 +197,37 @@ function interact(
     indexAfter,
     kind: 'REFRACT',
   };
+}
+
+/**
+ * Bends a ray at an ideal thin lens: `n'u' = nu − yφ` applied to the ray's two
+ * transverse slopes, about the surface's local origin.
+ *
+ * Working in slopes (dx/dz, dy/dz) rather than direction cosines is what makes
+ * the surface *ideal*. A collimated bundle arriving at slope u leaves at slope
+ * `u − xφ` from height x, and at distance f = 1/φ every one of those rays has
+ * reached height `u·f` whatever x was — a perfect point image at any aperture.
+ * That is the whole purpose of a placeholder lens: contribute first-order power
+ * and no aberration. A direction-cosine formulation would instead introduce a
+ * spherical-aberration-like residual that is an artefact of the formula rather
+ * than a property of the design.
+ */
+function bendIdeally(
+  surface: Surface,
+  incoming: Vector3,
+  localPoint: Point3,
+  indexBefore: number,
+  indexAfter: number,
+): Vector3 {
+  const power = surfacePower(surface, indexBefore, indexAfter);
+  // Slopes are unchanged by the ray's direction of travel; only the axial
+  // component's sign records which way it is going, so re-attach it at the end.
+  const slopeX = incoming.x / incoming.z;
+  const slopeY = incoming.y / incoming.z;
+  const outSlopeX = (indexBefore * slopeX - localPoint.x * power) / indexAfter;
+  const outSlopeY = (indexBefore * slopeY - localPoint.y * power) / indexAfter;
+  const direction = new Vector3(outSlopeX, outSlopeY, 1).normalized();
+  return incoming.z < 0 ? direction.scale(-1) : direction;
 }
 
 function finish(

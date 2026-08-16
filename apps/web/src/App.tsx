@@ -1,25 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { OpticalSystem } from '@isaac/optical-core';
-import { importZmx } from '@isaac/zemax-io';
-import { computeFirstOrder, computeLayoutTraces, computeRayFan, computeSpot } from './lib/analysis.ts';
-import { GLASS_CATALOG, defaultSystem } from './lib/default-system.ts';
-import { formatMicrons } from './lib/format.ts';
-import { describeError } from './lib/result.ts';
-import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import { ErrorNote, Panel } from './components/Panel.tsx';
-import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
-import { LayoutView } from './components/LayoutView.tsx';
-import { LensDataEditor } from './components/LensDataEditor.tsx';
-import { RayFanPlot } from './components/RayFanPlot.tsx';
-import { SourcePanel } from './components/SourcePanel.tsx';
-import { SpotDiagram } from './components/SpotDiagram.tsx';
-import { WavelengthLegend } from './components/WavelengthLegend.tsx';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { OpticalSystem } from "@isaac/optical-core";
+import { importZmx } from "@isaac/zemax-io";
+import {
+  computeFirstOrder,
+  computeLayoutTraces,
+  computeRayFan,
+  computeSpot,
+} from "./lib/analysis.ts";
+import { GLASS_CATALOG, defaultSystem } from "./lib/default-system.ts";
+import { formatMicrons } from "./lib/format.ts";
+import { describeError } from "./lib/result.ts";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
+import { ErrorNote, Panel } from "./components/Panel.tsx";
+import { FirstOrderPanel } from "./components/FirstOrderPanel.tsx";
+import { LayoutView } from "./components/LayoutView.tsx";
+import { LensDataEditor } from "./components/LensDataEditor.tsx";
+import { RayFanPlot } from "./components/RayFanPlot.tsx";
+import { SourcePanel } from "./components/SourcePanel.tsx";
+import { SpotDiagram } from "./components/SpotDiagram.tsx";
+import { WavelengthLegend } from "./components/WavelengthLegend.tsx";
 
 const HISTORY_LIMIT = 50;
-type Theme = 'system' | 'light' | 'dark';
+type Theme = "system" | "light" | "dark";
 
 interface Notice {
-  kind: 'error' | 'info';
+  kind: "error" | "info";
   text: string;
   /** Things the file said that the reader could not honour exactly. */
   warnings?: readonly string[];
@@ -33,7 +38,7 @@ interface Notice {
 
 export function App() {
   const [history, setHistory] = useState(() => ({ stack: [defaultSystem()], index: 0 }));
-  const [theme, setTheme] = useState<Theme>('system');
+  const [theme, setTheme] = useState<Theme>("light");
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [allWavelengths, setAllWavelengths] = useState(false);
@@ -52,10 +57,10 @@ export function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === 'system') {
-      root.removeAttribute('data-theme');
+    if (theme === "system") {
+      root.removeAttribute("data-theme");
     } else {
-      root.setAttribute('data-theme', theme);
+      root.setAttribute("data-theme", theme);
     }
   }, [theme]);
 
@@ -66,7 +71,10 @@ export function App() {
   const pupilRadius = firstOrder.ok ? firstOrder.value.entrancePupilRadius : 10;
 
   const wavelengthIndices = useMemo(
-    () => (allWavelengths ? system.wavelengthsNm.map((_, index) => index) : [system.primaryWavelengthIndex]),
+    () =>
+      allWavelengths
+        ? system.wavelengthsNm.map((_, index) => index)
+        : [system.primaryWavelengthIndex],
     [allWavelengths, system],
   );
 
@@ -85,7 +93,7 @@ export function App() {
       setFieldIndex(0);
       const { system: loaded, warnings, ignoredTokens } = result;
       setNotice({
-        kind: 'info',
+        kind: "info",
         text:
           `Loaded ${file.name} — ${loaded.surfaces.length} surfaces, ${loaded.fields.length} fields, ` +
           `${loaded.wavelengthsNm.length} wavelengths.`,
@@ -93,14 +101,14 @@ export function App() {
         ignoredTokens,
       });
     } catch (error) {
-      setNotice({ kind: 'error', text: `${file.name}: ${describeError(error)}` });
+      setNotice({ kind: "error", text: `${file.name}: ${describeError(error)}` });
     }
   };
 
   const fieldLabel = (index: number): string => {
     const field = system.fields[index];
     if (!field) {
-      return 'on axis';
+      return "on axis";
     }
     return field.angleDeg !== undefined
       ? `${field.angleDeg}°`
@@ -126,15 +134,21 @@ export function App() {
               if (file) {
                 void loadFile(file);
               }
-              event.target.value = '';
+              event.target.value = "";
             }}
           />
         </label>
 
-        <button onClick={() => setHistory((h) => ({ ...h, index: h.index - 1 }))} disabled={!canUndo}>
+        <button
+          onClick={() => setHistory((h) => ({ ...h, index: h.index - 1 }))}
+          disabled={!canUndo}
+        >
           Undo
         </button>
-        <button onClick={() => setHistory((h) => ({ ...h, index: h.index + 1 }))} disabled={!canRedo}>
+        <button
+          onClick={() => setHistory((h) => ({ ...h, index: h.index + 1 }))}
+          disabled={!canRedo}
+        >
           Redo
         </button>
         <button
@@ -146,7 +160,9 @@ export function App() {
           Reset
         </button>
         <button
-          onClick={() => setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')}
+          onClick={() =>
+            setTheme(theme === "system" ? "light" : theme === "light" ? "dark" : "system")
+          }
           title="Cycle theme"
         >
           Theme: {theme}
@@ -154,13 +170,13 @@ export function App() {
       </header>
 
       {notice ? (
-        <div style={{ padding: '10px 12px 0' }}>
-          {notice.kind === 'error' ? (
+        <div style={{ padding: "10px 12px 0" }}>
+          {notice.kind === "error" ? (
             <ErrorNote message={notice.text} />
           ) : (
             <div className="hint">
               <p style={{ margin: 0 }}>
-                {notice.text}{' '}
+                {notice.text}{" "}
                 <button className="subtle" onClick={() => setNotice(undefined)}>
                   dismiss
                 </button>
@@ -175,10 +191,10 @@ export function App() {
               {notice.ignoredTokens && notice.ignoredTokens.length > 0 ? (
                 <details className="notice-details">
                   <summary>
-                    {notice.ignoredTokens.length} record types outside the optical prescription were not
-                    imported
+                    {notice.ignoredTokens.length} record types outside the optical prescription were
+                    not imported
                   </summary>
-                  <p style={{ margin: '4px 0 0' }}>{notice.ignoredTokens.join(', ')}</p>
+                  <p style={{ margin: "4px 0 0" }}>{notice.ignoredTokens.join(", ")}</p>
                 </details>
               ) : null}
             </div>
@@ -283,10 +299,10 @@ export function App() {
                   {spot.ok ? (
                     <>
                       <SpotDiagram data={spot.value} title={`Spot at ${fieldLabel(activeField)}`} />
-                      <p className="hint" style={{ margin: '4px 0 0' }}>
-                        RMS radius {formatMicrons(spot.value.rmsRadius)} · max{' '}
+                      <p className="hint" style={{ margin: "4px 0 0" }}>
+                        RMS radius {formatMicrons(spot.value.rmsRadius)} · max{" "}
                         {formatMicrons(spot.value.maxRadius)} · {spot.value.traced} rays
-                        {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ''}
+                        {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ""}
                       </p>
                     </>
                   ) : (

@@ -1,11 +1,13 @@
 /**
- * Formats a length for an editor cell. Infinity is shown as the symbol: it is
- * what a lens table conventionally prints, and spelling it out costs a column
- * more width than the number it replaces.
+ * Formats a length for an editor cell. Infinity prints as `Inf` — the word a
+ * user would type, in the same ASCII the rest of the column is in, rather than
+ * a symbol that needs a character palette to enter.
  */
+export const INFINITY_TEXT = 'Inf';
+
 export function formatLength(value: number, digits = 4): string {
   if (!Number.isFinite(value)) {
-    return value > 0 ? '∞' : '−∞';
+    return value > 0 ? INFINITY_TEXT : `-${INFINITY_TEXT}`;
   }
   if (value === 0) {
     return '0';
@@ -19,7 +21,9 @@ export function parseLength(text: string, fallback: number): number {
   if (trimmed === '') {
     return fallback;
   }
-  // Accept the symbol we print, the word, and the minus sign we render.
+  // Accept `Inf` as printed, the full word, and the symbol — still taken even
+  // though it is no longer produced, since it costs nothing and a value pasted
+  // from elsewhere may well use it. Either minus sign is allowed.
   if (/^[-−]?(inf(inity)?|∞)$/i.test(trimmed)) {
     return /^[-−]/.test(trimmed) ? -Infinity : Infinity;
   }
@@ -38,7 +42,7 @@ export function formatOptional(value: number | undefined, digits = 4, suffix = '
     return '—';
   }
   if (!Number.isFinite(value)) {
-    return value > 0 ? '∞' : '−∞';
+    return value > 0 ? INFINITY_TEXT : `-${INFINITY_TEXT}`;
   }
   return `${Number(value.toFixed(digits))}${suffix}`;
 }

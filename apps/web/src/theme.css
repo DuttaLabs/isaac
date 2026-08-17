@@ -444,7 +444,14 @@ input.text-input {
 .table-scroll > table {
   /* Enough for every column to show its value untruncated; the container
      scrolls horizontally only if the pane is somehow narrower than this. */
-  min-width: 820px;
+  min-width: 960px;
+}
+
+/* A compound value — a model glass is "nd / Vd", optionally with ΔPg,F — so it
+   is monospaced like a number but reads left to right like text. */
+input.parameters {
+  font-family: var(--mono);
+  min-width: 116px;
 }
 
 .row-label {

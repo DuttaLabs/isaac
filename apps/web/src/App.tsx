@@ -7,7 +7,8 @@ import {
   computeRayFan,
   computeSpot,
 } from './lib/analysis.ts';
-import { GLASS_CATALOG, defaultSystem } from './lib/default-system.ts';
+import { defaultSystem } from './lib/default-system.ts';
+import { GLASS_CATALOG } from './lib/materials.ts';
 import { formatMicrons } from './lib/format.ts';
 import { describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';

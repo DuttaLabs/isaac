@@ -1,22 +1,5 @@
-import { AIR, OpticalSystem, Surface, type Material } from '@isaac/optical-core';
-import { SCHOTT } from '@isaac/glass-catalog';
-
-/** The catalog used for glass lookup, tolerant of obsolete names from old files. */
-export const GLASS_CATALOG = SCHOTT.with({ allowLegacyNames: true });
-
-/** Resolves a glass name typed in the editor; blank or `AIR` means air. */
-export function resolveGlass(name: string): Material | undefined {
-  const trimmed = name.trim();
-  if (trimmed === '' || trimmed.toUpperCase() === 'AIR') {
-    return AIR;
-  }
-  return GLASS_CATALOG.get(trimmed);
-}
-
-/** The name to show in the editor for a material. */
-export function glassName(material: Material): string {
-  return material.name === 'AIR' ? '' : material.name;
-}
+import { OpticalSystem, Surface } from '@isaac/optical-core';
+import { GLASS_CATALOG } from './materials.ts';
 
 /**
  * A 100 mm f/5 cemented doublet, so the app opens on something real rather than

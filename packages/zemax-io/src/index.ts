@@ -13,5 +13,11 @@ export type { ZmxDocument, ZmxRecord, ZmxSurfaceBlock } from './document.ts';
 export { decodeZmx, detectEncoding } from './decode.ts';
 
 // Mapping onto the optical-core model
-export { importZmx, zmxDocumentToSystem, ZmxImportError, UNKNOWN_GLASS_INDEX } from './import.ts';
+export {
+  importZmx,
+  zmxDocumentToSystem,
+  ZmxImportError,
+  UNKNOWN_GLASS_INDEX,
+  MODEL_GLASS_NAME,
+} from './import.ts';
 export type { ZmxImportOptions, ZmxImportResult, ZmxGlassReference } from './import.ts';

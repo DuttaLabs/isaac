@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import type { OpticalSystem } from '@isaac/optical-core';
-import { GLASS_CATALOG, glassName, resolveGlass } from '../lib/default-system.ts';
+import type { Material, OpticalSystem } from '@isaac/optical-core';
+import {
+  GLASS_CATALOG,
+  MODEL_GLASS_HINT,
+  MODEL_MATERIAL_LABEL,
+  materialFromText,
+  materialLabel,
+  modelGlassFromText,
+  modelGlassText,
+} from '../lib/materials.ts';
 import {
   insertSurfaceAfter,
   normalizeRadius,
@@ -18,7 +26,7 @@ import { ErrorNote, Panel } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
 
-const GLASS_LIST_ID = 'glass-names';
+const MATERIAL_LIST_ID = 'material-names';
 
 /**
  * The spreadsheet the design is actually edited in. Every cell edit produces a
@@ -151,7 +159,10 @@ export function LensDataEditor({
         </>
       }
     >
-      <datalist id={GLASS_LIST_ID}>
+      <datalist id={MATERIAL_LIST_ID}>
+        {/* MODEL leads the list because it is the one entry that is not a name
+            to look up, and the only way to reach the Model glass column. */}
+        <option value={MODEL_MATERIAL_LABEL} key={MODEL_MATERIAL_LABEL} />
         {GLASS_CATALOG.names().map((name) => (
           <option value={name} key={name} />
         ))}
@@ -183,7 +194,8 @@ export function LensDataEditor({
               <th>Radius</th>
               <th>Focal length</th>
               <th>Thickness</th>
-              <th>Glass</th>
+              <th>Material</th>
+              <th>Model glass</th>
               <th>Semi-dia</th>
               <th>Stop</th>
               <th aria-label="Row actions" />
@@ -195,6 +207,7 @@ export function LensDataEditor({
               const isImage = surface.type === 'IMAGE';
               const isParaxial = surface.type === 'PARAXIAL';
               const isFixed = isObject || isImage;
+              const modelParameters = modelGlassText(surface.material);
               // Zemax names the ends of the system and the stop rather than
               // numbering them; everything else is its surface number.
               const label = isObject
@@ -298,11 +311,27 @@ export function LensDataEditor({
                   </td>
 
                   <td>
-                    <GlassCell
-                      surfaceName={glassName(surface.material)}
+                    <MaterialCell
+                      material={surface.material}
+                      ariaLabel={`Material after surface ${label}`}
                       disabled={isImage}
                       onCommit={(material) => apply(updateSurface(system, index, { material }))}
                     />
+                  </td>
+
+                  {/* The parameters of a glass given by numbers rather than by
+                      name; blank for air and for anything in the catalog. */}
+                  <td>
+                    {modelParameters === undefined ? (
+                      <EmptyCell reason="Set the material to MODEL to give a glass by index and Abbe number." />
+                    ) : (
+                      <ModelGlassCell
+                        text={modelParameters}
+                        ariaLabel={`Model glass parameters of surface ${label}`}
+                        disabled={isImage}
+                        onCommit={(material) => apply(updateSurface(system, index, { material }))}
+                      />
+                    )}
                   </td>
 
                   <td>
@@ -422,43 +451,118 @@ function EmptyCell({ reason }: { reason: string }) {
   );
 }
 
-/** Glass name entry, backed by the catalog and validated as you leave the cell. */
-function GlassCell({
-  surfaceName,
+/**
+ * The medium after a surface: a catalog name, blank for air, or MODEL for a
+ * glass given by its numbers, which the Model glass column then carries.
+ * Validated as you type and committed on the way out, so a name that is not a
+ * glass is shown as wrong rather than applied.
+ */
+function MaterialCell({
+  material,
+  ariaLabel,
   disabled,
   onCommit,
 }: {
-  surfaceName: string;
+  material: Material;
+  ariaLabel: string;
   disabled: boolean;
-  onCommit: (material: NonNullable<ReturnType<typeof resolveGlass>>) => void;
+  onCommit: (material: Material) => void;
 }) {
-  const [draft, setDraft] = useState(surfaceName);
+  const label = materialLabel(material);
+  const [draft, setDraft] = useState(label);
   const [editing, setEditing] = useState(false);
-  const shown = editing ? draft : surfaceName;
-  const resolved = resolveGlass(shown);
+  const shown = editing ? draft : label;
+  const resolved = materialFromText(shown, material);
 
   return (
     <input
-      list={GLASS_LIST_ID}
+      list={MATERIAL_LIST_ID}
       value={shown}
       disabled={disabled}
       placeholder="air"
-      aria-label="Glass"
+      aria-label={ariaLabel}
       className={resolved ? undefined : 'invalid'}
-      title={resolved ? undefined : `"${shown}" is not in the catalog`}
+      title={
+        resolved
+          ? `A catalog glass name, blank for air, or ${MODEL_MATERIAL_LABEL} for a glass given by index and Abbe number.`
+          : `"${shown.trim()}" is not in the catalog`
+      }
       onChange={(event) => {
         setEditing(true);
         setDraft(event.target.value);
       }}
       onFocus={() => {
-        setDraft(surfaceName);
+        setDraft(label);
         setEditing(true);
       }}
       onBlur={() => {
         setEditing(false);
-        const material = resolveGlass(draft);
-        if (material && material.name !== surfaceName) {
-          onCommit(material);
+        const next = materialFromText(draft, material);
+        // Compared by identity: MODEL over a model glass returns the same glass,
+        // and re-committing it would put an identical design on the undo stack.
+        if (next && next !== material) {
+          onCommit(next);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.currentTarget.blur();
+        } else if (event.key === 'Escape') {
+          setEditing(false);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/**
+ * The parameters of a model glass — `nd / Vd`, and ΔPg,F when it has one. One
+ * cell rather than three columns, because the three numbers are read and quoted
+ * together, and two of them are blank on most rows of a real design.
+ */
+function ModelGlassCell({
+  text,
+  ariaLabel,
+  disabled,
+  onCommit,
+}: {
+  text: string;
+  ariaLabel: string;
+  disabled: boolean;
+  onCommit: (material: Material) => void;
+}) {
+  const [draft, setDraft] = useState(text);
+  const [editing, setEditing] = useState(false);
+  const shown = editing ? draft : text;
+  const parsed = modelGlassFromText(shown);
+
+  return (
+    <input
+      className={parsed.ok ? 'parameters' : 'parameters invalid'}
+      value={shown}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={parsed.ok ? MODEL_GLASS_HINT : parsed.error}
+      onChange={(event) => {
+        setEditing(true);
+        setDraft(event.target.value);
+      }}
+      onFocus={() => {
+        setDraft(text);
+        setEditing(true);
+      }}
+      onBlur={() => {
+        setEditing(false);
+        // On the text, not the material: parsing the unchanged cell builds an
+        // equal-but-distinct glass, which would re-render the whole design and
+        // push an undo step for a cell the user only passed through.
+        if (draft.trim() === text.trim()) {
+          return;
+        }
+        const material = modelGlassFromText(draft);
+        if (material.ok) {
+          onCommit(material.value);
         }
       }}
       onKeyDown={(event) => {

@@ -13,6 +13,7 @@ import { describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { ErrorNote, Panel } from './components/Panel.tsx';
 import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
+import { FullScreenButton } from './components/FullScreenButton.tsx';
 import { LayoutView } from './components/LayoutView.tsx';
 import { LensDataEditor } from './components/LensDataEditor.tsx';
 import { RayFanPlot } from './components/RayFanPlot.tsx';
@@ -167,6 +168,7 @@ export function App() {
         >
           Theme: {theme}
         </button>
+        <FullScreenButton onError={(text) => setNotice({ kind: 'error', text })} />
       </header>
 
       {notice ? (

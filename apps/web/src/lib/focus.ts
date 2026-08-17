@@ -33,6 +33,20 @@ export interface QuickFocusOutcome {
   previousRms: number;
   rms: number;
   evaluations: number;
+  /**
+   * Fields left out because nothing of them reaches the image at any focus. The
+   * focus is still the best one for the rest, but the user should be told which
+   * fields it does not speak for.
+   */
+  droppedFields: readonly number[];
+}
+
+/** What one evaluation of the merit saw. */
+export interface SpotMerit {
+  /** RMS spot radius over the fields that produced an image, in system units. */
+  rms: number;
+  /** Fields that gave nothing to measure — every ray of them lost before the image. */
+  droppedFields: number[];
 }
 
 const DEFAULT_GRID_COUNT = 9;
@@ -57,9 +71,15 @@ export function quickFocus(
     const previousThickness = system.surfaceAt(surfaceIndex).thickness;
 
     let evaluations = 0;
+    let droppedFields: readonly number[] = [];
     const merit = (thickness: number): number => {
       evaluations += 1;
-      return spotMerit(withThickness(system, surfaceIndex, thickness), gridCount);
+      const measured = measureSpot(withThickness(system, surfaceIndex, thickness), gridCount);
+      // Which fields have no image does not depend on the thickness being
+      // searched — they are vignetted before the image — so the last evaluation's
+      // answer describes the whole search.
+      droppedFields = measured.droppedFields;
+      return measured.rms;
     };
 
     // Start from wherever the design is; fall back to the paraxial focus when
@@ -77,7 +97,8 @@ export function quickFocus(
     const found = search(merit, start, budget - evaluations);
     if (found === undefined) {
       throw new RangeError(
-        'No image could be measured at any focus: every ray misses or is blocked. Check the aperture and the field before focusing.',
+        'No image could be measured at any focus: no field has a ray that reaches the image plane. ' +
+          'Check the aperture and the fields before focusing.',
       );
     }
 
@@ -96,6 +117,7 @@ export function quickFocus(
       previousRms,
       rms: improved ? found.value : previousRms,
       evaluations,
+      droppedFields,
     };
   });
 }
@@ -131,35 +153,61 @@ function paraxialThickness(system: OpticalSystem, surfaceIndex: number): number 
  * that far out, wherever it went — which is enough to stop a blinded system from
  * beating a focused one.
  *
- * Rays lost earlier in the system are left out of that: the thickness being
- * searched sits after every other surface, so those losses are the same at every
- * focus and cannot be gamed. When nothing arrives at all the merit is `Infinity`
- * rather than `computeSpot`'s zero, which is an honest average of nothing and a
- * perfect score to a minimizer.
+ * Only rays stopped *at the image* are charged. A ray vignetted earlier is lost
+ * at every focus, so charging for it adds a constant — and not a small one. An
+ * image semi-diameter is tens of millimeters where a spot is tens of microns, so
+ * a single interior vignette swamps the measurement it was meant to protect: on
+ * one patent file the merit read 14,116 µm against a real spot of 4.0 µm, all of
+ * it penalty, and the button appeared to wreck the design it had just focused.
+ *
+ * A field that contributes nothing either way is dropped and named, rather than
+ * making the whole merit infinite and refusing a design whose other fields image
+ * perfectly well. That is safe inside a search because such a field is vignetted
+ * before the image, and nothing before the image moves when the image plane does
+ * — a field the *image* aperture is stopping is not dropped, it is charged. When
+ * no field contributes at all the merit is `Infinity` rather than
+ * `computeSpot`'s zero, which is an honest average of nothing and a perfect
+ * score to a minimizer.
  */
-export function spotMerit(system: OpticalSystem, gridCount = DEFAULT_GRID_COUNT): number {
+export function measureSpot(system: OpticalSystem, gridCount = DEFAULT_GRID_COUNT): SpotMerit {
   const imageSemiDiameter = system.surfaceAt(system.surfaces.length - 1).semiDiameter;
   const lostRadius = Number.isFinite(imageSemiDiameter) ? imageSemiDiameter : undefined;
   const fieldCount = Math.max(system.fields.length, 1);
+  const droppedFields: number[] = [];
   let sumSquares = 0;
   let counted = 0;
 
   for (let fieldIndex = 0; fieldIndex < fieldCount; fieldIndex += 1) {
     const spot = computeSpot(system, fieldIndex, gridCount);
+    // A field the engine refuses outright — one at 90° to the axis, say — is a
+    // field with no image, which is the same case as one fully vignetted.
     if (!spot.ok) {
-      return Infinity;
+      droppedFields.push(fieldIndex);
+      continue;
     }
+
+    const charged = lostRadius === undefined ? 0 : spot.value.blockedAtImage;
+    if (spot.value.traced === 0 && charged === 0) {
+      droppedFields.push(fieldIndex);
+      continue;
+    }
+
     sumSquares += spot.value.rmsRadius * spot.value.rmsRadius * spot.value.traced;
     counted += spot.value.traced;
-
     if (lostRadius !== undefined) {
-      sumSquares += spot.value.blocked * lostRadius * lostRadius;
-      counted += spot.value.blocked;
+      sumSquares += charged * lostRadius * lostRadius;
+      counted += charged;
     }
   }
+
   // Not `sumSquares > 0`: a perfect image is zero, and an ideal thin lens at
   // exact focus really does make one.
-  return counted > 0 ? Math.sqrt(sumSquares / counted) : Infinity;
+  return { rms: counted > 0 ? Math.sqrt(sumSquares / counted) : Infinity, droppedFields };
+}
+
+/** {@link measureSpot} when only the number is wanted. */
+export function spotMerit(system: OpticalSystem, gridCount = DEFAULT_GRID_COUNT): number {
+  return measureSpot(system, gridCount).rms;
 }
 
 /**
@@ -171,6 +219,12 @@ export function spotMerit(system: OpticalSystem, gridCount = DEFAULT_GRID_COUNT)
  * search that only follows the local slope can sit still on the plateau. If the
  * best sample lands on an edge, the window moves there and widens, which walks
  * the search toward focus from a bad starting guess.
+ *
+ * Widening can run out without ever bracketing a minimum, and that is not the
+ * same as failing. A design whose spot only grows with image distance has its
+ * best focus at or before the last surface, where the search is clamped: the
+ * answer is the boundary. So the best finite sample seen is kept and returned,
+ * and `undefined` now means only what it says — nothing measurable anywhere.
  */
 function search(
   merit: (x: number) => number,
@@ -180,6 +234,7 @@ function search(
   let center = start;
   let span = Math.max(Math.abs(start) * 0.02, 1e-6);
   let spent = 0;
+  let bestSeen: { x: number; value: number } | undefined;
 
   for (let widening = 0; widening < 8 && spent < budget; widening += 1) {
     const samples: { x: number; value: number }[] = [];
@@ -201,6 +256,9 @@ function search(
       span *= 4;
       continue;
     }
+    if (bestSeen === undefined || best.value < bestSeen.value) {
+      bestSeen = best;
+    }
 
     const interior = bestIndex > 0 && bestIndex < samples.length - 1;
     if (interior) {
@@ -219,7 +277,7 @@ function search(
     center = best.x;
     span *= 4;
   }
-  return undefined;
+  return bestSeen;
 }
 
 /** Golden-section search: no derivatives, and it cannot step outside its bracket. */

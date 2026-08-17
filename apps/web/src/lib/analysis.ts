@@ -157,7 +157,15 @@ export interface SpotData {
   rmsRadius: number;
   /** Distance of the furthest ray from the reference point. */
   maxRadius: number;
+  /** Rays that never reached the image, wherever they were lost. */
   blocked: number;
+  /**
+   * Rays stopped by the image surface's own aperture — the subset of
+   * {@link blocked} that moving the image plane can do something about. Rays lost
+   * earlier are lost at every focus, so telling the two apart is what lets the
+   * focus search charge for the ones it is responsible for and no others.
+   */
+  blockedAtImage: number;
   traced: number;
 }
 
@@ -178,7 +186,9 @@ export function computeSpot(
     let sumSquares = 0;
     let traced = 0;
     let blocked = 0;
+    let blockedAtImage = 0;
     let maxRadius = 0;
+    const imageIndex = system.surfaces.length - 1;
 
     const series = system.wavelengthsNm.map((wavelengthNm, wavelengthIndex) => {
       const points: { x: number; y: number }[] = [];
@@ -187,6 +197,9 @@ export function computeSpot(
       for (const result of traceRays(system, rays)) {
         if (result.status !== 'TERMINATED') {
           blocked += 1;
+          if (result.status === 'BLOCKED' && result.terminatedAtSurface === imageIndex) {
+            blockedAtImage += 1;
+          }
           continue;
         }
         const x = result.finalRay.origin.x;
@@ -204,6 +217,7 @@ export function computeSpot(
       rmsRadius: traced > 0 ? Math.sqrt(sumSquares / traced) : 0,
       maxRadius,
       blocked,
+      blockedAtImage,
       traced,
     };
   });

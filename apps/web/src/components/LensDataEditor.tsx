@@ -75,13 +75,21 @@ export function LensDataEditor({
       setError(result.error);
       return;
     }
-    const { previousRms, rms, previousThickness, thickness, surfaceIndex } = result.value;
+    const { previousRms, rms, previousThickness, thickness, surfaceIndex, droppedFields } =
+      result.value;
+    // Fields with no image at any focus are left out of the merit, so the number
+    // does not speak for them and the user has to be told which ones.
+    const caveat =
+      droppedFields.length === 0
+        ? ''
+        : ` Field${droppedFields.length > 1 ? 's' : ''} ${droppedFields.join(', ')} ` +
+          `left out: nothing of ${droppedFields.length > 1 ? 'them' : 'it'} reaches the image.`;
     setError(undefined);
     setStatus(
-      rms < previousRms
+      (rms < previousRms
         ? `Focused on surface ${surfaceIndex}: thickness ${formatLength(previousThickness)} → ` +
-            `${formatLength(thickness)}, RMS spot ${formatMicrons(previousRms)} → ${formatMicrons(rms)}.`
-        : `Already at best focus: RMS spot ${formatMicrons(rms)}. Nothing moved.`,
+          `${formatLength(thickness)}, RMS spot ${formatMicrons(previousRms)} → ${formatMicrons(rms)}.`
+        : `Already at best focus: RMS spot ${formatMicrons(rms)}. Nothing moved.`) + caveat,
     );
     onChange(result.value.system);
   };

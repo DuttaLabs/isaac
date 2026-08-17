@@ -11,6 +11,8 @@ import {
   updateSurface,
   type EditableSurfaceType,
 } from '../lib/edits.ts';
+import { quickFocus } from '../lib/focus.ts';
+import { formatLength, formatMicrons } from '../lib/format.ts';
 import type { Result } from '../lib/result.ts';
 import { ErrorNote, Panel } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
@@ -37,6 +39,7 @@ export function LensDataEditor({
   highlightedSurface: number | undefined;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
+  const [status, setStatus] = useState<string | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
   const [pointerInside, setPointerInside] = useState(false);
@@ -44,10 +47,35 @@ export function LensDataEditor({
   const apply = (result: Result<OpticalSystem>): void => {
     if (result.ok) {
       setError(undefined);
+      setStatus(undefined);
       onChange(result.value);
     } else {
       setError(result.error);
     }
+  };
+
+  /**
+   * Runs the focus search and says what it did. The result is worth reporting
+   * rather than silently applying: a thickness that barely moves is the honest
+   * answer when the design is already focused, and looks like a broken button
+   * otherwise.
+   */
+  const focus = (): void => {
+    const result = quickFocus(system);
+    if (!result.ok) {
+      setStatus(undefined);
+      setError(result.error);
+      return;
+    }
+    const { previousRms, rms, previousThickness, thickness, surfaceIndex } = result.value;
+    setError(undefined);
+    setStatus(
+      rms < previousRms
+        ? `Focused on surface ${surfaceIndex}: thickness ${formatLength(previousThickness)} → ` +
+            `${formatLength(thickness)}, RMS spot ${formatMicrons(previousRms)} → ${formatMicrons(rms)}.`
+        : `Already at best focus: RMS spot ${formatMicrons(rms)}. Nothing moved.`,
+    );
+    onChange(result.value.system);
   };
 
   /**
@@ -110,9 +138,17 @@ export function LensDataEditor({
       title="Optical system"
       flush
       actions={
-        <span className="hint">
-          {system.surfaces.length} surfaces · {system.units}
-        </span>
+        <>
+          <button
+            title="Move the image plane to the smallest RMS spot, over every field and wavelength"
+            onClick={focus}
+          >
+            Quick focus
+          </button>
+          <span className="hint">
+            {system.surfaces.length} surfaces · {system.units}
+          </span>
+        </>
       }
     >
       <datalist id={GLASS_LIST_ID}>
@@ -325,6 +361,12 @@ export function LensDataEditor({
         <div style={{ padding: '10px 12px' }}>
           <ErrorNote message={error} />
         </div>
+      ) : null}
+
+      {status ? (
+        <p className="hint" style={{ padding: '10px 12px', margin: 0 }}>
+          {status}
+        </p>
       ) : null}
     </Panel>
   );

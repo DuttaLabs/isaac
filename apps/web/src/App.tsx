@@ -44,6 +44,9 @@ export function App() {
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [allWavelengths, setAllWavelengths] = useState(false);
   const [notice, setNotice] = useState<Notice | undefined>();
+  // Which surface the pointer or the keyboard is currently on in the table. The
+  // editor and the layout are siblings, so the link between them lives here.
+  const [highlightedSurface, setHighlightedSurface] = useState<number | undefined>(undefined);
 
   const system = history.stack[history.index]!;
   const canUndo = history.index > 0;
@@ -210,7 +213,12 @@ export function App() {
             <SourcePanel system={system} onChange={pushSystem} />
           </ErrorBoundary>
           <ErrorBoundary label="Optical system">
-            <LensDataEditor system={system} onChange={pushSystem} />
+            <LensDataEditor
+              system={system}
+              onChange={pushSystem}
+              onHighlight={setHighlightedSurface}
+              highlightedSurface={highlightedSurface}
+            />
           </ErrorBoundary>
           <ErrorBoundary label="First order">
             <FirstOrderPanel system={system} firstOrder={firstOrder} />
@@ -255,6 +263,7 @@ export function App() {
                     system={system}
                     traces={layout.value}
                     defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
+                    highlightedSurface={highlightedSurface}
                   />
                   {allWavelengths ? <WavelengthLegend system={system} /> : null}
                 </>

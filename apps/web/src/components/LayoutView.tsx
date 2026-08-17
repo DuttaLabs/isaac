@@ -25,10 +25,14 @@ export function LayoutView({
   system,
   traces,
   defaultSemiDiameter,
+  highlightedSurface,
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
   defaultSemiDiameter: number;
+  /** Surface the user is on in the lens table, picked out so the row and the
+   *  picture can be read together. */
+  highlightedSurface?: number;
 }) {
   const geometry = useMemo(
     () => buildLayout(system, traces, defaultSemiDiameter),
@@ -120,15 +124,20 @@ export function LayoutView({
             )),
       )}
 
-      {geometry.profiles.map((profile) => (
-        <path
-          key={`surface-${profile.surfaceIndex}`}
-          d={toPath(profile.points, project)}
-          fill="none"
-          stroke="var(--glass-stroke)"
-          strokeWidth={profile.isImage ? 2 : 1.5}
-        />
-      ))}
+      {geometry.profiles.map((profile) => {
+        // Drawn heavier as well as coloured: the highlight has to survive being
+        // one thin line among many, and weight carries where a hue may not.
+        const highlighted = profile.surfaceIndex === highlightedSurface;
+        return (
+          <path
+            key={`surface-${profile.surfaceIndex}`}
+            d={toPath(profile.points, project)}
+            fill="none"
+            stroke={highlighted ? 'var(--surface-highlight)' : 'var(--glass-stroke)'}
+            strokeWidth={highlighted ? 3 : profile.isImage ? 2 : 1.5}
+          />
+        );
+      })}
 
       {/* Stop markers: short bars just outside the clear aperture. */}
       {geometry.profiles

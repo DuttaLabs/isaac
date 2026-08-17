@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { GLASS_CATALOG, glassName, resolveGlass } from '../lib/default-system.ts';
 import {
@@ -26,11 +26,20 @@ const GLASS_LIST_ID = 'glass-names';
 export function LensDataEditor({
   system,
   onChange,
+  onHighlight,
+  highlightedSurface,
 }: {
   system: OpticalSystem;
   onChange: (system: OpticalSystem) => void;
+  /** Reports the surface the user is on, so the layout can point it out. */
+  onHighlight: (surfaceIndex: number | undefined) => void;
+  /** The surface currently pointed out, which the arrow keys step through. */
+  highlightedSurface: number | undefined;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
+  const rows = useRef<(HTMLTableRowElement | null)[]>([]);
+  const table = useRef<HTMLDivElement>(null);
+  const [pointerInside, setPointerInside] = useState(false);
 
   const apply = (result: Result<OpticalSystem>): void => {
     if (result.ok) {
@@ -40,6 +49,61 @@ export function LensDataEditor({
       setError(result.error);
     }
   };
+
+  /**
+   * Steps the highlight one row and moves focus with it.
+   *
+   * Focus follows so that the row keeps the keys — and so that an edit in
+   * progress commits, since the cells commit on blur. `preventScroll` is the
+   * point of the exercise: `focus()` would otherwise scroll the row into view,
+   * which is the very page movement being suppressed.
+   */
+  const step = (delta: number): void => {
+    const last = system.surfaces.length - 1;
+    const next =
+      highlightedSurface === undefined
+        ? delta > 0
+          ? 0
+          : last
+        : Math.min(last, Math.max(0, highlightedSurface + delta));
+    onHighlight(next);
+    rows.current[next]?.focus({ preventScroll: true });
+  };
+
+  const arrowKey = (key: string): number | undefined =>
+    key === 'ArrowDown' ? 1 : key === 'ArrowUp' ? -1 : undefined;
+
+  /**
+   * Arrow keys while the pointer is over the table but nothing in it has focus.
+   * Without this the browser scrolls the page, and the row under a stationary
+   * pointer changes — which looks like the highlight moving, but is the page
+   * sliding underneath it.
+   *
+   * Only claimed when focus is nowhere in particular: if the user is typing in
+   * a field elsewhere and the pointer happens to rest here, the keys are
+   * theirs. When focus *is* inside the table, the React handler below has it.
+   */
+  useEffect(() => {
+    if (!pointerInside) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      const delta = arrowKey(event.key);
+      if (delta === undefined) {
+        return;
+      }
+      const active = document.activeElement;
+      if (active !== null && active !== document.body) {
+        return;
+      }
+      event.preventDefault();
+      step(delta);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+    // `step` is re-made every render; it is only correct to keep a listener
+    // holding one while the values it closes over are unchanged.
+  }, [pointerInside, highlightedSurface, system.surfaces.length, onHighlight]);
 
   return (
     <Panel
@@ -57,7 +121,23 @@ export function LensDataEditor({
         ))}
       </datalist>
 
-      <div className="table-scroll">
+      <div
+        className="table-scroll"
+        ref={table}
+        onMouseEnter={() => setPointerInside(true)}
+        onMouseLeave={() => setPointerInside(false)}
+        onKeyDown={(event) => {
+          // Arrows move between rows while focus is anywhere in the table,
+          // including inside a cell being edited, which is how a lens grid is
+          // expected to behave. Left and right are untouched, so text editing
+          // in a cell still works.
+          const delta = arrowKey(event.key);
+          if (delta !== undefined) {
+            event.preventDefault();
+            step(delta);
+          }
+        }}
+      >
         <table>
           <thead>
             <tr>
@@ -90,7 +170,27 @@ export function LensDataEditor({
                     : String(index);
 
               return (
-                <tr key={surface.id}>
+                <tr
+                  key={surface.id}
+                  // Focusable only programmatically: the arrow keys land focus
+                  // here, but Tab still walks the cells rather than the rows.
+                  tabIndex={-1}
+                  ref={(element) => {
+                    rows.current[index] = element;
+                  }}
+                  className={index === highlightedSurface ? 'row-highlight' : undefined}
+                  onMouseEnter={() => onHighlight(index)}
+                  onMouseLeave={() => onHighlight(undefined)}
+                  onFocus={() => onHighlight(index)}
+                  onBlur={(event) => {
+                    // Moving between cells of the same row must not blink the
+                    // highlight off and on, so only a focus leaving the row
+                    // clears it. React's onBlur bubbles, unlike the DOM's.
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                      onHighlight(undefined);
+                    }
+                  }}
+                >
                   <td className="row-label" title={`Surface ${index}`}>
                     {label}
                   </td>

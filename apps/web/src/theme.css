@@ -29,6 +29,11 @@
   /* An element whose surfaces cross: same weight of tint as the normal glass,
      so it reads as the same kind of mark rather than as an overlay. */
   --glass-fill-crossed: rgba(192, 54, 47, 0.15);
+  /* The surface whose row the user is on. Amber rather than red: red already
+     means a fault in this view — a crossed element is filled with it — and this
+     marks position, not a problem. The same value serves both themes, being
+     lighter than the light background's text and darker than the dark one's. */
+  --surface-highlight: #fcba05;
   --glass-stroke: #6f6d66;
   --axis: #b5b4ac;
   --grid: #e4e3de;
@@ -62,6 +67,7 @@
 
     --glass-fill: rgba(57, 135, 229, 0.18);
     --glass-fill-crossed: rgba(240, 138, 132, 0.22);
+    --surface-highlight: #fcba05;
     --glass-stroke: #8e8c84;
     --axis: #4e4d46;
     --grid: #2b2b29;
@@ -92,6 +98,7 @@
 
   --glass-fill: rgba(57, 135, 229, 0.18);
   --glass-fill-crossed: rgba(240, 138, 132, 0.22);
+  --surface-highlight: #fcba05;
   --glass-stroke: #8e8c84;
   --axis: #4e4d46;
   --grid: #2b2b29;
@@ -396,6 +403,24 @@ td {
 
 tbody tr:hover {
   background: var(--surface-2);
+}
+
+/*
+ * The row whose surface is lit up in the layout. Driven by state rather than by
+ * :hover or :focus-within, because those can be on two different rows at once —
+ * focus left in one while the pointer rests over another — and only one surface
+ * is ever highlighted. Marked on the left edge as well as by tint, so the row
+ * still reads as picked out where a background alone is nearly invisible.
+ */
+tbody tr.row-highlight {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--surface-highlight);
+}
+
+tbody tr:focus {
+  /* Focus moves here when the arrow keys change rows; the row-highlight mark is
+     the feedback, so the default ring would only double it up. */
+  outline: none;
 }
 
 td input {

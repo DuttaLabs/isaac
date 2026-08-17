@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { buildLayout, toPath, type GlassBody, type LayoutPoint } from '../lib/layout.ts';
 import type { LayoutTrace } from '../lib/analysis.ts';
@@ -7,6 +7,21 @@ import { wavelengthStyle } from '../lib/wavelengths.ts';
 const WIDTH = 900;
 const HEIGHT = 340;
 const PADDING = 18;
+
+/** How far in and out the wheel may take the view, against the fitted layout. */
+const MAX_ZOOM_IN = 200;
+const MAX_ZOOM_OUT = 8;
+/** Wheel delta to scale factor. Small enough that a trackpad flick is not a leap. */
+const WHEEL_SENSITIVITY = 0.0015;
+
+interface ViewBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const FITTED: ViewBox = { x: 0, y: 0, width: WIDTH, height: HEIGHT };
 
 /** Says which element is impossible and by how much, on hover. */
 function crossedMessage(body: GlassBody, units: string): string {
@@ -26,6 +41,7 @@ export function LayoutView({
   traces,
   defaultSemiDiameter,
   highlightedSurface,
+  resetSignal,
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
@@ -33,11 +49,15 @@ export function LayoutView({
   /** Surface the user is on in the lens table, picked out so the row and the
    *  picture can be read together. */
   highlightedSurface?: number;
+  /** Changes when the user asks for the view back, and at nothing else. */
+  resetSignal: number;
 }) {
   const geometry = useMemo(
     () => buildLayout(system, traces, defaultSemiDiameter),
     [system, traces, defaultSemiDiameter],
   );
+
+  const { view, svg, panning } = usePanZoom(resetSignal);
 
   const multipleWavelengths = new Set(traces.map((trace) => trace.wavelengthIndex)).size > 1;
 
@@ -56,8 +76,9 @@ export function LayoutView({
 
   return (
     <svg
-      className="layout"
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      ref={svg}
+      className={panning ? 'layout panning' : 'layout'}
+      viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
       role="img"
       aria-label={`Layout of ${system.name}, ${system.surfaces.length} surfaces`}
     >
@@ -163,4 +184,133 @@ export function LayoutView({
         })}
     </svg>
   );
+}
+
+/**
+ * Wheel to zoom, left button to drag the view about.
+ *
+ * The picture is moved by rewriting the SVG `viewBox` rather than by
+ * transforming a group: the drawing keeps its own coordinates, stroke widths
+ * scale with the zoom the way a drawing should, and the reset is a single
+ * assignment back to the fitted box.
+ */
+function usePanZoom(resetSignal: number): {
+  view: ViewBox;
+  svg: React.RefObject<SVGSVGElement | null>;
+  panning: boolean;
+} {
+  const [view, setView] = useState<ViewBox>(FITTED);
+  const [panning, setPanning] = useState(false);
+  const svg = useRef<SVGSVGElement>(null);
+  const drag = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    from: ViewBox;
+  } | null>(null);
+
+  // Reset only on request. An edit elsewhere re-fits the drawing inside the
+  // same box, so a zoomed-in user keeps looking at what they were looking at.
+  useEffect(() => setView(FITTED), [resetSignal]);
+
+  const zoom = useCallback((event: WheelEvent, element: SVGSVGElement): void => {
+    // Without this the page scrolls behind the drawing.
+    event.preventDefault();
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+      return;
+    }
+    // Where the pointer is, as a fraction of the box: that point stays put.
+    const fx = (event.clientX - rect.left) / rect.width;
+    const fy = (event.clientY - rect.top) / rect.height;
+
+    setView((current) => {
+      const factor = Math.exp(event.deltaY * WHEEL_SENSITIVITY);
+      const width = Math.min(
+        Math.max(current.width * factor, WIDTH / MAX_ZOOM_IN),
+        WIDTH * MAX_ZOOM_OUT,
+      );
+      // Height follows width so the scale stays uniform and shapes stay true.
+      const height = width * (HEIGHT / WIDTH);
+      return {
+        x: current.x + (current.width - width) * fx,
+        y: current.y + (current.height - height) * fy,
+        width,
+        height,
+      };
+    });
+  }, []);
+
+  // Registered by hand because a React `onWheel` is passive, and a passive
+  // listener may not call preventDefault.
+  useEffect(() => {
+    const element = svg.current;
+    if (element === null) {
+      return;
+    }
+    const onWheel = (event: WheelEvent): void => zoom(event, element);
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [zoom]);
+
+  useEffect(() => {
+    const element = svg.current;
+    if (element === null) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0) {
+        return;
+      }
+      element.setPointerCapture(event.pointerId);
+      drag.current = {
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        from: view,
+      };
+      setPanning(true);
+    };
+
+    const onPointerMove = (event: PointerEvent): void => {
+      const held = drag.current;
+      if (held === null || held.pointerId !== event.pointerId) {
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        return;
+      }
+      // Screen pixels into view-box units, so the drawing tracks the pointer
+      // exactly however far the view is zoomed in.
+      const dx = ((event.clientX - held.clientX) / rect.width) * held.from.width;
+      const dy = ((event.clientY - held.clientY) / rect.height) * held.from.height;
+      setView({ ...held.from, x: held.from.x - dx, y: held.from.y - dy });
+    };
+
+    const onPointerUp = (event: PointerEvent): void => {
+      if (drag.current?.pointerId !== event.pointerId) {
+        return;
+      }
+      element.releasePointerCapture(event.pointerId);
+      drag.current = null;
+      setPanning(false);
+    };
+
+    element.addEventListener('pointerdown', onPointerDown);
+    element.addEventListener('pointermove', onPointerMove);
+    element.addEventListener('pointerup', onPointerUp);
+    element.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      element.removeEventListener('pointerdown', onPointerDown);
+      element.removeEventListener('pointermove', onPointerMove);
+      element.removeEventListener('pointerup', onPointerUp);
+      element.removeEventListener('pointercancel', onPointerUp);
+    };
+    // `view` is read when a drag starts, so the listeners are re-made when it
+    // changes; that is what makes successive drags compose.
+  }, [view]);
+
+  return { view, svg, panning };
 }

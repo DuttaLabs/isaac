@@ -544,6 +544,33 @@ svg.layout {
   display: block;
   width: 100%;
   height: auto;
+  /* The drawing takes the drag and the wheel itself; without this the browser
+     scrolls the page instead of panning the view. */
+  touch-action: none;
+  cursor: grab;
+}
+
+svg.layout.panning {
+  cursor: grabbing;
+}
+
+/* The 3-D view keeps the 2-D drawing's proportions, so toggling between them
+   does not make the panel jump. */
+.layout-3d {
+  width: 100%;
+  aspect-ratio: 900 / 340;
+  touch-action: none;
+}
+
+.layout-3d canvas {
+  display: block;
+  border-radius: 0;
+  outline: none;
+}
+
+.view-hint {
+  margin: 0;
+  padding: 6px 12px 10px;
 }
 
 .axis-line {

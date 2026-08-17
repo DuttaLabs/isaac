@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { importZmx } from '@isaac/zemax-io';
 import {
@@ -6,6 +6,7 @@ import {
   computeLayoutTraces,
   computeRayFan,
   computeSpot,
+  computeVolumeTraces,
 } from './lib/analysis.ts';
 import { defaultSystem } from './lib/default-system.ts';
 import { GLASS_CATALOG } from './lib/materials.ts';
@@ -21,6 +22,12 @@ import { RayFanPlot } from './components/RayFanPlot.tsx';
 import { SourcePanel } from './components/SourcePanel.tsx';
 import { SpotDiagram } from './components/SpotDiagram.tsx';
 import { WavelengthLegend } from './components/WavelengthLegend.tsx';
+
+// Three.js and its React bindings are most of the bundle, and a session that
+// never opens the 3-D view should never download them. Loaded on first use.
+const Layout3DView = lazy(() =>
+  import('./components/Layout3DView.tsx').then((module) => ({ default: module.Layout3DView })),
+);
 
 const HISTORY_LIMIT = 50;
 type Theme = 'system' | 'light' | 'dark';
@@ -44,6 +51,9 @@ export function App() {
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [allWavelengths, setAllWavelengths] = useState(false);
+  const [view, setView] = useState<'2d' | '3d'>('2d');
+  /** Bumped by the reset button; both views watch it and nothing else does. */
+  const [viewReset, setViewReset] = useState(0);
   const [notice, setNotice] = useState<Notice | undefined>();
   // Which surface the pointer or the keyboard is currently on in the table. The
   // editor and the layout are siblings, so the link between them lives here.
@@ -86,6 +96,21 @@ export function App() {
   const layout = useMemo(
     () => computeLayoutTraces(system, { raysPerFan, wavelengthIndices }),
     [system, raysPerFan, wavelengthIndices],
+  );
+
+  // The 3-D view wants rays that fill the cone rather than a fan lying in one
+  // plane, and it is the only thing that needs them, so they are not traced
+  // until it is on screen. The grid is derived from the same rays-per-fan
+  // control: a grid of n across the pupil is the same density as a fan of n.
+  const volume = useMemo(
+    () =>
+      view === '3d'
+        ? computeVolumeTraces(system, {
+            gridCount: Math.max(3, Math.min(raysPerFan, 15)),
+            wavelengthIndices,
+          })
+        : undefined,
+    [view, system, raysPerFan, wavelengthIndices],
   );
   const fan = useMemo(() => computeRayFan(system, activeField, 21), [system, activeField]);
   const spot = useMemo(() => computeSpot(system, activeField, 15), [system, activeField]);
@@ -254,19 +279,73 @@ export function App() {
                   />
                   all wavelengths
                 </label>
+                <button
+                  title={
+                    view === '2d'
+                      ? 'Show the system as a solid, free to orbit'
+                      : 'Back to the meridional cross-section'
+                  }
+                  aria-pressed={view === '3d'}
+                  onClick={() => setView(view === '2d' ? '3d' : '2d')}
+                >
+                  <span className="label-swap">
+                    <span className={view === '2d' ? undefined : 'label-hidden'}>3D</span>
+                    <span className={view === '2d' ? 'label-hidden' : undefined}>2D</span>
+                  </span>
+                </button>
+                <button
+                  title={
+                    view === '2d'
+                      ? 'Fit the drawing to the panel again'
+                      : 'Put the camera back where it started'
+                  }
+                  onClick={() => setViewReset((count) => count + 1)}
+                >
+                  Reset view
+                </button>
               </>
             }
           >
             <ErrorBoundary label="Layout">
               {layout.ok ? (
                 <>
-                  <LayoutView
-                    system={system}
-                    traces={layout.value}
-                    defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
-                    highlightedSurface={highlightedSurface}
-                  />
+                  {view === '2d' ? (
+                    <LayoutView
+                      system={system}
+                      traces={layout.value}
+                      defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
+                      highlightedSurface={highlightedSurface}
+                      resetSignal={viewReset}
+                    />
+                  ) : volume?.ok ? (
+                    <Suspense
+                      fallback={
+                        <p className="hint" style={{ padding: 12 }}>
+                          Loading the 3D view…
+                        </p>
+                      }
+                    >
+                      <Layout3DView
+                        system={system}
+                        traces={volume.value}
+                        defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
+                        highlightedSurface={highlightedSurface}
+                        resetSignal={viewReset}
+                      />
+                    </Suspense>
+                  ) : (
+                    <div style={{ padding: 12 }}>
+                      <ErrorNote
+                        message={volume?.ok === false ? volume.error : 'No rays to draw.'}
+                      />
+                    </div>
+                  )}
                   {allWavelengths ? <WavelengthLegend system={system} /> : null}
+                  <p className="hint view-hint">
+                    {view === '2d'
+                      ? 'Wheel zooms · drag pans'
+                      : 'Wheel zooms · drag pans · wheel-drag orbits'}
+                  </p>
                 </>
               ) : (
                 <div style={{ padding: 12 }}>

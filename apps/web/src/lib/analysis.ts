@@ -91,6 +91,43 @@ export function computeLayoutTraces(
   });
 }
 
+/**
+ * Traces a pupil grid per field: the rays a 3-D layout wants.
+ *
+ * The meridional fan the 2-D view draws lies in one plane, and in three
+ * dimensions that reads as a flat sheet standing in the middle of the lens. A
+ * grid fills the cone instead, which is what the beam actually is — the tracer
+ * has always worked in three dimensions, so this asks it for rays that use
+ * them.
+ */
+export function computeVolumeTraces(
+  system: OpticalSystem,
+  options: { gridCount: number; wavelengthIndices: readonly number[] },
+): Result<LayoutTrace[]> {
+  return attempt(() => {
+    const traces: LayoutTrace[] = [];
+    const fieldCount = Math.max(system.fields.length, 1);
+
+    for (let fieldIndex = 0; fieldIndex < fieldCount; fieldIndex += 1) {
+      for (const wavelengthIndex of options.wavelengthIndices) {
+        const wavelengthNm = system.wavelengthsNm[wavelengthIndex];
+        if (wavelengthNm === undefined) {
+          continue;
+        }
+        const rays = generatePupilGrid(system, {
+          field: fieldOption(system, fieldIndex),
+          wavelengthNm,
+          count: options.gridCount,
+        });
+        for (const result of traceRays(system, rays)) {
+          traces.push({ result, wavelengthIndex, fieldIndex });
+        }
+      }
+    }
+    return traces;
+  });
+}
+
 export interface FanSeries {
   wavelengthIndex: number;
   wavelengthNm: number;

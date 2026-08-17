@@ -1,0 +1,28 @@
+{
+  "name": "@isaac/three-optics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Three.js geometry for an OpticalSystem: revolved surfaces, solid elements, and traced rays. No React, no renderer.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test 'tests/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "dependencies": {
+    "@isaac/optical-core": "*",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/three": "^0.185.0"
+  }
+}

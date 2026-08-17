@@ -12,6 +12,12 @@
 export interface WavelengthStyle {
   /** CSS custom property holding the color for the current theme. */
   color: string;
+  /**
+   * The bare custom-property name behind {@link color}. WebGL needs a resolved
+   * value rather than a `var()` reference, so the 3-D layout looks this up on
+   * the document and follows the theme the same way the SVG views do.
+   */
+  colorVariable: string;
   /** SVG stroke-dasharray; `undefined` means solid. */
   dash: string | undefined;
   marker: 'circle' | 'square' | 'triangle' | 'diamond';
@@ -39,6 +45,7 @@ export function wavelengthStyle(wavelengthNm: number, index: number): Wavelength
     SPECTRAL_BANDS.find((candidate) => wavelengthNm <= candidate.maxNm) ?? SPECTRAL_BANDS[2]!;
   return {
     color: `var(${band.variable})`,
+    colorVariable: band.variable,
     dash: DASHES[index % DASHES.length],
     marker: MARKERS[index % MARKERS.length]!,
     label: `${wavelengthNm.toFixed(1)} nm`,

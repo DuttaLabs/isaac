@@ -16,6 +16,24 @@ export interface SurfaceProfile {
 export interface GlassBody {
   /** Closed outline: front surface forwards, rear surface backwards. */
   points: LayoutPoint[];
+  /** The surfaces the glass runs between, for naming the element to the user. */
+  frontIndex: number;
+  backIndex: number;
+  /**
+   * The rim-to-rim segments closing the outline top and bottom — the ground
+   * edge of the element. They slope when the two surfaces have unequal
+   * semi-diameters, which is what a lens with a stepped edge really looks like
+   * in cross-section.
+   */
+  topEdge: [LayoutPoint, LayoutPoint];
+  bottomEdge: [LayoutPoint, LayoutPoint];
+  /**
+   * Least axial gap between the two surfaces across the aperture they share.
+   * Negative means the rear surface has crossed in front of the front one.
+   */
+  leastGap: number;
+  /** `leastGap < 0`: the element cannot be made as specified. */
+  crossed: boolean;
 }
 
 export interface LayoutGeometry {
@@ -37,6 +55,38 @@ export function sag(curvature: number, y: number): number {
     return 1 / curvature;
   }
   return (curvature * y * y) / (1 + Math.sqrt(term));
+}
+
+/**
+ * Least axial distance between two consecutive surfaces, over the aperture they
+ * share. Negative means the rear surface has crossed in front of the front one:
+ * the element would have to be thinner than nothing somewhere, which is a real
+ * design fault, not a drawing artefact. It is the usual failure of a strongly
+ * curved element whose semi-diameter has been opened up past what its centre
+ * thickness can support, and it shows up first at the edge of the aperture.
+ *
+ * Sampled rather than solved: the extremum of the gap is at the axis or the rim
+ * for the shapes met in practice, but not in general, and sampling on the same
+ * grid the profiles are drawn on keeps the verdict consistent with the picture.
+ *
+ * The shared aperture is `min` of the two semi-diameters — where both surfaces
+ * actually exist. Past that only one surface is present and the glass is bounded
+ * by the ground edge instead, which is a different question.
+ */
+function leastAxialGap(
+  frontCurvature: number,
+  frontZ: number,
+  backCurvature: number,
+  backZ: number,
+  semiDiameter: number,
+): number {
+  let least = Infinity;
+  for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
+    const y = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
+    const gap = backZ + sag(backCurvature, y) - (frontZ + sag(frontCurvature, y));
+    least = Math.min(least, gap);
+  }
+  return least;
 }
 
 /**
@@ -83,9 +133,41 @@ export function buildLayout(
     }
     const front = profiles.find((profile) => profile.surfaceIndex === index);
     const back = profiles.find((profile) => profile.surfaceIndex === index + 1);
-    if (front && back) {
-      bodies.push({ points: [...front.points, ...[...back.points].reverse()] });
+    if (!front || !back) {
+      continue;
     }
+
+    // The profiles run −y to +y, so the first and last points are the two rims.
+    const frontBottom = front.points[0]!;
+    const frontTop = front.points[front.points.length - 1]!;
+    const backBottom = back.points[0]!;
+    const backTop = back.points[back.points.length - 1]!;
+
+    // Two ways the element can fail, and both are the same measurement: the
+    // surfaces crossing over the aperture they share, and — when the rear
+    // surface is the smaller — the front surface reaching past its rim, which
+    // turns the ground edge back on itself. With equal semi-diameters the
+    // second is just the rim sample of the first, so nothing is double-counted.
+    const leastGap = Math.min(
+      leastAxialGap(
+        system.surfaceAt(index).curvature,
+        system.vertexZAt(index),
+        system.surfaceAt(index + 1).curvature,
+        system.vertexZAt(index + 1),
+        Math.min(Math.abs(frontTop.y), Math.abs(backTop.y)),
+      ),
+      backTop.z - frontTop.z,
+    );
+
+    bodies.push({
+      points: [...front.points, ...[...back.points].reverse()],
+      frontIndex: index,
+      backIndex: index + 1,
+      topEdge: [frontTop, backTop],
+      bottomEdge: [frontBottom, backBottom],
+      leastGap,
+      crossed: leastGap < 0,
+    });
   }
 
   const rayPaths = traces.map(({ result, wavelengthIndex }) => {

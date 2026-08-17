@@ -26,6 +26,9 @@
   --wave-red: #e34948;
 
   --glass-fill: rgba(42, 120, 214, 0.13);
+  /* An element whose surfaces cross: same weight of tint as the normal glass,
+     so it reads as the same kind of mark rather than as an overlay. */
+  --glass-fill-crossed: rgba(192, 54, 47, 0.15);
   --glass-stroke: #6f6d66;
   --axis: #b5b4ac;
   --grid: #e4e3de;
@@ -58,6 +61,7 @@
     --wave-red: #e66767;
 
     --glass-fill: rgba(57, 135, 229, 0.18);
+    --glass-fill-crossed: rgba(240, 138, 132, 0.22);
     --glass-stroke: #8e8c84;
     --axis: #4e4d46;
     --grid: #2b2b29;
@@ -87,6 +91,7 @@
   --wave-red: #e66767;
 
   --glass-fill: rgba(57, 135, 229, 0.18);
+  --glass-fill-crossed: rgba(240, 138, 132, 0.22);
   --glass-stroke: #8e8c84;
   --axis: #4e4d46;
   --grid: #2b2b29;

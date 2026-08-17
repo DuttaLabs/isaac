@@ -1,0 +1,14 @@
+/*
+ * Tests run in Node, so they need its globals — but the app itself must not.
+ * Giving `types: ["node"]` to the main config would let browser code import
+ * `node:fs` and still typecheck, so the test files get their own program and
+ * pull in whatever `src` they import. `tsc --noEmit` on the main config stays
+ * the gate that keeps Node out of the bundle.
+ */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["tests/**/*.ts"]
+}

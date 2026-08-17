@@ -1,12 +1,21 @@
 import { useMemo } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
-import { buildLayout, toPath, type LayoutPoint } from '../lib/layout.ts';
+import { buildLayout, toPath, type GlassBody, type LayoutPoint } from '../lib/layout.ts';
 import type { LayoutTrace } from '../lib/analysis.ts';
 import { wavelengthStyle } from '../lib/wavelengths.ts';
 
 const WIDTH = 900;
 const HEIGHT = 340;
 const PADDING = 18;
+
+/** Says which element is impossible and by how much, on hover. */
+function crossedMessage(body: GlassBody, units: string): string {
+  return (
+    `Surfaces ${body.frontIndex} and ${body.backIndex} cross: the rear surface passes ` +
+    `${Math.abs(body.leastGap).toPrecision(3)} ${units} in front of the front one. ` +
+    'Reduce the semi-diameter, or increase the thickness or the radii.'
+  );
+}
 
 /**
  * Meridional cross-section: the y–z plane a lens designer reads. Scaling is
@@ -61,9 +70,11 @@ export function LayoutView({
         <path
           key={`body-${index}`}
           d={toPath(body.points, project, true)}
-          fill="var(--glass-fill)"
+          fill={body.crossed ? 'var(--glass-fill-crossed)' : 'var(--glass-fill)'}
           stroke="none"
-        />
+        >
+          {body.crossed ? <title>{crossedMessage(body, system.units)}</title> : null}
+        </path>
       ))}
 
       {geometry.rayPaths.map((path, index) => {
@@ -86,6 +97,28 @@ export function LayoutView({
           />
         );
       })}
+
+      {/*
+        The ground edges close each element top and bottom. They are drawn with
+        the profiles rather than with the fill so they sit above the rays, like
+        the surfaces they join. A crossed element gets none: there is no edge to
+        draw when the surfaces have passed through each other, and its absence
+        is a second cue beside the colour, which nobody should have to rely on
+        alone.
+      */}
+      {geometry.bodies.flatMap((body, index) =>
+        body.crossed
+          ? []
+          : [body.topEdge, body.bottomEdge].map((edge, side) => (
+              <path
+                key={`edge-${index}-${side}`}
+                d={toPath(edge, project)}
+                fill="none"
+                stroke="var(--glass-stroke)"
+                strokeWidth={1.5}
+              />
+            )),
+      )}
 
       {geometry.profiles.map((profile) => (
         <path

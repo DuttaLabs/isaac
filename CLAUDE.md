@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo. Three engine packages live under `packages/`, and the React UI is `apps/web`: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files; and `@isaac/glass-catalog` (`packages/glass-catalog`), the SCHOTT glass data. `Architecture.md` is the source of truth for scope and conventions; `three-optics` (the Three.js layer) is still unbuilt.
+Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo. Four packages live under `packages/`, and the React UI is `apps/web`: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files; `@isaac/glass-catalog` (`packages/glass-catalog`), the SCHOTT glass data; and `@isaac/three-optics` (`packages/three-optics`), Three.js geometry for the 3D layout. `Architecture.md` is the source of truth for scope and conventions.
 
 ## Commands
 
@@ -71,6 +71,19 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
 - **State is one immutable `OpticalSystem` plus an undo stack.** Edits call `.with()` / `withSurfaceAt()` and push a new system; `useMemo` keyed on the system re-derives traces only when the design actually changes. `lib/edits.ts` holds the edit operations, each returning `Result<OpticalSystem>` so a rejected edit leaves the previous design on screen.
 - **Wavelength is the series dimension**, colored F-blue / d-green / C-red by physics convention. That pairing sits in the 6–8 ΔE band under protanopia, so color is never the only cue: plots also carry dash patterns and marker shapes, and the legend is always present. Layout rays drop the dash when only one wavelength is drawn.
 - Plots are hand-drawn SVG (`lib/plot.ts` has the scale and tick helpers); there is no charting dependency.
+- **The layout has a 2D and a 3D view**, toggled in the Layout panel. Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture vocabulary deliberately. Each has a reset button, driven by a `resetSignal` counter the views watch. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with the zoom.
+- **`Layout3DView` is lazy-loaded.** Three.js and React Three Fiber are ~900 kB of the bundle, and a session that never opens the 3D view should never fetch them. Keep it behind `lazy()`.
+- **Colors for WebGL are resolved from `theme.css` at runtime** (`lib/theme-colors.ts`), and re-read when the theme changes — the SVG views hand `var(--wave-blue)` to an attribute and let CSS do it, but a material needs a real value. Don't start a second palette in TypeScript.
+
+### `three-optics`
+
+Three.js geometry for an `OpticalSystem` and nothing else: **no React, no renderer, no browser APIs** — it builds geometry in Node, which is how it is unit-tested. `apps/web` owns the R3F mount and the controls.
+
+- Everything drawn is rotationally symmetric, so a surface is its meridional profile revolved. A glass element is *one* closed `LatheGeometry` running axis → rim along the front surface, across the ground edge, and rim → axis back along the rear; both ends on the axis is what closes the solid rather than leaving open caps.
+- `LatheGeometry` revolves about **Y** and the optical axis is **Z**, so every geometry is rotated a quarter turn about X as it is built and comes out already in the engine's frame.
+- Rays are the tracer's own 3D intersection points, merged into one buffer of line segments per (wavelength, blocked) group — hundreds of separate line objects would cost far more than the geometry does.
+- Geometry is built outside React's reconciler, so `OpticalScene.dispose()` must be called when it is replaced.
+- The crossed-element test is the same measurement `lib/layout.ts` makes, so the two views agree about which elements are impossible.
 
 ### Conventions that span files
 

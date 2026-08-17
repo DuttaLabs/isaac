@@ -50,18 +50,18 @@ SURF 4
   DIAM 1.0
 `;
 
-test('a lens file resolves its glasses straight from the catalogue', () => {
+test('a lens file resolves its glasses straight from the catalog', () => {
   const catalog = SCHOTT.with({ allowLegacyNames: true });
   const { system, glasses, warnings } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
 
   // The legacy substitution is an approximation, so the import reports it
   // rather than quietly tracing a different glass from the one the file names.
   assert.deepEqual(warnings, [
-    'Glass "BK7" is not in the catalogue and was traced as "N-BK7"; it is a substitute, not the same glass.',
+    'Glass "BK7" is not in the catalog and was traced as "N-BK7"; it is a substitute, not the same glass.',
   ]);
   assert.deepEqual(glasses, [
     { name: 'BK7', surfaceNumber: 1, resolved: true, resolvedAs: 'N-BK7' },
-    { name: 'F2', surfaceNumber: 2, resolved: true }, // still in the catalogue under its own name
+    { name: 'F2', surfaceNumber: 2, resolved: true }, // still in the catalog under its own name
   ]);
   assert.equal(system.surfaceAt(1).material.name, 'N-BK7');
   assert.equal(system.surfaceAt(2).material.name, 'F2');
@@ -90,7 +90,7 @@ test('with real dispersion the doublet reproduces its designed first-order data'
   );
 });
 
-test('the crown/flint pair suppresses colour compared with a single crown element', () => {
+test('the crown/flint pair suppresses color compared with a single crown element', () => {
   const catalog = SCHOTT.with({ allowLegacyNames: true });
   const { system } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
 
@@ -117,7 +117,7 @@ test('the crown/flint pair suppresses colour compared with a single crown elemen
   assert.ok(doubletSplit > 0.05, `split ${doubletSplit} mm is smaller than this design achieves`);
 });
 
-test('rays trace through the catalogue-resolved system to a real focus', () => {
+test('rays trace through the catalog-resolved system to a real focus', () => {
   const catalog = SCHOTT.with({ allowLegacyNames: true });
   const { system } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
   const results = traceRays(system, generateRayFan(system, { count: 9 }));

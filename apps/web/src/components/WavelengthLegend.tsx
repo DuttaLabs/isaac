@@ -2,8 +2,8 @@ import type { OpticalSystem } from '@isaac/optical-core';
 import { wavelengthStyle } from '../lib/wavelengths.ts';
 
 /**
- * Always on screen when more than one wavelength is traced: colour alone does
- * not distinguish the series for a colour-blind reader, so the swatch repeats
+ * Always on screen when more than one wavelength is traced: color alone does
+ * not distinguish the series for a color-blind reader, so the swatch repeats
  * the dash pattern and the label carries the wavelength.
  */
 export function WavelengthLegend({ system }: { system: OpticalSystem }) {

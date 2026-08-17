@@ -11,7 +11,7 @@ import { SCHOTT } from '../src/index.ts';
  * The model glass is an approximation, and the only honest way to say how good
  * it is at scale is to check it against every measured fit available: derive
  * (nd, Vd, ΔPg,F) from a real glass, rebuild it from those three numbers alone,
- * and measure the drift. These bounds are what the catalogue actually delivers,
+ * and measure the drift. These bounds are what the catalog actually delivers,
  * so a change that degrades the model fails here rather than silently shipping.
  */
 
@@ -25,7 +25,7 @@ interface Measured {
   deltaPgF: number;
 }
 
-/** Every catalogue glass whose published fit reaches the g line. */
+/** Every catalog glass whose published fit reaches the g line. */
 function measuredGlasses(): Measured[] {
   const rows: Measured[] = [];
   for (const record of SCHOTT.records()) {
@@ -76,8 +76,8 @@ function drift(
   return { median: errors[Math.floor(errors.length / 2)]!, worst, worstName };
 }
 
-test('the catalogue supplies enough glasses to make this meaningful', () => {
-  assert.ok(measuredGlasses().length > 150, 'expected the SCHOTT catalogue to be loaded');
+test('the catalog supplies enough glasses to make this meaningful', () => {
+  assert.ok(measuredGlasses().length > 150, 'expected the SCHOTT catalog to be loaded');
 });
 
 test('a model glass tracks a measured one to ~1e-4 across the visible', () => {
@@ -99,7 +99,7 @@ test('omitting the partial dispersion costs an order of magnitude', () => {
   assert.ok(without.worst < 1e-2, `still usable for layout: ${without.worst}`);
 });
 
-test('every catalogue glass sits near the normal line', () => {
+test('every catalog glass sits near the normal line', () => {
   // ΔPg,F is a deviation, so it should be small for ordinary glasses and only
   // grow for the deliberately anomalous ones the line is defined against.
   const glasses = measuredGlasses();

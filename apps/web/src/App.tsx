@@ -27,7 +27,7 @@ type Theme = 'system' | 'light' | 'dark';
 interface Notice {
   kind: 'error' | 'info';
   text: string;
-  /** Things the file said that the reader could not honour exactly. */
+  /** Things the file said that the reader could not honor exactly. */
   warnings?: readonly string[];
   /**
    * Record types the reader skipped. These are annotation — notes, tolerancing,

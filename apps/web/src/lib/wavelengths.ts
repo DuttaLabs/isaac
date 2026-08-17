@@ -1,16 +1,16 @@
 /**
  * Wavelength styling.
  *
- * Colour follows the physics — the F line reads blue, the d line green, the C
+ * Color follows the physics — the F line reads blue, the d line green, the C
  * line red — which is the convention every lens-design tool uses. That palette
  * is drawn from validated ramp steps, but blue/green/red sits in the 6–8 ΔE
- * band under protanopia, so colour is never the only cue: every series also
+ * band under protanopia, so color is never the only cue: every series also
  * carries a dash pattern (lines) and a marker shape (points), and the legend is
- * always on screen with the wavelength in nanometres.
+ * always on screen with the wavelength in nanometers.
  */
 
 export interface WavelengthStyle {
-  /** CSS custom property holding the colour for the current theme. */
+  /** CSS custom property holding the color for the current theme. */
   color: string;
   /** SVG stroke-dasharray; `undefined` means solid. */
   dash: string | undefined;

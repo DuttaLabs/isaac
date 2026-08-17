@@ -132,7 +132,7 @@ test('paraxialTrace reports per-surface heights, angles, and powers', () => {
   assert.equal(s1!.angleBefore, 0);
   assert.ok(Math.abs(s1!.power - 0.01) < 1e-12); // (1.5 − 1) / 50
   assert.ok(Math.abs(s1!.angleAfter + 0.01 / 1.5) < 1e-12);
-  // Height falls by the in-glass slope over the 5 mm centre thickness.
+  // Height falls by the in-glass slope over the 5 mm center thickness.
   assert.ok(Math.abs(s2!.height - (1 - (0.01 / 1.5) * 5)) < 1e-12);
   assert.ok(s2!.power === 0); // flat rear surface (signed zero is fine)
   assert.ok(Math.abs(s2!.angleAfter + 0.01) < 1e-12);

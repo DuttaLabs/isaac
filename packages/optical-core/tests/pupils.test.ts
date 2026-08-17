@@ -206,7 +206,7 @@ test('chief and marginal rays are aimed at the solved pupil, not at surface 1', 
   // The chief ray must cross the axis in the entrance pupil plane at z = 50.
   const toPupil = (pupil.z - chief.origin.z) / chief.direction.z;
   const atPupil = chief.at(toPupil);
-  assert.ok(Math.abs(atPupil.y) < 1e-9, `chief ray misses the pupil centre by ${atPupil.y}`);
+  assert.ok(Math.abs(atPupil.y) < 1e-9, `chief ray misses the pupil center by ${atPupil.y}`);
   // Aiming at surface 1 instead would have put it on axis at z = 0; it is not.
   const atSurface1 = chief.at((0 - chief.origin.z) / chief.direction.z);
   assert.ok(Math.abs(atSurface1.y) > 1, 'chief ray should not cross the axis at the first surface');

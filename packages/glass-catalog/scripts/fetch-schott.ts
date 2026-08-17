@@ -4,7 +4,7 @@
  *   npm run regenerate --workspace @isaac/glass-catalog
  *
  * That database is public domain (CC0 1.0) and its SCHOTT pages are generated
- * from SCHOTT's own Zemax catalogue, so the coefficients are the manufacturer's
+ * from SCHOTT's own Zemax catalog, so the coefficients are the manufacturer's
  * published values rather than a third-party refit.
  *
  * Only entries published as "formula 2" — the three-term Sellmeier form
@@ -96,7 +96,7 @@ function renderModule(glasses: Extracted[], skipped: string[]): string {
 // Regenerate with: npm run regenerate --workspace @isaac/glass-catalog
 //
 // Source: refractiveindex.info database (public domain, CC0 1.0), whose SCHOTT
-// pages are generated from SCHOTT's own Zemax catalogue (schott_2017-01-20b.agf).
+// pages are generated from SCHOTT's own Zemax catalog (schott_2017-01-20b.agf).
 // Coefficients are the manufacturer's published three-term Sellmeier fits:
 //   n² − 1 = B₁λ²/(λ² − C₁) + B₂λ²/(λ² − C₂) + B₃λ²/(λ² − C₃),  λ in µm.
 //

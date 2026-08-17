@@ -9,7 +9,7 @@ const DEFAULT_SEMI_DIAMETER = 10;
 /**
  * Sag of a sphere, derived from the circle rather than from the formula under
  * test: a point at height y on a sphere of radius R whose vertex is at the
- * origin and whose centre lies at z = R sits at z = R − √(R² − y²). Comparing
+ * origin and whose center lies at z = R sits at z = R − √(R² − y²). Comparing
  * against this keeps the tests from simply restating the implementation.
  */
 function sagFromCircle(radius: number, y: number): number {
@@ -131,7 +131,7 @@ test('a workable element reports the gap at its thinnest, and is not crossed', (
     element({ frontRadius: 50, backRadius: -50, thickness: 6, frontSemiDiameter: 10 }),
   );
 
-  // Biconvex, so the thinnest point is the rim: 6 of centre thickness less the
+  // Biconvex, so the thinnest point is the rim: 6 of center thickness less the
   // sag each surface eats into it.
   const expected = 6 - 2 * sagFromCircle(50, 10);
   assert.ok(Math.abs(body.leastGap - expected) < 1e-9, `leastGap ${body.leastGap} ≠ ${expected}`);
@@ -190,7 +190,7 @@ test('the rim term does not double-count when the semi-diameters match', () => {
 });
 
 test('a meniscus curving the same way is judged on the gap, not on the shape', () => {
-  // Both centres on the same side: the surfaces run roughly parallel, so a thin
+  // Both centers on the same side: the surfaces run roughly parallel, so a thin
   // meniscus is perfectly buildable where a biconvex of the same thickness and
   // aperture would not be.
   const body = onlyBody(

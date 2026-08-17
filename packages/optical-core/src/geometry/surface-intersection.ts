@@ -7,7 +7,7 @@ export interface SurfaceHit {
   distance: number;
   /** Intersection point in the surface's local frame (vertex at the origin). */
   point: Point3;
-  /** Unit surface normal, pointing radially outward from the centre of curvature. */
+  /** Unit surface normal, pointing radially outward from the center of curvature. */
   normal: Vector3;
 }
 
@@ -16,7 +16,7 @@ export interface SurfaceHit {
  *
  * Everything is expressed in the surface's **local frame**: the vertex is at the
  * origin and the optical axis is +Z. The sphere therefore passes through the
- * origin with its centre of curvature at (0, 0, R), where R = 1 / curvature.
+ * origin with its center of curvature at (0, 0, R), where R = 1 / curvature.
  *
  * Of the sphere's two intersections the physically correct one is the cap
  * nearest the vertex plane; the far side of the full sphere is discarded.
@@ -37,7 +37,7 @@ export function intersectSphericalSurface(
 
   const radius = 1 / curvature;
   const center = new Vector3(0, 0, radius);
-  const oc = origin.toVector().subtract(center); // origin − centre
+  const oc = origin.toVector().subtract(center); // origin − center
   const b = direction.dot(oc);
   const c = oc.lengthSquared - radius * radius;
   const discriminant = b * b - c;

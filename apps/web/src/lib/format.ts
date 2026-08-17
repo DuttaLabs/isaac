@@ -47,7 +47,7 @@ export function formatOptional(value: number | undefined, digits = 4, suffix = '
   return `${Number(value.toFixed(digits))}${suffix}`;
 }
 
-/** Micrometres, for spot sizes, which are far below a millimetre. */
-export function formatMicrons(millimetres: number): string {
-  return `${(millimetres * 1000).toFixed(2)} µm`;
+/** Micrometers, for spot sizes, which are far below a millimeter. */
+export function formatMicrons(millimeters: number): string {
+  return `${(millimeters * 1000).toFixed(2)} µm`;
 }

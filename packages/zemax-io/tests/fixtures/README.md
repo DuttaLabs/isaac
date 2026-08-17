@@ -2,7 +2,7 @@
 
 `doublet.zmx` is a hand-written file in the ZMX layout, carrying the prescription of
 the classic crown/flint doublet distributed as a sample with
-[PyZDDE](https://github.com/xzos/PyZDDE) (`ZMXFILES/Doublet.ZMX`, MIT licence). The
+[PyZDDE](https://github.com/xzos/PyZDDE) (`ZMXFILES/Doublet.ZMX`, MIT license). The
 token structure — record order, indentation of surface records, padded `WAVM`
 list, trailing `TOL`/`MNUM`/`MOFF` metadata — mirrors what Zemax actually writes,
 so the reader is exercised against realistic input rather than a tidy invention.

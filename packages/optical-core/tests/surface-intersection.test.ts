@@ -19,7 +19,7 @@ test('off-axis intersection lands on the spherical cap (sag)', () => {
   const sag = 50 - Math.sqrt(2500 - 400); // z of the cap at r = 20
   assert.ok(Math.abs(hit.point.z - sag) < 1e-9);
   assert.ok(Math.abs(hit.distance - (sag + 10)) < 1e-9);
-  // Normal = (point − centre) / R, centre at (0,0,50).
+  // Normal = (point − center) / R, center at (0,0,50).
   const expectedNormal = new Vector3(0, 20, sag - 50).normalized();
   assert.ok(hit.normal.equals(expectedNormal, 1e-9));
 });
@@ -28,7 +28,7 @@ test('negative radius picks the vertex-side cap, not the far sphere', () => {
   const hit = intersectSphericalSurface(new Point3(0, 0, -10), dirZ, -1 / 50);
   assert.ok(hit);
   assert.ok(Math.abs(hit.distance - 10) < 1e-12); // vertex at z=0, not z=-100
-  // Centre of curvature is at −Z, so the outward normal at the vertex points +Z.
+  // Center of curvature is at −Z, so the outward normal at the vertex points +Z.
   assert.ok(hit.normal.equals(new Vector3(0, 0, 1), 1e-12));
 });
 

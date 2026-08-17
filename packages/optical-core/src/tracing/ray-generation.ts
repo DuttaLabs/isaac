@@ -7,7 +7,7 @@ import { traceRay, type RayTraceResult } from './trace.ts';
 
 /**
  * A point in the entrance pupil in normalized coordinates: (0, 0) is the pupil
- * centre and the unit circle px² + py² = 1 is its rim. Values outside the unit
+ * center and the unit circle px² + py² = 1 is its rim. Values outside the unit
  * circle are allowed so callers can deliberately probe beyond the pupil.
  */
 export interface PupilPoint {
@@ -18,7 +18,7 @@ export interface PupilPoint {
 export interface RayGenerationOptions {
   /** Field to launch from: an index into `system.fields`, or an explicit field. Defaults to on-axis. */
   field?: number | Field;
-  /** Wavelength in nanometres. Defaults to the system's primary wavelength. */
+  /** Wavelength in nanometers. Defaults to the system's primary wavelength. */
   wavelengthNm?: number;
   /**
    * Axial position of the launch plane, used only for objects at infinity.
@@ -197,7 +197,7 @@ export function generateRay(
 }
 
 /**
- * The chief (principal) ray of a field: the one through the centre of the
+ * The chief (principal) ray of a field: the one through the center of the
  * entrance pupil. It defines the image height of that field point.
  */
 export function generateChiefRay(system: OpticalSystem, options: RayGenerationOptions = {}): Ray {
@@ -300,7 +300,7 @@ function sag(c: number, h: number): number {
   }
   const term = 1 - c * c * h * h;
   if (term <= 0) {
-    return 1 / c; // beyond the hemisphere: the sag saturates at the centre of curvature
+    return 1 / c; // beyond the hemisphere: the sag saturates at the center of curvature
   }
   return (c * h * h) / (1 + Math.sqrt(term));
 }

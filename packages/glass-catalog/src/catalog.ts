@@ -5,7 +5,7 @@ import type { GlassRecord } from './types.ts';
 export interface GlassLookup {
   glass: GlassMaterial;
   /**
-   * Set when the requested name was not in the catalogue and a modern
+   * Set when the requested name was not in the catalog and a modern
    * equivalent was substituted (see {@link GlassCatalogOptions.allowLegacyNames}).
    */
   substitutedFor?: string;
@@ -51,7 +51,7 @@ export class GlassCatalog {
     return this.byNormalizedName.size;
   }
 
-  /** Every glass name, in catalogue spelling, sorted. */
+  /** Every glass name, in catalog spelling, sorted. */
   public names(): string[] {
     return [...this.byNormalizedName.values()].map((record) => record.name).sort();
   }
@@ -85,7 +85,7 @@ export class GlassCatalog {
     return undefined;
   }
 
-  /** Returns a catalogue with different lookup options. */
+  /** Returns a catalog with different lookup options. */
   public with(options: GlassCatalogOptions): GlassCatalog {
     return new GlassCatalog(this.records(), { ...this.options, ...options });
   }

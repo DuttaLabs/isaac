@@ -2,7 +2,7 @@ import { Vector3 } from './vector3.ts';
 
 /**
  * An immutable position in the optical system's right-handed coordinate space.
- * Lengths are in the system's linear units (millimetres by convention).
+ * Lengths are in the system's linear units (millimeters by convention).
  */
 export class Point3 {
   public readonly x: number;

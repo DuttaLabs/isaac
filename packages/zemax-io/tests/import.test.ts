@@ -16,7 +16,7 @@ const DOUBLET = readFileSync(
   'utf8',
 );
 
-/** The file names SCHOTT BK7 and F2, which the core catalogue does not carry. */
+/** The file names SCHOTT BK7 and F2, which the core catalog does not carry. */
 const SCHOTT: ReadonlyMap<string, Material> = new Map([
   ['BK7', new ConstantMaterial('BK7', 1.5168)],
   ['F2', new ConstantMaterial('F2', 1.62)],
@@ -38,7 +38,7 @@ test('a doublet file maps onto the optical-core model', () => {
   assert.deepEqual(warnings, []);
 
   // FTYP declares 3 wavelengths, so the file's padding entries are dropped,
-  // and PWAV 2 selects the middle one. WAVM is in micrometres.
+  // and PWAV 2 selects the middle one. WAVM is in micrometers.
   assert.deepEqual(system.wavelengthsNm, [486, 589, 656]);
   assert.equal(system.primaryWavelengthNm, 589);
 
@@ -119,7 +119,7 @@ test('resolved glasses are reported alongside the system', () => {
 });
 
 test('a glass the resolver substitutes is reported once, not left implicit', () => {
-  // A catalogue answering "SK16" with its lead-free replacement is making an
+  // A catalog answering "SK16" with its lead-free replacement is making an
   // approximation, so the import must say so even though the lookup succeeded.
   const substituting = (name: string): Material | undefined =>
     name.trim().toUpperCase() === 'BK7'
@@ -136,9 +136,9 @@ test('a glass the resolver substitutes is reported once, not left implicit', () 
   assert.equal(glasses[1]!.resolvedAs, undefined); // F2 resolved to F2
   const substitutions = warnings.filter((warning) => /is a substitute/.test(warning));
   assert.equal(substitutions.length, 1);
-  assert.match(substitutions[0]!, /"BK7" is not in the catalogue and was traced as "N-BK7"/);
+  assert.match(substitutions[0]!, /"BK7" is not in the catalog and was traced as "N-BK7"/);
 
-  // Case and separators are spelling, not substitution: catalogues answer
+  // Case and separators are spelling, not substitution: catalogs answer
   // "BK7" with "bk-7" and "F2" with "f 2" without changing the glass.
   const spelled = (name: string): Material | undefined =>
     new ConstantMaterial(name.trim().toLowerCase().replace(/(\d)/, '-$1'), 1.5);
@@ -147,12 +147,12 @@ test('a glass the resolver substitutes is reported once, not left implicit', () 
 
 test('a glass described inline becomes a model glass', () => {
   // How a design taken from a patent names its glass: an index and an Abbe
-  // number, no catalogue entry. 1.5168/64.17 is N-BK7 described rather than named.
-  const modelled = DOUBLET.replace(
+  // number, no catalog entry. 1.5168/64.17 is N-BK7 described rather than named.
+  const modeled = DOUBLET.replace(
     'GLAS BK7 0 0 0 0 0 0 0 0 0 0',
     'GLAS ___BLANK 1 0 1.5168 6.417E+1 0 0 0 0 0 0',
   );
-  const { system, glasses, warnings } = importZmx(modelled, { resolveMaterial });
+  const { system, glasses, warnings } = importZmx(modeled, { resolveMaterial });
 
   assert.deepEqual(glasses[0], {
     name: '___BLANK 1.5168/64.17',
@@ -230,7 +230,7 @@ test('header settings that change how rays are launched become warnings', () => 
   const aimed = importDoublet(DOUBLET.replace('RAIM 0 0 1', 'RAIM 1 0 1'));
   assert.ok(aimed.warnings.some((warning) => /requests ray aiming \(RAIM 1\)/.test(warning)));
 
-  // The file's own ENVD is the standard environment, which the catalogue
+  // The file's own ENVD is the standard environment, which the catalog
   // indices already assume, so only a departure from it is reported.
   const hot = importDoublet(DOUBLET.replace('ENVD 2.0E+1 1 0', 'ENVD 5.0E+1 1 0'));
   assert.ok(
@@ -281,7 +281,7 @@ test('ambiguous or unsupported header data becomes a warning', () => {
   assert.deepEqual(imageHeightFields.system.fields, []);
   assert.ok(imageHeightFields.warnings.some((warning) => /Field type 3/.test(warning)));
 
-  // A stop marked on the image surface cannot be honoured.
+  // A stop marked on the image surface cannot be honored.
   const stopOnImage = importDoublet(DOUBLET.replace('SURF 4\n  TYPE', 'SURF 4\n  STOP\n  TYPE'));
   assert.equal(stopOnImage.system.stopIndex, 1); // still surface 1
   assert.ok(
@@ -290,7 +290,7 @@ test('ambiguous or unsupported header data becomes a warning', () => {
 
   const oddUnits = importDoublet(DOUBLET.replace('UNIT MM', 'UNIT FURLONG'));
   assert.equal(oddUnits.system.units, 'mm');
-  assert.ok(oddUnits.warnings.some((warning) => /Unrecognised UNIT/.test(warning)));
+  assert.ok(oddUnits.warnings.some((warning) => /Unrecognized UNIT/.test(warning)));
 });
 
 test('a file supplied as raw UTF-16 bytes imports identically', () => {

@@ -1,7 +1,7 @@
 import { AIR, OpticalSystem, Surface, type Material } from '@isaac/optical-core';
 import { SCHOTT } from '@isaac/glass-catalog';
 
-/** The catalogue used for glass lookup, tolerant of obsolete names from old files. */
+/** The catalog used for glass lookup, tolerant of obsolete names from old files. */
 export const GLASS_CATALOG = SCHOTT.with({ allowLegacyNames: true });
 
 /** Resolves a glass name typed in the editor; blank or `AIR` means air. */
@@ -21,7 +21,7 @@ export function glassName(material: Material): string {
 /**
  * A 100 mm f/5 cemented doublet, so the app opens on something real rather than
  * an empty grid. Curvatures are the classic crown/flint prescription; the
- * glasses come from the SCHOTT catalogue.
+ * glasses come from the SCHOTT catalog.
  */
 export function defaultSystem(): OpticalSystem {
   const crown = GLASS_CATALOG.get('N-BK7')!;

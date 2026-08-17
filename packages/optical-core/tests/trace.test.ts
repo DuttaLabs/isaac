@@ -13,7 +13,7 @@ import {
 
 /**
  * A plano-convex singlet: curved surface (R = 50) facing the object, flat back.
- * Glass n = 1.5, centre thickness 5. Lensmaker's equation gives an effective
+ * Glass n = 1.5, center thickness 5. Lensmaker's equation gives an effective
  * focal length f = R / (n − 1) = 100. For a thick lens the back focal distance
  * from the rear (flat) vertex is
  *

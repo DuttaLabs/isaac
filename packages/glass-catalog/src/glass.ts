@@ -17,7 +17,7 @@ export interface GlassMaterialOptions {
 }
 
 /**
- * A catalogue glass as an optical-core {@link Material}: the manufacturer's
+ * A catalog glass as an optical-core {@link Material}: the manufacturer's
  * Sellmeier fit, plus the metadata needed to know when to trust it.
  */
 export class GlassMaterial implements Material {
@@ -55,7 +55,7 @@ export class GlassMaterial implements Material {
     return new GlassMaterial(this.record, { strictRange: this.strictRange, ...options });
   }
 
-  /** Refractive index at the helium d-line, the catalogue's `nd`. */
+  /** Refractive index at the helium d-line, the catalog's `nd`. */
   public get nd(): number {
     this.requireVisibleFit('nd');
     return this.sellmeier.indexAt(D_LINE_NM);

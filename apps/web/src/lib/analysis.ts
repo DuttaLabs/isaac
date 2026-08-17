@@ -108,7 +108,7 @@ export interface RayFanData {
  * Transverse ray aberration across the pupil: how far each ray lands from the
  * chief ray of the same field, measured at the image surface. The reference is
  * the chief ray at the primary wavelength, so the curves also show lateral
- * colour rather than hiding it.
+ * color rather than hiding it.
  */
 export function computeRayFan(
   system: OpticalSystem,

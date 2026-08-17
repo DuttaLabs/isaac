@@ -8,5 +8,5 @@ export { SCHOTT_GLASSES } from './schott.ts';
 import { GlassCatalog } from './catalog.ts';
 import { SCHOTT_GLASSES } from './schott.ts';
 
-/** The SCHOTT catalogue, ready to query. */
+/** The SCHOTT catalog, ready to query. */
 export const SCHOTT = new GlassCatalog(SCHOTT_GLASSES);

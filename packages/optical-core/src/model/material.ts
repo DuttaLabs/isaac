@@ -6,7 +6,7 @@
  */
 export interface Material {
   readonly name: string;
-  /** Refractive index at the given wavelength (nanometres). */
+  /** Refractive index at the given wavelength (nanometers). */
   indexAt(wavelengthNm: number): number;
 }
 
@@ -28,7 +28,7 @@ export class ConstantMaterial implements Material {
   }
 }
 
-/** Three-term Sellmeier coefficients (wavelength in micrometres). */
+/** Three-term Sellmeier coefficients (wavelength in micrometers). */
 export interface SellmeierCoefficients {
   b1: number;
   b2: number;
@@ -41,7 +41,7 @@ export interface SellmeierCoefficients {
 /**
  * A dispersive material described by the three-term Sellmeier equation:
  *
- *   n(λ)² = 1 + Σ Bᵢ λ² / (λ² − Cᵢ),   λ in micrometres.
+ *   n(λ)² = 1 + Σ Bᵢ λ² / (λ² − Cᵢ),   λ in micrometers.
  */
 export class SellmeierMaterial implements Material {
   public readonly name: string;
@@ -56,7 +56,7 @@ export class SellmeierMaterial implements Material {
     if (!Number.isFinite(wavelengthNm) || wavelengthNm <= 0) {
       throw new RangeError('wavelengthNm must be a positive, finite number.');
     }
-    const l2 = (wavelengthNm / 1000) ** 2; // micrometres, squared
+    const l2 = (wavelengthNm / 1000) ** 2; // micrometers, squared
     const { b1, b2, b3, c1, c2, c3 } = this.coefficients;
     const nSquared = 1 + (b1 * l2) / (l2 - c1) + (b2 * l2) / (l2 - c2) + (b3 * l2) / (l2 - c3);
     if (!(nSquared > 0)) {
@@ -66,7 +66,7 @@ export class SellmeierMaterial implements Material {
   }
 }
 
-/** The spectral lines a model glass is anchored to, in nanometres. */
+/** The spectral lines a model glass is anchored to, in nanometers. */
 export const SPECTRAL_LINES = {
   /** Helium d, the reference for nd and the Abbe number. */
   d: 587.5618,
@@ -132,7 +132,7 @@ export interface ModelGlassOptions {
  * median index error is 9e-6 and the worst 3e-4, which is the same order as the
  * ~1e-4 OpticStudio claims for its own. With ΔPg,F left at zero the worst case
  * grows to 4e-3, so a file that names only nd and Vd buys a cruder glass — fine
- * for layout and first-order work, not for judging colour correction.
+ * for layout and first-order work, not for judging color correction.
  */
 export class ModelGlassMaterial implements Material {
   public readonly name: string;

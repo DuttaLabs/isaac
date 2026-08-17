@@ -126,7 +126,7 @@ export function normalizeSemiDiameter(value: number): number {
 }
 
 function nearbySemiDiameter(system: OpticalSystem, index: number): number {
-  const neighbour = system.surfaces[index] ?? system.surfaces[1];
-  const semiDiameter = neighbour?.semiDiameter ?? 10;
+  const neighbor = system.surfaces[index] ?? system.surfaces[1];
+  const semiDiameter = neighbor?.semiDiameter ?? 10;
   return Number.isFinite(semiDiameter) ? semiDiameter : 10;
 }

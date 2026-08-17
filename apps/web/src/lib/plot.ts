@@ -38,11 +38,11 @@ export function niceTicks(min: number, max: number, target = 5): number[] {
 }
 
 /** Chooses µm or mm depending on how small the values are. */
-export function chooseLengthUnit(maxMillimetres: number): { scale: number; suffix: string } {
-  return maxMillimetres < 0.2 ? { scale: 1000, suffix: 'µm' } : { scale: 1, suffix: 'mm' };
+export function chooseLengthUnit(maxMillimeters: number): { scale: number; suffix: string } {
+  return maxMillimeters < 0.2 ? { scale: 1000, suffix: 'µm' } : { scale: 1, suffix: 'mm' };
 }
 
-/** SVG path for a marker shape, centred on (x, y). */
+/** SVG path for a marker shape, centered on (x, y). */
 export function markerPath(
   marker: 'circle' | 'square' | 'triangle' | 'diamond',
   x: number,

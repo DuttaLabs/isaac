@@ -23,9 +23,9 @@ const PUBLISHED: readonly (readonly [string, number, number])[] = [
   ['N-BAK4', 1.56883, 55.98],
 ];
 
-test('the catalogue carries the SCHOTT glasses with usable Sellmeier fits', () => {
+test('the catalog carries the SCHOTT glasses with usable Sellmeier fits', () => {
   assert.equal(SCHOTT.size, SCHOTT_GLASSES.length);
-  assert.ok(SCHOTT.size > 150, `expected a full catalogue, got ${SCHOTT.size} glasses`);
+  assert.ok(SCHOTT.size > 150, `expected a full catalog, got ${SCHOTT.size} glasses`);
   assert.ok(SCHOTT.names().includes('N-BK7'));
   assert.ok(SCHOTT.names().includes('F2'));
 
@@ -43,7 +43,7 @@ test('the catalogue carries the SCHOTT glasses with usable Sellmeier fits', () =
 test('computed nd and Abbe numbers match the published datasheet values', () => {
   for (const [name, nd, vd] of PUBLISHED) {
     const glass = SCHOTT.get(name);
-    assert.ok(glass, `${name} is missing from the catalogue`);
+    assert.ok(glass, `${name} is missing from the catalog`);
     assert.ok(
       Math.abs(glass.nd - nd) < 5e-5,
       `${name}: nd ${glass.nd.toFixed(5)}, published ${nd}`,
@@ -55,7 +55,7 @@ test('computed nd and Abbe numbers match the published datasheet values', () => 
   }
 });
 
-test('the catalogue agrees with the copy of N-BK7 built into optical-core', () => {
+test('the catalog agrees with the copy of N-BK7 built into optical-core', () => {
   const fromCatalog = SCHOTT.get('N-BK7')!;
   for (const wavelength of [400, 486.1327, 587.5618, 656.2725, 1000, 2000]) {
     assert.ok(
@@ -77,7 +77,7 @@ test('lookup ignores case and the separators lens files vary on', () => {
 });
 
 test('obsolete names resolve only when legacy substitution is enabled', () => {
-  // BK7 was replaced by the lead-free N-BK7 and is no longer in the catalogue.
+  // BK7 was replaced by the lead-free N-BK7 and is no longer in the catalog.
   assert.equal(SCHOTT.get('BK7'), undefined);
 
   const lenient = SCHOTT.with({ allowLegacyNames: true });
@@ -87,7 +87,7 @@ test('obsolete names resolve only when legacy substitution is enabled', () => {
 
   // A name with no N- counterpart stays unresolved even when lenient.
   assert.equal(lenient.get('NOT-A-GLASS'), undefined);
-  // Glasses that are still in the catalogue are never substituted.
+  // Glasses that are still in the catalog are never substituted.
   assert.equal(lenient.lookup('F2')?.substitutedFor, undefined);
 });
 
@@ -120,7 +120,7 @@ test('nd and the Abbe number are refused when the fit does not cover the visible
   assert.ok(Number.isFinite(infrared.indexAt(2000)));
 });
 
-test('a catalogue rejects names that collide once normalized', () => {
+test('a catalog rejects names that collide once normalized', () => {
   const record = SCHOTT_GLASSES[0]!;
   assert.throws(
     () => new GlassCatalog([record, { ...record, name: record.name.toLowerCase() }]),
@@ -128,7 +128,7 @@ test('a catalogue rejects names that collide once normalized', () => {
   );
 });
 
-test('the catalogue exposes a resolver shaped for lens-file import', () => {
+test('the catalog exposes a resolver shaped for lens-file import', () => {
   const resolve = SCHOTT.resolver();
   assert.equal(resolve('N-BK7')?.name, 'N-BK7');
   assert.equal(resolve('BK7'), undefined);

@@ -224,7 +224,7 @@ export function entrancePupil(
   const stopRadius = requireStopRadius(system, stopIndex);
 
   // Two rays leaving the stop backwards, in the reversed frame ζ = −(z − z₁):
-  // one from the centre to locate the pupil, one from the rim to size it.
+  // one from the center to locate the pupil, one from the rim to size it.
   let axial = { height: 0, slope: 1 };
   let edge = { height: stopRadius, slope: 0 };
 
@@ -334,7 +334,7 @@ export function lastRefractingSurfaceIndex(system: OpticalSystem): number {
 
 /**
  * Front focal distance, from a paraxial trace run backwards through the system.
- * Reversing swaps each surface's neighbouring media and flips its curvature, so
+ * Reversing swaps each surface's neighboring media and flips its curvature, so
  * the same recurrence applies with the surface order inverted.
  */
 function computeFrontFocalDistance(system: OpticalSystem, wavelengthNm: number): number {

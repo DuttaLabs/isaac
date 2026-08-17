@@ -85,14 +85,14 @@ test('a paraxial surface with no focal length is refused, not defaulted', () => 
   );
 });
 
-test('an unrecognised PARM on a paraxial surface is refused rather than guessed at', () => {
+test('an unrecognized PARM on a paraxial surface is refused rather than guessed at', () => {
   assert.throws(
     () =>
       importZmx(paraxialFile(['  TYPE PARAXIAL', '  PARM 1 1.0E+2', '  PARM 3 7'].join('\n')), {
         resolveMaterial,
       }),
     (error: unknown) =>
-      error instanceof ZmxImportError && /unrecognised PARM 3/.test(error.message),
+      error instanceof ZmxImportError && /unrecognized PARM 3/.test(error.message),
   );
 });
 

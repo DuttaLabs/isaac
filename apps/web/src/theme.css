@@ -320,7 +320,7 @@ label {
 /*
  * A label that changes with a control's state, without changing its width: both
  * captions occupy the same grid cell, so the control is sized by the longer one
- * and its neighbours never shift when it is toggled.
+ * and its neighbors never shift when it is toggled.
  */
 .label-swap {
   display: grid;
@@ -338,7 +338,7 @@ label {
 
 /*
  * Import feedback. Warnings are the part worth reading — things the file asked
- * for that the engine could not honour — so they get full-contrast text, while
+ * for that the engine could not honor — so they get full-contrast text, while
  * the list of skipped record types stays folded away and muted.
  */
 .notice-warnings {

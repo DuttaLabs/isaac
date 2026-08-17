@@ -9,10 +9,10 @@ export interface GlassRecord {
   name: string;
   /** Manufacturer, e.g. `SCHOTT`. */
   manufacturer: string;
-  /** The manufacturer's sub-catalogue: `optical`, `infrared`, `misc`, `obsolete`. */
+  /** The manufacturer's sub-catalog: `optical`, `infrared`, `misc`, `obsolete`. */
   catalog: string;
   /** Three-term Sellmeier coefficients (λ in µm, C in µm²). */
   coefficients: SellmeierCoefficients;
-  /** Wavelength range of the published fit, in nanometres: `[min, max]`. */
+  /** Wavelength range of the published fit, in nanometers: `[min, max]`. */
   rangeNm: readonly [number, number];
 }

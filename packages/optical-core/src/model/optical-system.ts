@@ -26,7 +26,7 @@ export interface Aperture {
 export interface OpticalSystemConfig {
   name?: string;
   units?: LinearUnit;
-  /** Wavelengths in nanometres. */
+  /** Wavelengths in nanometers. */
   wavelengthsNm?: number[];
   primaryWavelengthIndex?: number;
   fields?: Field[];

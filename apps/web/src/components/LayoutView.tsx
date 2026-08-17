@@ -46,10 +46,10 @@ export function LayoutView({
   const spanY = Math.max(maxY - minY, 1e-6);
   const scale = Math.min((WIDTH - 2 * PADDING) / spanZ, (HEIGHT - 2 * PADDING) / spanY);
 
-  const centreY = (minY + maxY) / 2;
+  const centerY = (minY + maxY) / 2;
   const project = (point: LayoutPoint): { x: number; y: number } => ({
     x: PADDING + (point.z - minZ) * scale,
-    y: HEIGHT / 2 - (point.y - centreY) * scale,
+    y: HEIGHT / 2 - (point.y - centerY) * scale,
   });
 
   const axisY = project({ z: 0, y: 0 }).y;
@@ -107,7 +107,7 @@ export function LayoutView({
         the profiles rather than with the fill so they sit above the rays, like
         the surfaces they join. A crossed element gets none: there is no edge to
         draw when the surfaces have passed through each other, and its absence
-        is a second cue beside the colour, which nobody should have to rely on
+        is a second cue beside the color, which nobody should have to rely on
         alone.
       */}
       {geometry.bodies.flatMap((body, index) =>
@@ -125,7 +125,7 @@ export function LayoutView({
       )}
 
       {geometry.profiles.map((profile) => {
-        // Drawn heavier as well as coloured: the highlight has to survive being
+        // Drawn heavier as well as colored: the highlight has to survive being
         // one thin line among many, and weight carries where a hue may not.
         const highlighted = profile.surfaceIndex === highlightedSurface;
         return (

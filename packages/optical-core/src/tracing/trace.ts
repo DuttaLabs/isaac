@@ -16,13 +16,13 @@ export interface Intersection {
   surfaceId: string;
   /** Intersection point in global coordinates. */
   point: Point3;
-  /** Unit surface normal (global), pointing outward from the centre of curvature. */
+  /** Unit surface normal (global), pointing outward from the center of curvature. */
   normal: Vector3;
   /** Unit ray direction arriving at the surface. */
   incomingDirection: Vector3;
   /** Unit ray direction leaving the surface. */
   outgoingDirection: Vector3;
-  /** Geometric distance travelled from the previous point to this one. */
+  /** Geometric distance traveled from the previous point to this one. */
   distance: number;
   /** Refractive index before / after the interaction. */
   indexBefore: number;
@@ -215,7 +215,7 @@ function interact(
  * reached height `u·f` whatever x was — a perfect point image at any aperture.
  * That is the whole purpose of a placeholder lens: contribute first-order power
  * and no aberration. A direction-cosine formulation would instead introduce a
- * spherical-aberration-like residual that is an artefact of the formula rather
+ * spherical-aberration-like residual that is an artifact of the formula rather
  * than a property of the design.
  */
 function bendIdeally(

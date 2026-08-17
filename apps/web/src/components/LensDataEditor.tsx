@@ -422,7 +422,7 @@ function EmptyCell({ reason }: { reason: string }) {
   );
 }
 
-/** Glass name entry, backed by the catalogue and validated as you leave the cell. */
+/** Glass name entry, backed by the catalog and validated as you leave the cell. */
 function GlassCell({
   surfaceName,
   disabled,
@@ -445,7 +445,7 @@ function GlassCell({
       placeholder="air"
       aria-label="Glass"
       className={resolved ? undefined : 'invalid'}
-      title={resolved ? undefined : `"${shown}" is not in the catalogue`}
+      title={resolved ? undefined : `"${shown}" is not in the catalog`}
       onChange={(event) => {
         setEditing(true);
         setDraft(event.target.value);

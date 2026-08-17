@@ -12,7 +12,7 @@ import { Vector3 } from '../geometry/vector3.ts';
 export type RayStatus = 'ACTIVE' | 'TERMINATED' | 'BLOCKED' | 'MISSED' | 'TIR';
 
 export interface RayOptions {
-  /** Wavelength in nanometres. */
+  /** Wavelength in nanometers. */
   wavelengthNm: number;
   /** Relative radiometric intensity in [0, ∞). Defaults to 1. */
   intensity?: number;

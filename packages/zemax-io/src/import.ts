@@ -57,7 +57,7 @@ export interface ZmxGlassReference {
 
 export interface ZmxImportResult {
   system: OpticalSystem;
-  /** Things the file said that this reader could not honour exactly. */
+  /** Things the file said that this reader could not honor exactly. */
   warnings: string[];
   /** Every glass the file names, and whether it resolved to a material. */
   glasses: readonly ZmxGlassReference[];
@@ -67,7 +67,7 @@ export interface ZmxImportResult {
    * multi-configuration and physical-optics settings — so a long list is normal
    * and does not by itself mean the imported system is wrong. Anything ignored
    * that *would* change the traced result is additionally reported in
-   * {@link warnings}; see {@link UNMODELLED_SURFACE_TOKENS}.
+   * {@link warnings}; see {@link UNMODELED_SURFACE_TOKENS}.
    */
   ignoredTokens: readonly string[];
   /** The raw parsed document, for callers needing data this mapping drops. */
@@ -80,7 +80,7 @@ export const UNKNOWN_GLASS_INDEX = 1.5;
 /**
  * The name a `GLAS` record carries when the glass is described inline by its
  * index and Abbe number rather than named. It is a literal placeholder, not a
- * catalogue entry, so it is matched on the name rather than on the record's
+ * catalog entry, so it is matched on the name rather than on the record's
  * flag columns, whose meaning has not been verified.
  */
 export const MODEL_GLASS_NAME = '___BLANK';
@@ -110,10 +110,10 @@ const HANDLED_SURFACE_TOKENS = new Set(['TYPE', 'CURV', 'DISZ', 'DIAM', 'GLAS', 
  * surface block can hold — display flags, coating names, scatter data — leaves
  * the traced result untouched.
  */
-const UNMODELLED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
+const UNMODELED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
   ['CLAP', 'an additional circular clear aperture'],
   ['SQAP', 'a rectangular aperture'],
-  ['OBDC', 'a decentred aperture'],
+  ['OBDC', 'a decentered aperture'],
   ['UDAD', 'a user-defined aperture'],
   ['USAP', 'a user-defined aperture'],
   ['PKUP', 'a pickup solve'],
@@ -122,13 +122,13 @@ const UNMODELLED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * `VDXN`/`VDYN` decentre the pupil per field, `VCXN`/`VCYN` compress it and
+ * `VDXN`/`VDYN` decenter the pupil per field, `VCXN`/`VCYN` compress it and
  * `VANN` rotates it. All-zero — the usual case — means no vignetting, so only
  * a non-zero factor is worth reporting.
  */
 const VIGNETTING_TOKENS = ['VDXN', 'VDYN', 'VCXN', 'VCYN', 'VANN'];
 
-/** Zemax's standard environment, which the catalogue indices already assume. */
+/** Zemax's standard environment, which the catalog indices already assume. */
 const STANDARD_TEMPERATURE_C = 20;
 const STANDARD_PRESSURE_ATM = 1;
 
@@ -260,7 +260,7 @@ function toSurface(
     );
   }
 
-  warnUnmodelledGeometry(records, number, context.warnings);
+  warnUnmodeledGeometry(records, number, context.warnings);
 
   let isStop = hasRecord(records, 'STOP');
   if (isStop && type !== 'STANDARD' && type !== 'PARAXIAL') {
@@ -310,7 +310,7 @@ function readParaxialFocalLength(records: readonly ZmxRecord[], surfaceNumber: n
       focalLength = numericValue(record.values[1]);
     } else if (parameter !== 2) {
       throw new ZmxImportError(
-        `Surface ${surfaceNumber} is TYPE PARAXIAL with an unrecognised PARM ${record.values[0]}; ` +
+        `Surface ${surfaceNumber} is TYPE PARAXIAL with an unrecognized PARM ${record.values[0]}; ` +
           'only PARM 1 (focal length) and PARM 2 (OPD mode) are understood.',
       );
     }
@@ -358,12 +358,12 @@ function requireParaxialSurfacesInAir(surfaces: readonly Surface[]): void {
  * Reports surface records that describe geometry outside the model. Dropping
  * these changes the trace, so they must not disappear into `ignoredTokens`.
  */
-function warnUnmodelledGeometry(
+function warnUnmodeledGeometry(
   records: readonly ZmxRecord[],
   surfaceNumber: number,
   warnings: string[],
 ): void {
-  for (const [token, description] of UNMODELLED_SURFACE_TOKENS) {
+  for (const [token, description] of UNMODELED_SURFACE_TOKENS) {
     if (hasRecord(records, token)) {
       warnings.push(
         `Surface ${surfaceNumber} has a ${token} record (${description}), which this reader does not model; ` +
@@ -384,7 +384,7 @@ function warnHeaderSettings(document: ZmxDocument, warnings: string[]): void {
   );
   if (vignetting.length > 0) {
     warnings.push(
-      `Vignetting factors are set (${vignetting.join(', ')}) but are not modelled; off-axis fields ` +
+      `Vignetting factors are set (${vignetting.join(', ')}) but are not modeled; off-axis fields ` +
         'will be traced through the full pupil, so they will look worse than the design intends.',
     );
   }
@@ -445,7 +445,7 @@ function readMaterial(
 
   const material = context.resolve(glassName);
   if (material) {
-    // A resolver may answer with a different glass — a catalogue substituting a
+    // A resolver may answer with a different glass — a catalog substituting a
     // modern equivalent for an obsolete name, say. That is an approximation the
     // caller has to know about, so it is reported rather than left implicit.
     const substituted = !sameGlassName(glassName, material.name);
@@ -480,7 +480,7 @@ function readMaterial(
  * because their meaning has not been verified — one file in the sample corpus
  * carries a stray value in the column where ΔPg,F might live, and it is plainly
  * the Abbe number of an unrelated glass left behind by an edit. Reading it as a
- * partial dispersion would quietly distort the colour correction, so the glass
+ * partial dispersion would quietly distort the color correction, so the glass
  * is built on the normal line instead.
  */
 function readModelGlass(
@@ -518,14 +518,14 @@ function readModelGlass(
 }
 
 /**
- * A resolver may answer with a different glass — a catalogue substituting a
+ * A resolver may answer with a different glass — a catalog substituting a
  * modern equivalent for an obsolete name, say. That is an approximation the
  * caller has to know about, so it is reported once per glass rather than left
  * implicit or repeated for every surface the glass appears on.
  */
 /**
  * Model glasses are an approximation of a real melt, so the import says how many
- * it built rather than letting them pass for catalogue glass. Reported once
+ * it built rather than letting them pass for catalog glass. Reported once
  * rather than per surface — a file can carry dozens.
  */
 function warnModelGlasses(glasses: readonly ZmxGlassReference[], warnings: string[]): void {
@@ -538,7 +538,7 @@ function warnModelGlasses(glasses: readonly ZmxGlassReference[], warnings: strin
   warnings.push(
     `${surfaces} use a model glass: an index and Abbe number rather than a named glass. ` +
       'Indices are approximated to about 1e-4 in the visible, which is fine for layout and ' +
-      'first-order work but not for judging colour correction.',
+      'first-order work but not for judging color correction.',
   );
 
   const nonDispersive = model.filter((glass) => glass.isNonDispersive);
@@ -559,7 +559,7 @@ function warnGlassSubstitutions(glasses: readonly ZmxGlassReference[], warnings:
   }
   for (const [name, resolvedAs] of substitutions) {
     warnings.push(
-      `Glass "${name}" is not in the catalogue and was traced as "${resolvedAs}"; ` +
+      `Glass "${name}" is not in the catalog and was traced as "${resolvedAs}"; ` +
         'it is a substitute, not the same glass.',
     );
   }
@@ -592,25 +592,25 @@ function readUnits(document: ZmxDocument, warnings: string[]): LinearUnit {
   }
   const unit = UNITS.get(raw.toUpperCase());
   if (!unit) {
-    warnings.push(`Unrecognised UNIT "${raw}"; assuming millimetres.`);
+    warnings.push(`Unrecognized UNIT "${raw}"; assuming millimeters.`);
     return 'mm';
   }
   return unit;
 }
 
 /**
- * `WAVM n λ weight` carries wavelengths in micrometres. Files pad the list out
+ * `WAVM n λ weight` carries wavelengths in micrometers. Files pad the list out
  * to 24 entries, so the count from FTYP decides how many are real.
  */
 function readWavelengths(document: ZmxDocument, warnings: string[]): number[] {
   const byNumber = new Map<number, number>();
   for (const record of findRecords(document.header, 'WAVM')) {
     const number = numericValue(record.values[0]);
-    const micrometres = numericValue(record.values[1]);
-    if (number === undefined || micrometres === undefined || micrometres <= 0) {
+    const micrometers = numericValue(record.values[1]);
+    if (number === undefined || micrometers === undefined || micrometers <= 0) {
       continue;
     }
-    byNumber.set(number, micrometres * 1000);
+    byNumber.set(number, micrometers * 1000);
   }
   if (byNumber.size === 0) {
     warnings.push('No usable WAVM records; defaulting to the helium d-line.');
@@ -742,7 +742,7 @@ function collectIgnoredTokens(document: ZmxDocument): string[] {
   return [...ignored].sort();
 }
 
-/** Case-insensitive lookup in the core's built-in material catalogue. */
+/** Case-insensitive lookup in the core's built-in material catalog. */
 function defaultResolveMaterial(glassName: string): Material | undefined {
   const wanted = glassName.trim().toUpperCase();
   for (const [name, material] of MATERIAL_CATALOG) {

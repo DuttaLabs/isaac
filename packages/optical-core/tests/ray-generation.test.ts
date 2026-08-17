@@ -119,9 +119,9 @@ test('an off-axis ray at infinity is aimed through its pupil point at the field 
   const ray = generateRay(system, { px: 0, py: 0 }, { field: 1 }); // fields[1] = 5°
 
   assert.ok(ray.direction.equals(new Vector3(0, Math.sin(angleRad), Math.cos(angleRad)), 1e-12));
-  // Walking forward from the launch plane must land on the pupil centre at z = 0.
+  // Walking forward from the launch plane must land on the pupil center at z = 0.
   const atPupil = ray.at(-ray.origin.z / ray.direction.z);
-  assert.ok(Math.abs(atPupil.y) < 1e-12, `chief ray misses the pupil centre by ${atPupil.y}`);
+  assert.ok(Math.abs(atPupil.y) < 1e-12, `chief ray misses the pupil center by ${atPupil.y}`);
   assert.ok(Math.abs(atPupil.z) < 1e-12);
 
   // An explicit field object works the same as a field index.

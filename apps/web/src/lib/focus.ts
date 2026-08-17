@@ -14,7 +14,7 @@ import { attempt, type Result } from './result.ts';
  * that moves the image plane without changing the design. The figure of merit is
  * the RMS spot radius pooled over every field and wavelength, each measured from
  * its own chief ray, so the merit answers "how tight is the image" and not "how
- * well centred", which defocus cannot fix anyway.
+ * well centered", which defocus cannot fix anyway.
  */
 
 export interface QuickFocusOptions {
@@ -135,7 +135,7 @@ function paraxialThickness(system: OpticalSystem, surfaceIndex: number): number 
  * searched sits after every other surface, so those losses are the same at every
  * focus and cannot be gamed. When nothing arrives at all the merit is `Infinity`
  * rather than `computeSpot`'s zero, which is an honest average of nothing and a
- * perfect score to a minimiser.
+ * perfect score to a minimizer.
  */
 export function spotMerit(system: OpticalSystem, gridCount = DEFAULT_GRID_COUNT): number {
   const imageSemiDiameter = system.surfaceAt(system.surfaces.length - 1).semiDiameter;
@@ -177,14 +177,14 @@ function search(
   start: number,
   budget: number,
 ): { x: number; value: number } | undefined {
-  let centre = start;
+  let center = start;
   let span = Math.max(Math.abs(start) * 0.02, 1e-6);
   let spent = 0;
 
   for (let widening = 0; widening < 8 && spent < budget; widening += 1) {
     const samples: { x: number; value: number }[] = [];
     for (let i = 0; i < SCAN_SAMPLES && spent < budget; i += 1) {
-      const x = Math.max(0, centre - span + (2 * span * i) / (SCAN_SAMPLES - 1));
+      const x = Math.max(0, center - span + (2 * span * i) / (SCAN_SAMPLES - 1));
       samples.push({ x, value: merit(x) });
       spent += 1;
     }
@@ -216,7 +216,7 @@ function search(
 
     // The window is off to one side of the minimum: move onto the best edge and
     // widen, rather than refining a bracket that does not contain a minimum.
-    centre = best.x;
+    center = best.x;
     span *= 4;
   }
   return undefined;

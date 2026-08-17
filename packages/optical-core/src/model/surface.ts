@@ -5,7 +5,7 @@ import { AIR, type Material } from './material.ts';
  *
  * `PARAXIAL` is an ideal thin lens: a plane that bends rays by the paraxial law
  * alone, with no glass and no aberration. Designers use it as a placeholder for
- * a lens group not yet designed, so it is a modelling element rather than a
+ * a lens group not yet designed, so it is a modeling element rather than a
  * manufacturable surface. ASPHERIC, COORDINATE_BREAK, MIRROR, and other
  * Zemax-compatible types are planned but intentionally absent.
  */
@@ -17,7 +17,7 @@ export interface SurfaceConfig {
   type: SurfaceType;
   /**
    * Radius of curvature in system units. Use `Infinity` for a plane.
-   * Sign convention: positive radius places the centre of curvature toward +Z.
+   * Sign convention: positive radius places the center of curvature toward +Z.
    */
   radius?: number;
   /** Axial distance to the next surface, in system units. */

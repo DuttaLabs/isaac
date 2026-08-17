@@ -15,20 +15,20 @@ the app look broken.
 
 ## Provenance
 
-| Files | Source | Licence |
+| Files | Source | License |
 | --- | --- | --- |
 | `UK565851-1.zmx` | [lens-designs.com](https://www.lens-designs.com/) — Daniel J. Reiley's exchange of models built from patent literature | MIT |
 | the other 30 | [LensLibrary](https://github.com/nzhagen/LensLibrary) — Nathan Hagen's collection, each design paired with its patent | MIT/X |
 
 Numeric filenames are patent numbers; a trailing letter distinguishes
-embodiments within one patent. Each file carries its own licence text in its
+embodiments within one patent. Each file carries its own license text in its
 `NOTE` records — keep those intact when adding or editing a file, since they are
 the only in-file record of where a design came from.
 
 ## The set
 
 Spanning 1897 (`528155`) to 2016 (`Yang2016a`), 8 to 31 surfaces. Focal lengths
-of 1.0 and 100 are normalisations, not millimetres — patent literature quotes
+of 1.0 and 100 are normalizations, not millimeters — patent literature quotes
 prescriptions scaled to a round focal length.
 
 | File | Surfaces | EFL | Fields | Wavelengths |
@@ -78,7 +78,7 @@ compromise balanced across the field rather than the axial best focus.
 47 of LensLibrary's 77 files were left out because Isaac cannot yet model them:
 even aspheres and conics (21 files), ideal `PARAXIAL` surfaces and coordinate
 breaks (13, mostly the spectrometer designs), and glasses outside the SCHOTT
-catalogue such as CAF2, OHARA `S-` types and fused silica (11). Re-run the
+catalog such as CAF2, OHARA `S-` types and fused silica (11). Re-run the
 triage after adding any of those and this directory can grow.
 
 ## `UK565851-1.zmx` in particular

@@ -61,8 +61,8 @@ export function sag(curvature: number, y: number): number {
  * Least axial distance between two consecutive surfaces, over the aperture they
  * share. Negative means the rear surface has crossed in front of the front one:
  * the element would have to be thinner than nothing somewhere, which is a real
- * design fault, not a drawing artefact. It is the usual failure of a strongly
- * curved element whose semi-diameter has been opened up past what its centre
+ * design fault, not a drawing artifact. It is the usual failure of a strongly
+ * curved element whose semi-diameter has been opened up past what its center
  * thickness can support, and it shows up first at the edge of the aperture.
  *
  * Sampled rather than solved: the extremum of the gap is at the axis or the rim

@@ -139,7 +139,7 @@ export function isObjectAtInfinity(system: OpticalSystem): boolean {
  * from a given field.
  *
  * For an object at infinity the ray is launched from a plane in front of the
- * first surface, travelling at the field angle. For a finite object the ray
+ * first surface, traveling at the field angle. For a finite object the ray
  * starts on the object surface at the field height and is aimed at the pupil
  * point. The pupil plane is the paraxial entrance pupil when the system has a
  * stop, and the first surface's vertex plane otherwise.

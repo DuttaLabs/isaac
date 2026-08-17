@@ -344,7 +344,7 @@ function computeFrontFocalDistance(system: OpticalSystem, wavelengthNm: number):
 
   for (let index = last; index >= 1; index -= 1) {
     const surface = system.surfaceAt(index);
-    // Travelling backwards: the medium after the surface is the one we come from.
+    // Traveling backwards: the medium after the surface is the one we come from.
     const indexBefore = surface.material.indexAt(wavelengthNm);
     const indexAfter = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
     const power = surfacePower(surface, indexAfter, indexBefore);

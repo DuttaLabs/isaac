@@ -2,7 +2,7 @@
 // Regenerate with: npm run regenerate --workspace @isaac/glass-catalog
 //
 // Source: refractiveindex.info database (public domain, CC0 1.0), whose SCHOTT
-// pages are generated from SCHOTT's own Zemax catalogue (schott_2017-01-20b.agf).
+// pages are generated from SCHOTT's own Zemax catalog (schott_2017-01-20b.agf).
 // Coefficients are the manufacturer's published three-term Sellmeier fits:
 //   n² − 1 = B₁λ²/(λ² − C₁) + B₂λ²/(λ² − C₂) + B₃λ²/(λ² − C₃),  λ in µm.
 //

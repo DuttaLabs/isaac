@@ -196,7 +196,7 @@ export class ModelGlassMaterial implements Material {
   }
 }
 
-/** Air, treated as index 1 (an idealisation adequate for the current milestone). */
+/** Air, treated as index 1 (an idealization adequate for the current milestone). */
 export const AIR: Material = new ConstantMaterial('AIR', 1);
 
 /** Vacuum. */

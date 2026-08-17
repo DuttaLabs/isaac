@@ -18,7 +18,7 @@ export interface RayOptions {
   intensity?: number;
   /** Accumulated optical path length (geometric length × index) in system units. */
   opticalPathLength?: number;
-  /** Name of the material the ray is currently travelling through. Defaults to `AIR`. */
+  /** Name of the material the ray is currently traveling through. Defaults to `AIR`. */
   medium?: string;
   status?: RayStatus;
 }

@@ -261,14 +261,9 @@ test('geometry the core cannot model is rejected rather than approximated', () =
   assert.throws(
     () =>
       importDoublet(
-        DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE EVENASPH\n  CURV 1.07'),
+        DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE TOROIDAL\n  CURV 1.07'),
       ),
-    /only STANDARD and PARAXIAL surfaces/,
-  );
-  // A conic constant would change the surface shape, so it cannot be ignored.
-  assert.throws(
-    () => importDoublet(DOUBLET.replace('  DISZ 6.0', '  CONI -1.0\n  DISZ 6.0')),
-    /conic constant/,
+    /only STANDARD, PARAXIAL, EVENASPH surfaces/,
   );
   assert.throws(
     () => importDoublet('MODE SEQ\nSURF 0\n  DISZ 0\n'),
@@ -311,4 +306,105 @@ test('a file supplied as raw UTF-16 bytes imports identically', () => {
   const fromBytes = importZmx(bytes, { resolveMaterial });
   assert.equal(fromBytes.system.name, importDoublet().system.name);
   assert.equal(fromBytes.system.surfaces.length, 5);
+});
+
+test('a conic constant is read onto the surface it shapes', () => {
+  const { system, warnings, ignoredTokens } = importDoublet(
+    DOUBLET.replace('  DISZ 6.0', '  CONI -1.0\n  DISZ 6.0'),
+  );
+  assert.equal(system.surfaceAt(1).conic, -1);
+  assert.equal(system.surfaceAt(2).conic, 0);
+  assert.deepEqual(warnings, []);
+  assert.ok(!ignoredTokens.includes('CONI'));
+
+  // A conic changes the shape but not the first-order layout, so the file's own
+  // back focal distance must survive it untouched.
+  assert.equal(
+    paraxialProperties(system).backFocalDistance,
+    paraxialProperties(importDoublet().system).backFocalDistance,
+  );
+});
+
+test('an even asphere reads its coefficients from PARM 1 upward, starting at r²', () => {
+  // PARM 1 is the coefficient on r², not r⁴ — the whole series is shifted one
+  // power from what the column number suggests, so a file written with only
+  // PARM 2 set must produce [0, α₂] and not [α₂].
+  const { system, warnings, ignoredTokens } = importDoublet(
+    DOUBLET.replace(
+      '  TYPE STANDARD\n  CURV 1.07',
+      '  TYPE EVENASPH\n  PARM 2 -3.5E-6\n  PARM 4 1.25E-9\n  CURV 1.07',
+    ),
+  );
+
+  const front = system.surfaceAt(1);
+  assert.equal(front.type, 'EVEN_ASPHERE');
+  assert.deepEqual([...front.asphericCoefficients], [0, -3.5e-6, 0, 1.25e-9]);
+  // With α₁ zero the vertex curvature is untouched, so the power is the sphere's.
+  assert.equal(front.paraxialCurvature, front.curvature);
+  assert.deepEqual(warnings, []);
+  // PARM means something on this surface type, so it is no longer just ignored.
+  assert.ok(!ignoredTokens.includes('PARM'));
+});
+
+test('an even asphere refuses a parameter column whose meaning is unverified', () => {
+  assert.throws(
+    () =>
+      importDoublet(
+        DOUBLET.replace(
+          '  TYPE STANDARD\n  CURV 1.07',
+          '  TYPE EVENASPH\n  PARM 9 1E-9\n  CURV 1.07',
+        ),
+      ),
+    /unrecognized PARM 9/,
+  );
+});
+
+test('GLAS MIRROR makes a surface reflective and leaves the medium alone', () => {
+  // A mirror named where a glass would be. The medium on the far side is never
+  // written in the file, because a mirror does not change it — so the reader has
+  // to take it from the surface before, and here that is the crown glass.
+  const { system, warnings, glasses } = importDoublet(
+    DOUBLET.replace('  GLAS F2', '  GLAS MIRROR'),
+  );
+
+  const mirror = system.surfaceAt(2);
+  assert.equal(mirror.reflective, true);
+  assert.equal(mirror.material.name, system.surfaceAt(1).material.name);
+  // MIRROR is not a glass, so it must not be reported as one — resolved or not.
+  assert.ok(!glasses.some((glass) => /MIRROR/i.test(glass.name)));
+  assert.deepEqual(warnings, []);
+});
+
+test('a mirror in air keeps air, and two in a row each take the medium before', () => {
+  const doubled = importDoublet(
+    DOUBLET.replace('  GLAS BK7', '  GLAS MIRROR').replace('  GLAS F2', '  GLAS MIRROR'),
+  ).system;
+
+  assert.equal(doubled.surfaceAt(1).reflective, true);
+  assert.equal(doubled.surfaceAt(2).reflective, true);
+  // Surface 1's medium before is the object's (air); surface 2 then adopts what
+  // surface 1 was given, which is the same air. The forward pass is what makes
+  // the second one work without a special case.
+  assert.equal(doubled.surfaceAt(1).material.name, 'AIR');
+  assert.equal(doubled.surfaceAt(2).material.name, 'AIR');
+});
+
+test('a mirror on the object or image surface is refused rather than ignored', () => {
+  assert.throws(
+    () =>
+      importDoublet(
+        DOUBLET.replace('SURF 0\n  TYPE STANDARD', 'SURF 0\n  TYPE STANDARD\n  GLAS MIRROR'),
+      ),
+    /GLAS MIRROR but is the object surface/,
+  );
+});
+
+test('UNIT METER is meters, which is how the corpus spells it', () => {
+  // Three of OpticStudio's samples write METER; none writes M. Getting this
+  // wrong does not move a ray, but it labels every length in the UI as a
+  // millimetre when it is a metre.
+  assert.equal(importDoublet(DOUBLET.replace('UNIT MM', 'UNIT METER')).system.units, 'm');
+  const warned = importDoublet(DOUBLET.replace('UNIT MM', 'UNIT FURLONG'));
+  assert.equal(warned.system.units, 'mm');
+  assert.ok(warned.warnings.some((warning) => /FURLONG/.test(warning)));
 });

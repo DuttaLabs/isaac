@@ -287,20 +287,8 @@ function defaultStartZ(system: OpticalSystem, pupilRadius: number, pupilZ: numbe
     Number.isFinite(surface.semiDiameter) ? surface.semiDiameter : pupilRadius,
     pupilRadius,
   );
-  const frontmost = Math.min(0, sag(surface.curvature, height));
+  const frontmost = Math.min(0, surface.sagAt(height));
   const margin = Math.max(1, 0.1 * pupilRadius);
   // Stay ahead of both the first surface and the pupil plane (which may be virtual).
   return Math.min(system.vertexZAt(1) + frontmost, pupilZ) - margin;
-}
-
-/** Axial sag of a sphere of curvature `c` at radial height `h`, clamped at the hemisphere. */
-function sag(c: number, h: number): number {
-  if (c === 0) {
-    return 0;
-  }
-  const term = 1 - c * c * h * h;
-  if (term <= 0) {
-    return 1 / c; // beyond the hemisphere: the sag saturates at the center of curvature
-  }
-  return (c * h * h) / (1 + Math.sqrt(term));
 }

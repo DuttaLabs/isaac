@@ -1,6 +1,6 @@
 import { Point3 } from '../geometry/point3.ts';
 import { Vector3 } from '../geometry/vector3.ts';
-import { intersectSphericalSurface } from '../geometry/surface-intersection.ts';
+import { intersectSurface } from '../geometry/surface-intersection.ts';
 import type { OpticalSystem } from '../model/optical-system.ts';
 import { Ray, type RayStatus } from '../model/ray.ts';
 import type { Surface } from '../model/surface.ts';
@@ -65,7 +65,7 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
 
     // Move into the surface's local frame (pure axial translation for now).
     const localOrigin = new Point3(ray.origin.x, ray.origin.y, ray.origin.z - vertexZ);
-    const hit = intersectSphericalSurface(localOrigin, ray.direction, surface.curvature);
+    const hit = intersectSurface(localOrigin, ray.direction, surface.shape);
 
     if (hit === null || hit.distance < -DISTANCE_EPSILON) {
       return finish(inputRay, ray, intersections, 'MISSED', index);
@@ -217,6 +217,15 @@ function interact(
  * and no aberration. A direction-cosine formulation would instead introduce a
  * spherical-aberration-like residual that is an artifact of the formula rather
  * than a property of the design.
+ *
+ * The power is applied with the sign of the ray's travel, which matters only
+ * once a mirror is in the system. A converging lens converges whichever way the
+ * light goes through it, but a slope is measured against +Z and does not know
+ * that: for light running −Z the bend that pulls a ray toward the axis is `+yφ`,
+ * not `−yφ`. It is the same `n → −n` bookkeeping the paraxial recurrence does
+ * with signed media, expressed here as the sign of `incoming.z`. Without it an
+ * ideal lens placed after a mirror diverges what it should converge — and still
+ * traces, and still draws.
  */
 function bendIdeally(
   surface: Surface,
@@ -228,10 +237,11 @@ function bendIdeally(
   const power = surfacePower(surface, indexBefore, indexAfter);
   // Slopes are unchanged by the ray's direction of travel; only the axial
   // component's sign records which way it is going, so re-attach it at the end.
+  const travel = Math.sign(incoming.z);
   const slopeX = incoming.x / incoming.z;
   const slopeY = incoming.y / incoming.z;
-  const outSlopeX = (indexBefore * slopeX - localPoint.x * power) / indexAfter;
-  const outSlopeY = (indexBefore * slopeY - localPoint.y * power) / indexAfter;
+  const outSlopeX = (indexBefore * slopeX - travel * localPoint.x * power) / indexAfter;
+  const outSlopeY = (indexBefore * slopeY - travel * localPoint.y * power) / indexAfter;
   const direction = new Vector3(outSlopeX, outSlopeY, 1).normalized();
   return incoming.z < 0 ? direction.scale(-1) : direction;
 }

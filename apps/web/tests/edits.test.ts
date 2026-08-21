@@ -1,0 +1,125 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { AIR, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
+import { setMirror, setSurfaceType, updateSurface } from '../src/lib/edits.ts';
+
+function singlet(front: Surface): OpticalSystem {
+  return new OpticalSystem({
+    name: 'singlet',
+    wavelengthsNm: [587.5618],
+    fields: [{ angleDeg: 0 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      front,
+      new Surface({ id: 's2', type: 'STANDARD', radius: -60, thickness: 50, semiDiameter: 8 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+}
+
+const spherical = new Surface({
+  id: 's1',
+  type: 'STANDARD',
+  radius: 40,
+  conic: -0.6,
+  thickness: 5,
+  semiDiameter: 8,
+  material: N_BK7,
+  isStop: true,
+});
+
+test('making a surface aspheric keeps the shape it already had', () => {
+  const result = setSurfaceType(singlet(spherical), 1, 'EVEN_ASPHERE');
+  assert.ok(result.ok);
+  const surface = result.value.surfaceAt(1);
+  assert.equal(surface.type, 'EVEN_ASPHERE');
+  // The radius and conic must survive: the designer is adding terms to a surface
+  // they have already shaped, not starting a new one.
+  assert.equal(surface.radius, 40);
+  assert.equal(surface.conic, -0.6);
+  assert.equal(surface.isStop, true);
+  assert.equal(surface.material.name, N_BK7.name);
+});
+
+test('going back to spherical drops the coefficients and keeps everything else', () => {
+  const aspheric = spherical.with({
+    type: 'EVEN_ASPHERE',
+    asphericCoefficients: [0, 2.5e-6, -1e-9],
+  });
+  const result = setSurfaceType(singlet(aspheric), 1, 'STANDARD');
+  assert.ok(result.ok);
+  const surface = result.value.surfaceAt(1);
+  assert.equal(surface.type, 'STANDARD');
+  assert.equal(surface.radius, 40);
+  assert.equal(surface.conic, -0.6);
+  assert.equal(surface.hasAsphericTerms, false);
+});
+
+test('a paraxial surface neither keeps nor gains a shape', () => {
+  const paraxial = setSurfaceType(singlet(spherical), 1, 'PARAXIAL');
+  assert.ok(paraxial.ok);
+  assert.equal(paraxial.value.surfaceAt(1).radius, Infinity);
+  assert.equal(paraxial.value.surfaceAt(1).conic, 0);
+
+  // And coming back leaves a plain plane rather than reviving the old radius.
+  const back = setSurfaceType(paraxial.value, 1, 'EVEN_ASPHERE');
+  assert.ok(back.ok);
+  assert.equal(back.value.surfaceAt(1).radius, Infinity);
+  assert.equal(back.value.surfaceAt(1).conic, 0);
+});
+
+test('an edit the model refuses leaves the design alone and says why', () => {
+  const system = singlet(spherical);
+  const refused = updateSurface(system, 1, { asphericCoefficients: [1e-5] });
+  assert.equal(refused.ok, false);
+  assert.match(refused.ok ? '' : refused.error, /EVEN_ASPHERE/);
+
+  const accepted = updateSurface(system, 1, { conic: -2 });
+  assert.ok(accepted.ok);
+  assert.equal(accepted.value.surfaceAt(1).conic, -2);
+  // The original is untouched: every edit returns a new system.
+  assert.equal(system.surfaceAt(1).conic, -0.6);
+});
+
+test('making a surface a mirror moves its medium and its thickness together', () => {
+  const system = singlet(spherical); // surface 1 is glass, 5 mm to surface 2
+  const result = setMirror(system, 1, true);
+  assert.ok(result.ok);
+
+  const mirror = result.value.surfaceAt(1);
+  assert.equal(mirror.reflective, true);
+  // The medium is the one before it — air here — because light comes back out
+  // the way it went in. The model refuses any other answer.
+  assert.equal(mirror.material.name, 'AIR');
+  // And the thickness flips: +Z is behind the light now, so a positive distance
+  // would put surface 2 where nothing reaches it.
+  assert.equal(mirror.thickness, -5);
+  assert.equal(result.value.vertexZAt(2), -5);
+
+  // Exactly reversible.
+  const back = setMirror(result.value, 1, false);
+  assert.ok(back.ok);
+  assert.equal(back.value.surfaceAt(1).reflective, false);
+  assert.equal(back.value.surfaceAt(1).thickness, 5);
+});
+
+test('a mirror inside glass adopts the glass, not air', () => {
+  const system = singlet(spherical);
+  // Surface 2 sits behind the crown, so the light arriving at it is in glass.
+  const result = setMirror(system, 2, true);
+  assert.ok(result.ok);
+  assert.equal(result.value.surfaceAt(2).material.name, N_BK7.name);
+});
+
+test('the ends of the system and an ideal lens cannot be mirrors', () => {
+  const system = singlet(spherical);
+  assert.equal(setMirror(system, 0, true).ok, false);
+  assert.equal(setMirror(system, 3, true).ok, false);
+
+  const paraxial = setSurfaceType(system, 1, 'PARAXIAL');
+  assert.ok(paraxial.ok);
+  const refused = setMirror(paraxial.value, 1, true);
+  assert.equal(refused.ok, false);
+  assert.match(refused.ok ? '' : refused.error, /ideal lens/);
+});

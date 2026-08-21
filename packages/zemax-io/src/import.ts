@@ -4,12 +4,14 @@ import {
   MATERIAL_CATALOG,
   ModelGlassMaterial,
   OpticalSystem,
+  STOP_CAPABLE_SURFACE_TYPES,
   Surface,
   type Aperture,
   type ApertureType,
   type Field,
   type LinearUnit,
   type Material,
+  type SurfaceType,
 } from '@isaac/optical-core';
 import { decodeZmx } from './decode.ts';
 import {
@@ -85,6 +87,13 @@ export const UNKNOWN_GLASS_INDEX = 1.5;
  */
 export const MODEL_GLASS_NAME = '___BLANK';
 
+/**
+ * The glass name Zemax uses for a reflecting surface. It is not a material at
+ * all: it says the surface turns the light around and leaves it in the medium it
+ * arrived in, which is why the medium after a mirror never appears in the file.
+ */
+export const MIRROR_GLASS_NAME = 'MIRROR';
+
 /** Tokens this reader interprets; everything else is reported as ignored. */
 const HANDLED_HEADER_TOKENS = new Set([
   'MODE',
@@ -101,6 +110,12 @@ const HANDLED_HEADER_TOKENS = new Set([
   'FLOA',
 ]);
 const HANDLED_SURFACE_TOKENS = new Set(['TYPE', 'CURV', 'DISZ', 'DIAM', 'GLAS', 'STOP', 'CONI']);
+
+/**
+ * Zemax surface types this reader maps onto the model. Everything else is
+ * refused by name rather than approximated as a sphere.
+ */
+const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH']);
 
 /**
  * Surface records that carry *geometry* this reader does not model, mapped to a
@@ -140,9 +155,17 @@ const APERTURE_TOKENS: ReadonlyMap<string, ApertureType> = new Map([
   ['FLOA', 'FLOAT_BY_STOP'],
 ]);
 
+/**
+ * `UNIT`'s first value. The corpus spells meters `METER`, not `M` — 3 of the 471
+ * sample files do, and until this table said so they imported as millimetres
+ * with a warning, which mislabels every length in the UI by a factor of a
+ * thousand. `M` is kept as a tolerant alias rather than a verified spelling.
+ */
 const UNITS: ReadonlyMap<string, LinearUnit> = new Map([
   ['MM', 'mm'],
   ['CM', 'cm'],
+  ['METER', 'm'],
+  ['METERS', 'm'],
   ['M', 'm'],
   ['IN', 'in'],
 ]);
@@ -183,8 +206,10 @@ export function zmxDocumentToSystem(
     warnings.push(`Surface list starts at SURF ${document.surfaces[0]!.number}, not SURF 0.`);
   }
 
-  const surfaces = document.surfaces.map((block, index) =>
-    toSurface(block, index, document.surfaces.length, { resolve, options, warnings, glasses }),
+  const surfaces = adoptMirrorMedia(
+    document.surfaces.map((block, index) =>
+      toSurface(block, index, document.surfaces.length, { resolve, options, warnings, glasses }),
+    ),
   );
   requireParaxialSurfacesInAir(surfaces);
   warnHeaderSettings(document, warnings);
@@ -226,18 +251,18 @@ function toSurface(
   const { records, number } = block;
 
   const surfaceType = firstValue(records, 'TYPE')?.toUpperCase() ?? 'STANDARD';
-  if (surfaceType !== 'STANDARD' && surfaceType !== 'PARAXIAL') {
+  if (!SUPPORTED_ZMX_TYPES.has(surfaceType)) {
     throw new ZmxImportError(
-      `Surface ${number} is TYPE ${surfaceType}; only STANDARD and PARAXIAL surfaces are supported so far.`,
+      `Surface ${number} is TYPE ${surfaceType}; only ` +
+        `${[...SUPPORTED_ZMX_TYPES].join(', ')} surfaces are supported so far.`,
     );
   }
   const isParaxial = surfaceType === 'PARAXIAL';
+  const isEvenAsphere = surfaceType === 'EVENASPH';
 
   const conic = numericValue(firstValue(records, 'CONI')) ?? 0;
-  if (conic !== 0) {
-    throw new ZmxImportError(
-      `Surface ${number} has a conic constant (${conic}); conics and aspheres are not supported yet.`,
-    );
+  if (!Number.isFinite(conic)) {
+    throw new ZmxImportError(`Surface ${number} has a CONI of ${conic}, which is not a shape.`);
   }
 
   const curvature = numericValue(firstValue(records, 'CURV')) ?? 0;
@@ -250,7 +275,24 @@ function toSurface(
 
   const isObject = index === 0;
   const isImage = index === count - 1;
-  const type = isObject ? 'OBJECT' : isImage ? 'IMAGE' : isParaxial ? 'PARAXIAL' : 'STANDARD';
+  const type: SurfaceType = isObject
+    ? 'OBJECT'
+    : isImage
+      ? 'IMAGE'
+      : isParaxial
+        ? 'PARAXIAL'
+        : isEvenAsphere
+          ? 'EVEN_ASPHERE'
+          : 'STANDARD';
+
+  // An aspheric object or image surface is not refused — a curved detector is a
+  // real thing — but the polynomial belongs to a surface that bends rays, and
+  // giving it to one that only records them would misreport the file.
+  if (isEvenAsphere && (isObject || isImage)) {
+    throw new ZmxImportError(
+      `Surface ${number} is TYPE EVENASPH but is the ${isObject ? 'object' : 'image'} surface.`,
+    );
+  }
 
   // A PARAXIAL object or image surface is a contradiction: those two ends of the
   // system record rays, they do not bend them.
@@ -262,8 +304,20 @@ function toSurface(
 
   warnUnmodeledGeometry(records, number, context.warnings);
 
+  // `GLAS MIRROR` names no material: it makes the surface reflective and leaves
+  // the medium alone. The medium it leaves alone is the one before the surface,
+  // which is not known here — surfaces are built independently — so AIR stands
+  // in and `adoptMirrorMedia` replaces it once the whole list exists.
+  const reflective = isMirror(records);
+  if (reflective && (isObject || isImage)) {
+    throw new ZmxImportError(
+      `Surface ${number} is GLAS MIRROR but is the ${isObject ? 'object' : 'image'} surface; ` +
+        'those two record rays rather than reflecting them.',
+    );
+  }
+
   let isStop = hasRecord(records, 'STOP');
-  if (isStop && type !== 'STANDARD' && type !== 'PARAXIAL') {
+  if (isStop && !STOP_CAPABLE_SURFACE_TYPES.includes(type)) {
     context.warnings.push(
       `Surface ${number} is marked STOP but is the ${type} surface; ignoring the stop.`,
     );
@@ -287,12 +341,88 @@ function toSurface(
     id: `surf-${number}`,
     type,
     radius,
+    conic,
+    ...(type === 'EVEN_ASPHERE'
+      ? { asphericCoefficients: readAsphericCoefficients(records, number) }
+      : {}),
     thickness,
     semiDiameter,
-    material: readMaterial(records, number, context),
+    material: reflective ? AIR : readMaterial(records, number, context),
+    reflective,
     isStop,
     comment: readComment(records),
   });
+}
+
+/** True when the surface's `GLAS` record names Zemax's reflector rather than a glass. */
+function isMirror(records: readonly ZmxRecord[]): boolean {
+  const glassName = findRecord(records, 'GLAS')?.values[0];
+  return glassName !== undefined && glassName.trim().toUpperCase() === MIRROR_GLASS_NAME;
+}
+
+/**
+ * Gives every mirror the medium of the surface before it.
+ *
+ * A file never states it: `GLAS MIRROR` says only "reflect", and the medium on
+ * the far side is whatever the light was already in. That reads naturally down
+ * the surface list — the Mangin mirror in OpticStudio's samples is a BK7 surface,
+ * then `GLAS MIRROR`, then a surface with no glass at all, and the mirror's own
+ * medium has to be the BK7 for the light to come back out through it. Left as
+ * AIR, that design would trace as though the glass vanished on the way back.
+ *
+ * Two mirrors in a row is not a special case: the loop runs forward, so the
+ * second one adopts the medium the first one has already been given.
+ */
+function adoptMirrorMedia(surfaces: readonly Surface[]): Surface[] {
+  const resolved = [...surfaces];
+  for (let index = 1; index < resolved.length; index += 1) {
+    const surface = resolved[index]!;
+    if (surface.reflective) {
+      resolved[index] = surface.with({ material: resolved[index - 1]!.material });
+    }
+  }
+  return resolved;
+}
+
+/**
+ * The eight aspheric coefficients of an EVENASPH surface, written as
+ * `PARM 1 α₁` … `PARM 8 α₈`.
+ *
+ * **`PARM 1` is the coefficient on r², not r⁴.** Chapter 14 of the 2000 manual
+ * gives the sag as `α₁r² + α₂r⁴ + … + α₈r¹⁶` and its parameter table maps the
+ * eight columns straight onto α₁…α₈, so the series starts at the second power.
+ * Reading it as r⁴ would shift every term by one power: a design would still
+ * trace, and would still look like a lens, while being the wrong lens. Two of
+ * the sixteen even-asphere surfaces in OpticStudio's own samples carry a
+ * non-zero α₁, so the off-by-one would not even show up as an obvious break.
+ *
+ * A parameter outside 1–8 is refused rather than guessed at, on the same footing
+ * as an unrecognized PARM on a paraxial surface.
+ */
+function readAsphericCoefficients(records: readonly ZmxRecord[], surfaceNumber: number): number[] {
+  const coefficients: number[] = [];
+  for (const record of findRecords(records, 'PARM')) {
+    const parameter = numericValue(record.values[0]);
+    if (parameter === undefined || !Number.isInteger(parameter) || parameter < 1 || parameter > 8) {
+      throw new ZmxImportError(
+        `Surface ${surfaceNumber} is TYPE EVENASPH with an unrecognized PARM ${record.values[0]}; ` +
+          'only PARM 1 through 8 (the coefficients on r² through r¹⁶) are understood.',
+      );
+    }
+    const coefficient = numericValue(record.values[1]) ?? 0;
+    if (!Number.isFinite(coefficient)) {
+      throw new ZmxImportError(
+        `Surface ${surfaceNumber} has PARM ${parameter} = ${record.values[1]}, which is not a number.`,
+      );
+    }
+    // The columns need not appear in order, and a file may write only the ones
+    // it uses; anything unwritten is zero.
+    while (coefficients.length < parameter) {
+      coefficients.push(0);
+    }
+    coefficients[parameter - 1] = coefficient;
+  }
+  return coefficients;
 }
 
 /**
@@ -726,14 +856,16 @@ function collectIgnoredTokens(document: ZmxDocument): string[] {
     }
   }
   for (const block of document.surfaces) {
-    // PARM carries the focal length on a paraxial surface and something
-    // unverified everywhere else, so it counts as handled only there.
-    const isParaxial = firstValue(block.records, 'TYPE')?.toUpperCase() === 'PARAXIAL';
+    // PARM means the focal length on a paraxial surface and the aspheric
+    // coefficients on an even asphere; everywhere else its columns are
+    // unverified, so it counts as handled only on those two types.
+    const blockType = firstValue(block.records, 'TYPE')?.toUpperCase() ?? 'STANDARD';
+    const parmIsRead = blockType === 'PARAXIAL' || blockType === 'EVENASPH';
     for (const record of block.records) {
       if (record.token === 'COMM' || HANDLED_SURFACE_TOKENS.has(record.token)) {
         continue;
       }
-      if (record.token === 'PARM' && isParaxial) {
+      if (record.token === 'PARM' && parmIsRead) {
         continue;
       }
       ignored.add(record.token);

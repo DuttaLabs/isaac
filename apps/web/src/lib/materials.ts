@@ -6,7 +6,7 @@ import {
   type Material,
 } from '@isaac/optical-core';
 import { SCHOTT } from '@isaac/glass-catalog';
-import { MODEL_GLASS_NAME } from '@isaac/zemax-io';
+import { MIRROR_GLASS_NAME, MODEL_GLASS_NAME } from '@isaac/zemax-io';
 import { attempt, type Result } from './result.ts';
 
 /**
@@ -25,6 +25,20 @@ export const GLASS_CATALOG = SCHOTT.with({ allowLegacyNames: true });
 
 /** What the Material column shows, and what you type there, for a model glass. */
 export const MODEL_MATERIAL_LABEL = 'MODEL';
+
+/**
+ * What the Material column shows, and what you type there, to make a surface a
+ * mirror — the same word Zemax writes in the same column, because a mirror is
+ * naturally *specified* where the glass goes even though it is not a glass. The
+ * medium is unchanged by a reflection, so nothing is being replaced: the column
+ * is answering "what happens here", and the answer is that the light turns round.
+ */
+export const MIRROR_MATERIAL_LABEL = MIRROR_GLASS_NAME;
+
+/** True when a Material cell is asking for a mirror rather than naming a medium. */
+export function isMirrorText(text: string): boolean {
+  return text.trim().toUpperCase() === MIRROR_MATERIAL_LABEL;
+}
 
 /**
  * Names given to a glass described by numbers: `MODEL …` by this editor, and
@@ -77,8 +91,18 @@ export function isModelGlass(material: Material): boolean {
   return modelGlassParameters(material) !== undefined;
 }
 
-/** The name to show in the Material column; air is blank, a model glass is MODEL. */
-export function materialLabel(material: Material): string {
+/**
+ * The name to show in the Material column: MIRROR for a reflecting surface, air
+ * is blank, a model glass is MODEL, anything else is its own name.
+ *
+ * A mirror's own medium is deliberately not shown. It is always the medium
+ * before the surface, so printing it would be repeating the row above while
+ * hiding the one thing about this surface that is not obvious.
+ */
+export function materialLabel(material: Material, reflective = false): string {
+  if (reflective) {
+    return MIRROR_MATERIAL_LABEL;
+  }
   if (material.name === AIR.name) {
     return '';
   }

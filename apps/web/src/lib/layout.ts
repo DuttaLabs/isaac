@@ -1,4 +1,10 @@
-import type { OpticalSystem, RayTraceResult } from '@isaac/optical-core';
+import {
+  signedMediaIndices,
+  surfaceProfileSag,
+  type OpticalSystem,
+  type RayTraceResult,
+  type SurfaceShape,
+} from '@isaac/optical-core';
 
 /** A point in system coordinates: z along the axis, y transverse. */
 export interface LayoutPoint {
@@ -11,6 +17,8 @@ export interface SurfaceProfile {
   points: LayoutPoint[];
   isStop: boolean;
   isImage: boolean;
+  /** A mirror: drawn as metal rather than as one more glass surface. */
+  isMirror: boolean;
 }
 
 export interface GlassBody {
@@ -45,16 +53,14 @@ export interface LayoutGeometry {
 
 const PROFILE_SAMPLES = 33;
 
-/** Axial sag of a spherical surface at transverse height `y`. */
-export function sag(curvature: number, y: number): number {
-  if (curvature === 0) {
-    return 0;
-  }
-  const term = 1 - curvature * curvature * y * y;
-  if (term <= 0) {
-    return 1 / curvature;
-  }
-  return (curvature * y * y) / (1 + Math.sqrt(term));
+/**
+ * Axial sag at transverse height `y`, from the engine's own definition of the
+ * surface — conic and aspheric terms included. Re-exported so the layout's
+ * callers do not reach past it into the core for the same number, and so the
+ * drawn cross-section can never disagree with the traced shape.
+ */
+export function sag(shape: SurfaceShape, y: number): number {
+  return surfaceProfileSag(shape, y);
 }
 
 /**
@@ -72,18 +78,24 @@ export function sag(curvature: number, y: number): number {
  * The shared aperture is `min` of the two semi-diameters — where both surfaces
  * actually exist. Past that only one surface is present and the glass is bounded
  * by the ground edge instead, which is a different question.
+ *
+ * `travel` is +1 while the light runs toward +Z and −1 after a mirror has turned
+ * it round. The gap has to be measured along the light, not along the axis:
+ * behind a mirror the next surface is at *smaller* z by design, and reading that
+ * as negative thickness would condemn every reflecting system as impossible.
  */
 function leastAxialGap(
-  frontCurvature: number,
+  frontShape: SurfaceShape,
   frontZ: number,
-  backCurvature: number,
+  backShape: SurfaceShape,
   backZ: number,
   semiDiameter: number,
+  travel: number,
 ): number {
   let least = Infinity;
   for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
     const y = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
-    const gap = backZ + sag(backCurvature, y) - (frontZ + sag(frontCurvature, y));
+    const gap = travel * (backZ + sag(backShape, y) - (frontZ + sag(frontShape, y)));
     least = Math.min(least, gap);
   }
   return least;
@@ -101,6 +113,10 @@ export function buildLayout(
 ): LayoutGeometry {
   const profiles: SurfaceProfile[] = [];
   const heights: number[] = [];
+  // The sign of each medium's index is the direction the light is going in it,
+  // which is what tells a lens from a reflecting arm laid out backwards.
+  const media = signedMediaIndices(system, system.primaryWavelengthNm);
+  const travelAfter = (index: number): number => Math.sign(media[index] ?? 1);
 
   // Surface 0 is the object, which sits at −∞ for a distant object; never drawn.
   for (let index = 1; index < system.surfaces.length; index += 1) {
@@ -114,13 +130,14 @@ export function buildLayout(
     const points: LayoutPoint[] = [];
     for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
       const y = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
-      points.push({ z: vertexZ + sag(surface.curvature, y), y });
+      points.push({ z: vertexZ + sag(surface.shape, y), y });
     }
     profiles.push({
       surfaceIndex: index,
       points,
       isStop: surface.isStop,
       isImage: surface.type === 'IMAGE',
+      isMirror: surface.reflective,
     });
   }
 
@@ -148,15 +165,17 @@ export function buildLayout(
     // surface is the smaller — the front surface reaching past its rim, which
     // turns the ground edge back on itself. With equal semi-diameters the
     // second is just the rim sample of the first, so nothing is double-counted.
+    const travel = travelAfter(index);
     const leastGap = Math.min(
       leastAxialGap(
-        system.surfaceAt(index).curvature,
+        system.surfaceAt(index).shape,
         system.vertexZAt(index),
-        system.surfaceAt(index + 1).curvature,
+        system.surfaceAt(index + 1).shape,
         system.vertexZAt(index + 1),
         Math.min(Math.abs(frontTop.y), Math.abs(backTop.y)),
+        travel,
       ),
-      backTop.z - frontTop.z,
+      travel * (backTop.z - frontTop.z),
     );
 
     bodies.push({

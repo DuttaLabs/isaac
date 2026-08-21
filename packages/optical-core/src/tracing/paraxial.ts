@@ -7,8 +7,13 @@ const PARAXIAL_EPSILON = 1e-14;
 /**
  * Optical power of a surface, the φ in `n'u' = nu − yφ`.
  *
- * A refracting surface gets it from its curvature and the media it separates; a
- * `PARAXIAL` surface is given it directly as φ = 1/f. The focal length is read
+ * A refracting surface gets it from its *vertex* curvature and the media it
+ * separates; a `PARAXIAL` surface is given it directly as φ = 1/f. Vertex
+ * curvature, not the base radius: an even asphere's first coefficient is an r²
+ * term, so it adds `2α₁` to the curvature a paraxial ray sees. The conic
+ * constant, by contrast, never appears — every conic sharing a vertex curvature
+ * has the same first-order behavior, which is precisely why a conic corrects
+ * aberration without disturbing the layout. The focal length is read
  * as the reciprocal of the power, so a paraxial surface between media of unequal
  * index focuses at `n'·f` rather than `f` — the two readings agree whenever the
  * surface sits in air, which is how ideal-lens placeholders are almost always used.
@@ -22,7 +27,45 @@ export function surfacePower(surface: Surface, indexBefore: number, indexAfter: 
   if (surface.type === 'PARAXIAL') {
     return 1 / surface.focalLength!;
   }
-  return (indexAfter - indexBefore) * surface.curvature;
+  return (indexAfter - indexBefore) * surface.paraxialCurvature;
+}
+
+/**
+ * Refractive index of the medium after each surface, **signed by the direction
+ * the light is traveling**: positive while it runs −Z → +Z, negative after an
+ * odd number of mirrors. Entry `i` is the medium between surface `i` and
+ * surface `i + 1`, so entry 0 is object space.
+ *
+ * This one sign is what lets mirrors through the whole paraxial layer without a
+ * single special case. A mirror is just a surface across which the index goes
+ * from `n` to `−n`: its power falls out of the ordinary formula as
+ * `(−n − n)c = −2nc`, and the transfer `y += u'·t` stays right because a
+ * thickness after a mirror is *negative* — the distance to the next surface
+ * measured along +Z, which is now behind the light. That is the same convention
+ * `.zmx` files are written in and the same one `OpticalSystem` already
+ * accumulates into vertex positions, so nothing about the axial layout changes.
+ *
+ * The magnitude after a reflection is carried over from before it rather than
+ * read off the surface's own material: a mirror does not change the medium, and
+ * `OpticalSystem` refuses one that claims to.
+ */
+export function signedMediaIndices(
+  system: OpticalSystem,
+  wavelengthNm: number = system.primaryWavelengthNm,
+): number[] {
+  const media = new Array<number>(system.surfaces.length);
+  media[0] = system.objectSurface.material.indexAt(wavelengthNm);
+  let sign = 1;
+  for (let index = 1; index < system.surfaces.length; index += 1) {
+    const surface = system.surfaceAt(index);
+    if (surface.reflective) {
+      sign = -sign;
+      media[index] = sign * Math.abs(media[index - 1]!);
+    } else {
+      media[index] = sign * surface.material.indexAt(wavelengthNm);
+    }
+  }
+  return media;
 }
 
 /**
@@ -90,14 +133,14 @@ export function paraxialTrace(
 
   const states: ParaxialRayState[] = [];
   const last = lastRefractingSurfaceIndex(system);
+  const media = signedMediaIndices(system, wavelengthNm);
   let height = start.height;
   let angle = start.angle;
 
   for (let index = 1; index <= last; index += 1) {
     const surface = system.surfaceAt(index);
-    requireNoMirror(surface.reflective);
-    const indexBefore = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
-    const indexAfter = surface.material.indexAt(wavelengthNm);
+    const indexBefore = media[index - 1]!;
+    const indexAfter = media[index]!;
     const power = surfacePower(surface, indexBefore, indexAfter);
 
     // Paraxial refraction: n'u' = nu − yφ.
@@ -154,7 +197,7 @@ export function paraxialProperties(
     magnification = 0;
   } else {
     // Marginal ray from the axial object point: y = 0 at the object, unit slope.
-    const objectIndex = system.objectSurface.material.indexAt(wavelengthNm);
+    const objectIndex = signedMediaIndices(system, wavelengthNm)[0]!;
     const conjugate = paraxialTrace(system, { height: objectThickness, angle: 1 }, wavelengthNm);
     const conjugateExit = conjugate[conjugate.length - 1]!;
     imageDistance =
@@ -225,19 +268,22 @@ export function entrancePupil(
 
   // Two rays leaving the stop backwards, in the reversed frame ζ = −(z − z₁):
   // one from the center to locate the pupil, one from the rim to size it.
+  const media = signedMediaIndices(system, wavelengthNm);
   let axial = { height: 0, slope: 1 };
   let edge = { height: stopRadius, slope: 0 };
 
   for (let index = stopIndex - 1; index >= 1; index -= 1) {
     const surface = system.surfaceAt(index);
-    requireNoMirror(surface.reflective);
     const gap = surface.thickness;
     axial = { height: axial.height + axial.slope * gap, slope: axial.slope };
     edge = { height: edge.height + edge.slope * gap, slope: edge.slope };
 
     // Reversed refraction: the media swap, and the power is direction-independent.
-    const indexBefore = surface.material.indexAt(wavelengthNm);
-    const indexAfter = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
+    // The media are the *signed* ones, which is all a mirror before the stop
+    // needs: reversing the trace already flips every index, and the mirror's own
+    // sign change survives that flip intact.
+    const indexBefore = media[index]!;
+    const indexAfter = media[index - 1]!;
     const power = surfacePower(surface, indexAfter, indexBefore);
     axial.slope = (indexBefore * axial.slope - axial.height * power) / indexAfter;
     edge.slope = (indexBefore * edge.slope - edge.height * power) / indexAfter;
@@ -271,18 +317,18 @@ export function exitPupil(
   const stopRadius = requireStopRadius(system, stopIndex);
   const last = lastRefractingSurfaceIndex(system);
 
+  const media = signedMediaIndices(system, wavelengthNm);
   let axial = { height: 0, slope: 1 };
   let edge = { height: stopRadius, slope: 0 };
 
   for (let index = stopIndex + 1; index <= last; index += 1) {
     const surface = system.surfaceAt(index);
-    requireNoMirror(surface.reflective);
     const gap = system.surfaceAt(index - 1).thickness;
     axial = { height: axial.height + axial.slope * gap, slope: axial.slope };
     edge = { height: edge.height + edge.slope * gap, slope: edge.slope };
 
-    const indexBefore = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
-    const indexAfter = surface.material.indexAt(wavelengthNm);
+    const indexBefore = media[index - 1]!;
+    const indexAfter = media[index]!;
     const power = surfacePower(surface, indexBefore, indexAfter);
     axial.slope = (indexBefore * axial.slope - axial.height * power) / indexAfter;
     edge.slope = (indexBefore * edge.slope - edge.height * power) / indexAfter;
@@ -319,14 +365,6 @@ function requireStopRadius(system: OpticalSystem, stopIndex: number): number {
   return radius;
 }
 
-function requireNoMirror(reflective: boolean): void {
-  if (reflective) {
-    throw new RangeError(
-      'Paraxial analysis does not support mirrors yet; the axial layout assumes forward propagation.',
-    );
-  }
-}
-
 /** Index of the last surface that refracts: the one immediately before IMAGE. */
 export function lastRefractingSurfaceIndex(system: OpticalSystem): number {
   return system.surfaces.length - 2;
@@ -339,14 +377,15 @@ export function lastRefractingSurfaceIndex(system: OpticalSystem): number {
  */
 function computeFrontFocalDistance(system: OpticalSystem, wavelengthNm: number): number {
   const last = lastRefractingSurfaceIndex(system);
+  const media = signedMediaIndices(system, wavelengthNm);
   let height = 1;
   let angle = 0;
 
   for (let index = last; index >= 1; index -= 1) {
     const surface = system.surfaceAt(index);
     // Traveling backwards: the medium after the surface is the one we come from.
-    const indexBefore = surface.material.indexAt(wavelengthNm);
-    const indexAfter = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
+    const indexBefore = media[index]!;
+    const indexAfter = media[index - 1]!;
     const power = surfacePower(surface, indexAfter, indexBefore);
 
     angle = (indexBefore * angle - height * power) / indexAfter;

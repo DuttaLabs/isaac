@@ -71,6 +71,8 @@ export class OpticalSystem {
       throw new RangeError('A system can have at most one aperture stop.');
     }
 
+    requireMirrorsKeepTheirMedium(surfaces);
+
     const wavelengthsNm = config.wavelengthsNm ?? [587.5618]; // helium d-line
     if (wavelengthsNm.length === 0) {
       throw new RangeError('At least one wavelength is required.');
@@ -154,8 +156,42 @@ export class OpticalSystem {
 }
 
 /**
+ * A mirror sends the light back into the medium it came from, so the medium
+ * after it is the medium before it — always.
+ *
+ * Worth refusing rather than quietly correcting, because the two readings of a
+ * mirror's `material` disagree in a way nothing downstream would notice. The
+ * paraxial recurrence takes the magnitude from the previous medium, so it would
+ * ignore a wrong value; the real tracer reads `material` directly to get the
+ * index the *next* surface refracts from, so it would use it. A Mangin mirror
+ * whose material said AIR would trace as though the glass had vanished on the
+ * way back out, and still produce a plausible-looking spot diagram.
+ */
+function requireMirrorsKeepTheirMedium(surfaces: readonly Surface[]): void {
+  for (let index = 1; index < surfaces.length; index += 1) {
+    const surface = surfaces[index]!;
+    if (!surface.reflective) {
+      continue;
+    }
+    const before = surfaces[index - 1]!.material;
+    if (before.name.toUpperCase() !== surface.material.name.toUpperCase()) {
+      throw new RangeError(
+        `Surface ${index} is a mirror, so the medium after it must be the medium before it ` +
+          `(${before.name}), not ${surface.material.name}.`,
+      );
+    }
+  }
+}
+
+/**
  * Places the first non-object surface at z = 0 and accumulates thicknesses
  * forward; the object surface is positioned one object-distance behind it.
+ *
+ * Thicknesses after a mirror are negative — the distance to the next surface
+ * measured along +Z, which is behind the light once it has turned around — so
+ * this plain running sum is already the right answer for a reflecting system.
+ * That is the convention `.zmx` files are written in, and it is why mirrors need
+ * no separate coordinate machinery here.
  */
 function computeVertexPositions(surfaces: readonly Surface[]): number[] {
   const positions = new Array<number>(surfaces.length);

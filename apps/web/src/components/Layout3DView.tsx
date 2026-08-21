@@ -129,18 +129,27 @@ export function Layout3DView({
 
         {scene.surfaces.map((shell) => (
           <mesh key={`surface-${shell.surfaceIndex}`} geometry={shell.geometry}>
+            {/* A mirror is shaded as what it is: opaque and metallic, so it
+                reads as the end of the light path rather than as another pane
+                the rays happen to cross. */}
             <meshStandardMaterial
               color={
                 shell.surfaceIndex === highlightedSurface
                   ? colors.highlight
-                  : shell.isStop
-                    ? colors.stop
-                    : colors.surface
+                  : shell.isMirror
+                    ? colors.mirror
+                    : shell.isStop
+                      ? colors.stop
+                      : colors.surface
               }
-              transparent
-              opacity={shell.isImage ? 0.5 : 0.66}
-              roughness={0.55}
-              metalness={0}
+              transparent={!shell.isMirror}
+              opacity={shell.isMirror ? 1 : shell.isImage ? 0.5 : 0.66}
+              roughness={shell.isMirror ? 0.25 : 0.55}
+              // Held well below 1: there is no environment map in this scene, so
+              // a fully metallic surface has nothing to reflect and renders
+              // black. A quarter of the way is enough to read as polished while
+              // the lights still pick out the curvature.
+              metalness={shell.isMirror ? 0.25 : 0}
               side={DoubleSide}
             />
           </mesh>

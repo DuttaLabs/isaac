@@ -95,7 +95,7 @@ test('the model accepts exactly one stop, and only on a surface that can carry o
 
   assert.throws(
     () => new Surface({ id: 'img', type: 'IMAGE', thickness: 0, isStop: true }),
-    /Only a STANDARD or PARAXIAL surface/,
+    /Only a STANDARD, EVEN_ASPHERE or PARAXIAL surface/,
   );
   assert.throws(
     () =>

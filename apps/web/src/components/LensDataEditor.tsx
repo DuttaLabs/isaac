@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { Material, OpticalSystem } from '@isaac/optical-core';
 import {
   GLASS_CATALOG,
+  MIRROR_MATERIAL_LABEL,
   MODEL_GLASS_HINT,
   MODEL_MATERIAL_LABEL,
+  isMirrorText,
   materialFromText,
   materialLabel,
   modelGlassFromText,
@@ -14,6 +16,7 @@ import {
   normalizeRadius,
   normalizeSemiDiameter,
   removeSurface,
+  setMirror,
   setStop,
   setSurfaceType,
   updateSurface,
@@ -21,7 +24,8 @@ import {
 } from '../lib/edits.ts';
 import { quickFocus } from '../lib/focus.ts';
 import { formatLength, formatMicrons } from '../lib/format.ts';
-import type { Result } from '../lib/result.ts';
+import { chain, type Result } from '../lib/result.ts';
+import { AsphericCoefficientsDialog, AsphericSummaryButton } from './AsphericCoefficients.tsx';
 import { ErrorNote, Panel } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
@@ -48,6 +52,8 @@ export function LensDataEditor({
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string | undefined>(undefined);
+  /** Surface whose aspheric coefficients are open in the modal, if any. */
+  const [asphereSurface, setAsphereSurface] = useState<number | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
   const [pointerInside, setPointerInside] = useState(false);
@@ -92,6 +98,31 @@ export function LensDataEditor({
         : `Already at best focus: RMS spot ${formatMicrons(rms)}. Nothing moved.`) + caveat,
     );
     onChange(result.value.system);
+  };
+
+  /**
+   * Makes a surface a mirror, and says what else moved.
+   *
+   * Turning a surface round also flips the thickness after it, because that
+   * distance is measured along +Z and +Z is now behind the light. It is the
+   * right thing to do — without it every ray after the mirror reports MISSED and
+   * the layout simply empties — but it is a second edit the user did not type,
+   * so it is reported rather than done quietly.
+   */
+  const mirror = (index: number): void => {
+    const before = system.surfaceAt(index).thickness;
+    const result = setMirror(system, index, true);
+    if (!result.ok) {
+      setStatus(undefined);
+      setError(result.error);
+      return;
+    }
+    setError(undefined);
+    setStatus(
+      `Surface ${index} is now a mirror in ${system.surfaceAt(index - 1).material.name}. ` +
+        `Its thickness flipped to ${formatLength(-before)}: the light travels back the way it came.`,
+    );
+    onChange(result.value);
   };
 
   /**
@@ -168,9 +199,11 @@ export function LensDataEditor({
       }
     >
       <datalist id={MATERIAL_LIST_ID}>
-        {/* MODEL leads the list because it is the one entry that is not a name
-            to look up, and the only way to reach the Model glass column. */}
+        {/* MODEL and MIRROR lead the list because neither is a name to look
+            up: one opens the Model glass column, the other makes the surface
+            reflect. Everything below them is a real glass. */}
         <option value={MODEL_MATERIAL_LABEL} key={MODEL_MATERIAL_LABEL} />
+        <option value={MIRROR_MATERIAL_LABEL} key={MIRROR_MATERIAL_LABEL} />
         {GLASS_CATALOG.names().map((name) => (
           <option value={name} key={name} />
         ))}
@@ -200,6 +233,8 @@ export function LensDataEditor({
               <th>Surface Type</th>
               <th className="text-column">Label</th>
               <th>Radius</th>
+              <th>Conic</th>
+              <th>Asphere</th>
               <th>Focal length</th>
               <th>Thickness</th>
               <th>Material</th>
@@ -293,6 +328,36 @@ export function LensDataEditor({
                     )}
                   </td>
 
+                  {/* Conic sits beside the radius because the two together are
+                      the surface's shape: the radius is where it starts, the
+                      conic is how it departs from a sphere. */}
+                  <td>
+                    {isParaxial ? (
+                      <EmptyCell reason="A paraxial surface is a plane; it has no conic constant." />
+                    ) : (
+                      <NumericCell
+                        value={surface.conic}
+                        ariaLabel={`Conic constant of surface ${label}`}
+                        title="Conic constant k. 0 sphere, −1 paraboloid, below −1 hyperboloid, between −1 and 0 ellipsoid."
+                        onCommit={(next) => apply(updateSurface(system, index, { conic: next }))}
+                      />
+                    )}
+                  </td>
+
+                  {/* Eight coefficients would be eight more columns; they open in
+                      a window instead, and the cell reports what is in there. */}
+                  <td>
+                    {surface.type === 'EVEN_ASPHERE' ? (
+                      <AsphericSummaryButton
+                        coefficients={surface.asphericCoefficients}
+                        surfaceLabel={label}
+                        onOpen={() => setAsphereSurface(index)}
+                      />
+                    ) : (
+                      <EmptyCell reason="Set the surface type to EVEN_ASPHERE to give it aspheric coefficients." />
+                    )}
+                  </td>
+
                   <td>
                     {isParaxial ? (
                       <NumericCell
@@ -321,9 +386,22 @@ export function LensDataEditor({
                   <td>
                     <MaterialCell
                       material={surface.material}
+                      reflective={surface.reflective}
                       ariaLabel={`Material after surface ${label}`}
-                      disabled={isImage}
-                      onCommit={(material) => apply(updateSurface(system, index, { material }))}
+                      disabled={isImage || isParaxial}
+                      onCommit={(material) =>
+                        apply(
+                          surface.reflective
+                            ? // Leaving MIRROR: drop the reflection first, so the
+                              // new medium is applied to a refracting surface
+                              // rather than to one the model still calls a mirror.
+                              chain(setMirror(system, index, false), (next) =>
+                                updateSurface(next, index, { material }),
+                              )
+                            : updateSurface(system, index, { material }),
+                        )
+                      }
+                      onMirror={() => mirror(index)}
                     />
                   </td>
 
@@ -405,12 +483,30 @@ export function LensDataEditor({
           {status}
         </p>
       ) : null}
+
+      {asphereSurface !== undefined && system.surfaces[asphereSurface] ? (
+        <AsphericCoefficientsDialog
+          // Keyed on the surface so opening a different row rebuilds the dialog
+          // rather than carrying the previous row's "add term" state across.
+          key={system.surfaceAt(asphereSurface).id}
+          surfaceLabel={String(asphereSurface)}
+          coefficients={system.surfaceAt(asphereSurface).asphericCoefficients}
+          onCommit={(asphericCoefficients) =>
+            apply(updateSurface(system, asphereSurface, { asphericCoefficients }))
+          }
+          onClose={() => setAsphereSurface(undefined)}
+        />
+      ) : null}
     </Panel>
   );
 }
 
 /** The types a user may pick between, in the order they appear in the dropdown. */
-const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = ['STANDARD', 'PARAXIAL'];
+const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = [
+  'STANDARD',
+  'EVEN_ASPHERE',
+  'PARAXIAL',
+];
 
 /**
  * Surface type. OBJECT and IMAGE are fixed by their position in the system, so
@@ -467,20 +563,25 @@ function EmptyCell({ reason }: { reason: string }) {
  */
 function MaterialCell({
   material,
+  reflective,
   ariaLabel,
   disabled,
   onCommit,
+  onMirror,
 }: {
   material: Material;
+  reflective: boolean;
   ariaLabel: string;
   disabled: boolean;
   onCommit: (material: Material) => void;
+  onMirror: () => void;
 }) {
-  const label = materialLabel(material);
+  const label = materialLabel(material, reflective);
   const [draft, setDraft] = useState(label);
   const [editing, setEditing] = useState(false);
   const shown = editing ? draft : label;
-  const resolved = materialFromText(shown, material);
+  const wantsMirror = isMirrorText(shown);
+  const resolved = wantsMirror ? material : materialFromText(shown, material);
 
   return (
     <input
@@ -492,7 +593,9 @@ function MaterialCell({
       className={resolved ? undefined : 'invalid'}
       title={
         resolved
-          ? `A catalog glass name, blank for air, or ${MODEL_MATERIAL_LABEL} for a glass given by index and Abbe number.`
+          ? `A catalog glass name, blank for air, ${MODEL_MATERIAL_LABEL} for a glass given by ` +
+            `index and Abbe number, or ${MIRROR_MATERIAL_LABEL} to reflect. A mirror keeps the ` +
+            'medium it is in and reverses the thickness after it.'
           : `"${shown.trim()}" is not in the catalog`
       }
       onChange={(event) => {
@@ -505,10 +608,20 @@ function MaterialCell({
       }}
       onBlur={() => {
         setEditing(false);
+        if (isMirrorText(draft)) {
+          // MIRROR is not a medium, so it does not go through onCommit: the
+          // surface's medium and thickness both have to move with it.
+          if (!reflective) {
+            onMirror();
+          }
+          return;
+        }
         const next = materialFromText(draft, material);
         // Compared by identity: MODEL over a model glass returns the same glass,
         // and re-committing it would put an identical design on the undo stack.
-        if (next && next !== material) {
+        // A surface leaving MIRROR still commits, even to the same medium, since
+        // what changes there is the reflection rather than the material.
+        if (next && (next !== material || reflective)) {
           onCommit(next);
         }
       }}

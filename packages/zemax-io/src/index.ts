@@ -19,5 +19,6 @@ export {
   ZmxImportError,
   UNKNOWN_GLASS_INDEX,
   MODEL_GLASS_NAME,
+  MIRROR_GLASS_NAME,
 } from './import.ts';
 export type { ZmxImportOptions, ZmxImportResult, ZmxGlassReference } from './import.ts';

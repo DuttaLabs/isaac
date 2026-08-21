@@ -1,7 +1,20 @@
 // Geometry primitives
 export { Vector3 } from './geometry/vector3.ts';
 export { Point3 } from './geometry/point3.ts';
-export { intersectSphericalSurface, type SurfaceHit } from './geometry/surface-intersection.ts';
+export {
+  intersectSurface,
+  intersectSphericalSurface,
+  type SurfaceHit,
+} from './geometry/surface-intersection.ts';
+export {
+  sphericalShape,
+  maximumSagRadius,
+  surfaceSag,
+  surfaceProfileSag,
+  surfaceSlopeOverRadius,
+  vertexCurvature,
+} from './geometry/surface-sag.ts';
+export type { SurfaceShape } from './geometry/surface-sag.ts';
 
 // Optical model
 export { Ray } from './model/ray.ts';
@@ -18,7 +31,7 @@ export {
   MATERIAL_CATALOG,
 } from './model/material.ts';
 export type { Material, SellmeierCoefficients, ModelGlassOptions } from './model/material.ts';
-export { Surface } from './model/surface.ts';
+export { Surface, ASPHERIC_SURFACE_TYPES, STOP_CAPABLE_SURFACE_TYPES } from './model/surface.ts';
 export type { SurfaceConfig, SurfaceType } from './model/surface.ts';
 export { OpticalSystem } from './model/optical-system.ts';
 export type {
@@ -35,6 +48,7 @@ export { traceRay } from './tracing/trace.ts';
 export type { Intersection, InteractionKind, RayTraceResult } from './tracing/trace.ts';
 export {
   surfacePower,
+  signedMediaIndices,
   paraxialTrace,
   paraxialProperties,
   withImageAtParaxialFocus,

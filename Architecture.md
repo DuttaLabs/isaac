@@ -80,9 +80,7 @@ permission.
 
 **High priority:**
 
-- Mirrors (reflective surfaces)
 - Coordinate breaks (tilts and decenters)
-- Conic constants and aspheric surfaces
 - Optimization (merit functions, variables, damped least squares)
 - MTF
 - PSF
@@ -112,10 +110,11 @@ A half-built feature that silently produces wrong numbers is worse than an
 absent one, because the UI will happily plot it. Prefer refusing what cannot
 yet be modeled — with a clear message — over approximating it.
 
-Mirrors are the cautionary example: `Surface.reflective` exists and `trace.ts`
-reflects correctly, but `paraxial.ts` throws on any mirror, so the first-order
-analysis cannot describe a system the real tracer handles fine. Finishing that
-pairing is part of the mirror work, not a follow-up.
+Mirrors were the cautionary example, and are now the worked one. `trace.ts` had
+reflected correctly for some time while `paraxial.ts` threw on any mirror, so the
+first-order analysis could not describe a system the real tracer handled fine.
+That gap was closed as part of mirror support rather than left as a follow-up —
+together with the reader, the editor and both layout views.
 
 ## Current state
 
@@ -124,16 +123,19 @@ Implemented and working:
 - `@isaac/optical-core` — geometry, data model, sequential tracing, and
   first-order/paraxial analysis (EFL, BFD, FFD, entrance/exit pupils,
   magnification), plus ray generation from the system's aperture and fields.
-- `@isaac/zemax-io` — `.zmx` reader; imports 101 of the 471 OpticStudio sample
+- `@isaac/zemax-io` — `.zmx` reader; imports 133 of the 471 OpticStudio sample
   files today, refusing the rest rather than approximating them.
 - `@isaac/glass-catalog` — 162 SCHOTT glasses as published Sellmeier fits.
 - `@isaac/three-optics` — Three.js geometry for a system; no React, no renderer.
 - `apps/web` — React + Vite UI: lens data editor, layout (2D and 3D), ray fans,
   spot diagrams, first-order summary.
 
-Surface types today: `OBJECT`, `STANDARD`, `PARAXIAL`, `IMAGE`. Reflection is a
-`reflective` flag on a surface rather than a distinct `MIRROR` type, which
-matches how OpticStudio models it (`GLAS MIRROR`).
+Surface types today: `OBJECT`, `STANDARD`, `EVEN_ASPHERE`, `PARAXIAL`, `IMAGE`.
+`STANDARD` covers planes, spheres and conics; `EVEN_ASPHERE` adds the even-power
+polynomial terms, which is how nearly every molded plastic lens is described.
+Reflection is a `reflective` flag on a surface rather than a distinct `MIRROR`
+type, which matches how OpticStudio models it (`GLAS MIRROR`); mirrors are
+traced, analyzed to first order, and drawn as metal in both layout views.
 
 `CLAUDE.md` is the detailed map of how these packages actually work and the
 conventions that span them. This document is the charter: the goals, the hard
@@ -158,6 +160,8 @@ A `Surface` has:
 - id
 - type
 - radius (`Infinity` for a plane)
+- conic constant
+- aspheric coefficients (on an `EVEN_ASPHERE` surface)
 - thickness — the distance to the *next* surface
 - semi-diameter
 - material — the medium **after** the surface, toward +Z
@@ -168,6 +172,17 @@ A `Surface` has:
 
 Axial positions are *derived* from the accumulated thicknesses, not stored per
 surface.
+
+### Parameters as future optimization variables
+
+Optimization will need to name a parameter — "the r⁴ coefficient on surface 3",
+"the thickness after surface 5" — mark it variable, and vary it. Nothing in the
+model implements that yet, and this is a note about keeping the door open rather
+than a design: every surface parameter is a plain named field on an immutable
+`Surface`, and edits already go through `.with()` / `withSurfaceAt()`, which is
+exactly the shape a variable list wants. The one parameter that is a *list*
+rather than a field is `asphericCoefficients`, so a variable referring to one of
+them will need an index as well as a name.
 
 ## Coordinate convention
 

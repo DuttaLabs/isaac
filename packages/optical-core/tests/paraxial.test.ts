@@ -220,11 +220,16 @@ test('dispersion shifts the focal length with wavelength', () => {
 });
 
 test('paraxial analysis refuses systems it cannot model yet', () => {
-  const withMirror = planoConvexSinglet().withSurfaceAt(
-    1,
-    planoConvexSinglet().surfaceAt(1).with({ reflective: true }),
+  // Making a surface reflective without changing its medium is now the error:
+  // this one still claims glass on the far side of a mirror standing in air.
+  assert.throws(
+    () =>
+      planoConvexSinglet().withSurfaceAt(
+        1,
+        planoConvexSinglet().surfaceAt(1).with({ reflective: true }),
+      ),
+    /the medium after it must be the medium before it/,
   );
-  assert.throws(() => paraxialProperties(withMirror), /mirrors/);
 
   const empty = new OpticalSystem({
     surfaces: [

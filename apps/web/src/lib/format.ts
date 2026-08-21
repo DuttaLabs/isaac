@@ -51,3 +51,38 @@ export function formatOptional(value: number | undefined, digits = 4, suffix = '
 export function formatMicrons(millimeters: number): string {
   return `${(millimeters * 1000).toFixed(2)} µm`;
 }
+
+/**
+ * Formats an aspheric coefficient, which is nothing like a length: α₄ on r⁸ is
+ * a number around 1e-9, and the fixed-decimal formatting the rest of the editor
+ * uses would print every one of them as `0`. Scientific notation with the
+ * trailing zeros trimmed is both what survives the round trip and what a lens
+ * prescription quotes.
+ */
+export function formatCoefficient(value: number): string {
+  if (value === 0) {
+    return '0';
+  }
+  if (!Number.isFinite(value)) {
+    return formatLength(value);
+  }
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1e-3 && magnitude < 1e5) {
+    // Big enough to read plainly; an exponent here would be noise.
+    return Number(value.toPrecision(9)).toString();
+  }
+  return value
+    .toExponential(8)
+    .replace(/\.?0+e/, 'e')
+    .replace('e+', 'e');
+}
+
+/** Parses a coefficient. Blank means zero — the absence of that term. */
+export function parseCoefficient(text: string, fallback: number): number {
+  const trimmed = text.trim();
+  if (trimmed === '') {
+    return 0;
+  }
+  const parsed = Number(trimmed.replace(/^−/, '-'));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}

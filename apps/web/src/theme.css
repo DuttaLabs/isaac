@@ -35,6 +35,7 @@
      lighter than the light background's text and darker than the dark one's. */
   --surface-highlight: #fcba05;
   --glass-stroke: #6f6d66;
+  --mirror: #5f7180;
   --axis: #b5b4ac;
   --grid: #e4e3de;
   --stop-mark: #0b0b0b;
@@ -69,6 +70,7 @@
     --glass-fill-crossed: rgba(240, 138, 132, 0.22);
     --surface-highlight: #fcba05;
     --glass-stroke: #8e8c84;
+    --mirror: #9fb4c4;
     --axis: #4e4d46;
     --grid: #2b2b29;
     --stop-mark: #ffffff;
@@ -100,6 +102,7 @@
   --glass-fill-crossed: rgba(240, 138, 132, 0.22);
   --surface-highlight: #fcba05;
   --glass-stroke: #8e8c84;
+  --mirror: #9fb4c4;
   --axis: #4e4d46;
   --grid: #2b2b29;
   --stop-mark: #ffffff;
@@ -443,8 +446,10 @@ input.text-input {
 
 .table-scroll > table {
   /* Enough for every column to show its value untruncated; the container
-     scrolls horizontally only if the pane is somehow narrower than this. */
-  min-width: 960px;
+     scrolls horizontally only if the pane is somehow narrower than this. Conic
+     and Asphere are two of those columns — the eight coefficients themselves
+     stay out of the table precisely so this number does not have to grow. */
+  min-width: 1120px;
 }
 
 /* A compound value — a model glass is "nd / Vd", optionally with ΔPg,F — so it
@@ -465,6 +470,9 @@ input.parameters {
    word rather than stretch like the free-text and numeric cells. */
 td select {
   width: 100%;
+  /* Wide enough for EVEN_ASPHERE, the longest name in the list; a truncated
+     type reads as a different type. */
+  min-width: 128px;
   font-family: var(--mono);
   font-size: 12px;
 }
@@ -607,4 +615,130 @@ svg.layout.panning {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+/* ---------- Aspheric coefficients ---------- */
+
+/* The lens table's aspheric cell: a button that reads as a value, since what it
+   shows is the state of the series and not an invitation to press something. */
+.asphere-summary {
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 100%;
+  /* One line: the summary is a value, and a value that reflows into two rows
+     makes the whole table jump when a coefficient is entered. */
+  min-width: 104px;
+  white-space: nowrap;
+  text-align: left;
+  padding: 3px 6px;
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.asphere-summary:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.asphere-dialog {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0;
+  min-width: 320px;
+  max-width: min(420px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.asphere-dialog::backdrop {
+  /* Dark in both themes: the backdrop's job is to sink the page behind the
+     dialog, and a light scrim over a light page does not do that. */
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.asphere-dialog header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.asphere-dialog h2 {
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.asphere-dialog header button {
+  margin-left: auto;
+}
+
+.asphere-dialog > p {
+  margin: 0;
+  padding: 10px 12px 0;
+}
+
+.asphere-dialog .formula {
+  font-family: var(--mono);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.asphere-dialog .warning-note {
+  color: var(--text-secondary);
+  padding-bottom: 0;
+}
+
+.asphere-terms {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 0;
+}
+
+.asphere-terms th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.asphere-terms th:last-child {
+  text-align: right;
+}
+
+.asphere-terms td {
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--surface-2);
+}
+
+.asphere-terms td:last-child {
+  width: 100%;
+}
+
+input.coefficient {
+  width: 100%;
+  font-size: 12px;
+}
+
+.asphere-dialog footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.asphere-dialog footer button:last-child {
+  margin-left: auto;
 }

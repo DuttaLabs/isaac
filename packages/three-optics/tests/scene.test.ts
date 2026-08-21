@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BufferGeometry } from 'three';
-import { AIR, N_BK7, OpticalSystem, Surface, generateRayFan, traceRays } from '@isaac/optical-core';
-import { buildOpticalScene, sag, surfaceProfile, type SceneTrace } from '../src/index.ts';
+import {
+  AIR,
+  N_BK7,
+  OpticalSystem,
+  Surface,
+  generateRayFan,
+  sphericalShape,
+  surfaceProfileSag,
+  traceRays,
+} from '@isaac/optical-core';
+import { buildOpticalScene, surfaceProfile, type SceneTrace } from '../src/index.ts';
 
 /** A biconvex singlet in air: one glass element, an image plane, nothing else. */
 function singlet(): OpticalSystem {
@@ -80,7 +89,10 @@ test('a curved surface bulges the way its radius says', () => {
 
   // R 50 convex toward −Z: at the rim the surface is sag() behind its vertex.
   const expected = 50 - Math.sqrt(50 * 50 - 10 * 10);
-  assert.ok(Math.abs(sag(1 / 50, 10) - expected) < 1e-12, 'sag must match the circle');
+  assert.ok(
+    Math.abs(surfaceProfileSag(sphericalShape(1 / 50), 10) - expected) < 1e-12,
+    'sag must match the circle',
+  );
 
   const zs = vertices(scene.elements[0]!.geometry).map(([, , z]) => z);
   assert.ok(Math.abs(Math.min(...zs) - 0) < 1e-6, 'the front vertex sits at z = 0');
@@ -92,8 +104,8 @@ test('an element is a closed solid, not two loose caps', () => {
   // The profile has to start and end on the axis: those two poles are what turn
   // a revolution into a solid. If either end were off-axis the lens would be a
   // tube with open ends, which is visible the moment you orbit behind it.
-  const front = surfaceProfile(1 / 50, 0, 10, 8);
-  const back = surfaceProfile(-1 / 50, 6, 10, 8);
+  const front = surfaceProfile(sphericalShape(1 / 50), 0, 10, 8);
+  const back = surfaceProfile(sphericalShape(-1 / 50), 6, 10, 8);
   const profile = [...front, ...back.reverse()];
 
   assert.equal(profile[0]!.x, 0, 'starts on the axis');
@@ -105,13 +117,13 @@ test('an element is a closed solid, not two loose caps', () => {
 });
 
 test('a plane surface profile is flat and a curved one is not', () => {
-  const flat = surfaceProfile(0, 3, 5, 6);
+  const flat = surfaceProfile(sphericalShape(0), 3, 5, 6);
   assert.ok(
     flat.every((point) => Math.abs(point.y - 3) < 1e-12),
     'zero curvature is a plane at the vertex',
   );
 
-  const curved = surfaceProfile(1 / 25, 0, 5, 6);
+  const curved = surfaceProfile(sphericalShape(1 / 25), 0, 5, 6);
   assert.equal(curved[0]!.y, 0, 'the vertex is on the axis at z = 0');
   assert.ok(curved[curved.length - 1]!.y > 0, 'and the rim is displaced by the sag');
 });
@@ -220,4 +232,33 @@ test('a surface with no aperture still gets drawn, at the fallback size', () => 
   );
   assert.ok(Math.max(...radii) > 6.9, 'and uses the whole fallback');
   scene.dispose();
+});
+
+test('a revolved profile carries the conic and the aspheric terms', () => {
+  const radius = 50;
+  const rim = 10;
+  const conic = surfaceProfile(
+    { curvature: 1 / radius, conic: -1, asphericCoefficients: [] },
+    0,
+    rim,
+    8,
+  );
+  const sphere = surfaceProfile(sphericalShape(1 / radius), 0, rim, 8);
+
+  // Same vertex, different rim: the profile is being built from the shape and
+  // not from the radius alone.
+  assert.equal(conic[0]!.y, sphere[0]!.y);
+  assert.ok(conic[conic.length - 1]!.y < sphere[sphere.length - 1]!.y);
+  assert.ok(Math.abs(conic[conic.length - 1]!.y - (rim * rim) / (2 * radius)) < 1e-12);
+
+  const asphere = surfaceProfile(
+    { curvature: 1 / radius, conic: -1, asphericCoefficients: [0, 1e-5] },
+    0,
+    rim,
+    8,
+  );
+  assert.ok(
+    Math.abs(asphere[asphere.length - 1]!.y - (conic[conic.length - 1]!.y + 1e-5 * rim ** 4)) <
+      1e-12,
+  );
 });

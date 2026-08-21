@@ -13,6 +13,10 @@ export function updateSurface(
   index: number,
   changes: {
     radius?: number;
+    /** Conic constant; every surface with a radius accepts one. */
+    conic?: number;
+    /** `α₁…αₙ` on r², r⁴, …; only an EVEN_ASPHERE surface accepts them. */
+    asphericCoefficients?: readonly number[];
     /** Ideal-lens focal length; only a PARAXIAL surface accepts one. */
     focalLength?: number;
     thickness?: number;
@@ -29,17 +33,24 @@ export function updateSurface(
 export const DEFAULT_PARAXIAL_FOCAL_LENGTH = 100;
 
 /** The surface types a user can choose between; OBJECT and IMAGE are fixed by position. */
-export type EditableSurfaceType = 'STANDARD' | 'PARAXIAL';
+export type EditableSurfaceType = 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL';
 
 /**
- * Switches a surface between STANDARD and PARAXIAL.
+ * Switches a surface between the types a user may choose.
  *
- * This rebuilds the surface rather than going through `.with()`, because the two
+ * This rebuilds the surface rather than going through `.with()`, because the
  * types carry mutually exclusive geometry: a STANDARD surface has a radius and
  * no focal length, a PARAXIAL surface the reverse, and `.with()` can only add
  * fields, never drop them. Going paraxial therefore discards the radius, and
  * coming back leaves a plane — there is no index-independent way to turn one
  * into the other, so neither is silently invented.
+ *
+ * STANDARD and EVEN_ASPHERE are the one pair that *does* convert cleanly: they
+ * are the same conic surface, one of them carrying a polynomial as well. So the
+ * radius and conic follow the surface across in both directions, and only the
+ * coefficients — which have nowhere to live on a STANDARD surface — are dropped
+ * on the way back. That is the conversion a designer actually performs, turning
+ * a spherical element aspheric once the design needs it.
  */
 export function setSurfaceType(
   system: OpticalSystem,
@@ -55,6 +66,7 @@ export function setSurfaceType(
       return system;
     }
 
+    const shaped = surface.type !== 'PARAXIAL' && type !== 'PARAXIAL';
     return system.withSurfaceAt(
       index,
       new Surface({
@@ -63,11 +75,56 @@ export function setSurfaceType(
         thickness: surface.thickness,
         semiDiameter: surface.semiDiameter,
         material: surface.material,
+        reflective: surface.reflective,
         isStop: surface.isStop,
         comment: surface.comment,
         ...(type === 'PARAXIAL'
           ? { focalLength: DEFAULT_PARAXIAL_FOCAL_LENGTH }
-          : { radius: Infinity }),
+          : { radius: shaped ? surface.radius : Infinity, conic: shaped ? surface.conic : 0 }),
+        ...(type === 'EVEN_ASPHERE' ? { asphericCoefficients: surface.asphericCoefficients } : {}),
+      }),
+    );
+  });
+}
+
+/**
+ * Turns a surface into a mirror, or back into a refracting one.
+ *
+ * Two things move together, because a mirror cannot be described by one of them
+ * alone. The **medium** becomes the medium before the surface: light comes back
+ * out the way it went in, and the model refuses a mirror that claims otherwise.
+ * The **thickness** changes sign: it is the distance to the next surface
+ * measured along +Z, and +Z is now behind the light, so leaving it positive puts
+ * the rest of the design where no light goes and every ray comes back MISSED.
+ *
+ * Only this surface's own thickness is flipped, not the whole train after it.
+ * That is the minimum that makes the common case — a mirror with the image plane
+ * after it — work on the first try, and it is exactly reversible. A longer arm
+ * behind a fold still has to be laid out by hand, which is the same bargain
+ * OpticStudio strikes.
+ */
+export function setMirror(
+  system: OpticalSystem,
+  index: number,
+  reflective: boolean,
+): Result<OpticalSystem> {
+  return attempt(() => {
+    const surface = system.surfaceAt(index);
+    if (surface.reflective === reflective) {
+      return system;
+    }
+    if (index === 0 || index === system.surfaces.length - 1) {
+      throw new RangeError('The object and image surfaces record rays; they cannot reflect.');
+    }
+    if (surface.type === 'PARAXIAL') {
+      throw new RangeError('A PARAXIAL surface is an ideal lens; it cannot be a mirror.');
+    }
+    return system.withSurfaceAt(
+      index,
+      surface.with({
+        reflective,
+        material: reflective ? system.surfaceAt(index - 1).material : surface.material,
+        thickness: -surface.thickness,
       }),
     );
   });

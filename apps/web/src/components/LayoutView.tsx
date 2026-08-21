@@ -147,16 +147,26 @@ export function LayoutView({
 
       {geometry.profiles.map((profile) => {
         // Drawn heavier as well as colored: the highlight has to survive being
-        // one thin line among many, and weight carries where a hue may not.
+        // one thin line among many, and weight carries where a hue may not. A
+        // mirror is set apart the same way — a cooler stroke and more of it —
+        // because it is the one surface nothing passes through, and reading it
+        // as a lens face makes the whole ray path look wrong.
         const highlighted = profile.surfaceIndex === highlightedSurface;
+        const stroke = highlighted
+          ? 'var(--surface-highlight)'
+          : profile.isMirror
+            ? 'var(--mirror)'
+            : 'var(--glass-stroke)';
         return (
           <path
             key={`surface-${profile.surfaceIndex}`}
             d={toPath(profile.points, project)}
             fill="none"
-            stroke={highlighted ? 'var(--surface-highlight)' : 'var(--glass-stroke)'}
-            strokeWidth={highlighted ? 3 : profile.isImage ? 2 : 1.5}
-          />
+            stroke={stroke}
+            strokeWidth={highlighted ? 3 : profile.isMirror ? 2.5 : profile.isImage ? 2 : 1.5}
+          >
+            {profile.isMirror ? <title>{`Surface ${profile.surfaceIndex}: mirror`}</title> : null}
+          </path>
         );
       })}
 

@@ -1,5 +1,11 @@
 import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Vector2 } from 'three';
-import type { OpticalSystem, RayTraceResult } from '@isaac/optical-core';
+import {
+  signedMediaIndices,
+  surfaceProfileSag,
+  type OpticalSystem,
+  type RayTraceResult,
+  type SurfaceShape,
+} from '@isaac/optical-core';
 
 /**
  * Three.js geometry for an optical system.
@@ -15,20 +21,6 @@ import type { OpticalSystem, RayTraceResult } from '@isaac/optical-core';
  * `LatheGeometry` revolves about Y, so every geometry here is rotated a quarter
  * turn about X as it is built, and comes out already in the engine's frame.
  */
-
-/** Axial sag of a spherical surface at radial height `r`. */
-export function sag(curvature: number, r: number): number {
-  if (curvature === 0) {
-    return 0;
-  }
-  const term = 1 - curvature * curvature * r * r;
-  if (term <= 0) {
-    // Past the hemisphere the sphere turns back on itself; hold at the center of
-    // curvature rather than returning NaN for an aperture that cannot exist.
-    return 1 / curvature;
-  }
-  return (curvature * r * r) / (1 + Math.sqrt(term));
-}
 
 export interface SceneOptions {
   /** Semi-diameter for a surface with no aperture of its own. */
@@ -54,6 +46,8 @@ export interface SurfaceShellGeometry {
   geometry: LatheGeometry;
   isStop: boolean;
   isImage: boolean;
+  /** A mirror: shaded as metal, and opaque, because nothing goes through it. */
+  isMirror: boolean;
 }
 
 /**
@@ -91,9 +85,12 @@ const DEFAULT_PROFILE_SAMPLES = 24;
 /**
  * The half-profile of a surface, from the axis out to its rim, as
  * `LatheGeometry` wants it: x is radius, y is distance along the axis.
+ *
+ * The sag comes from the engine rather than from a copy kept here, so a conic
+ * or an aspheric term shapes the solid exactly as it shapes the trace.
  */
 export function surfaceProfile(
-  curvature: number,
+  shape: SurfaceShape,
   vertexZ: number,
   semiDiameter: number,
   samples = DEFAULT_PROFILE_SAMPLES,
@@ -101,7 +98,7 @@ export function surfaceProfile(
   const points: Vector2[] = [];
   for (let sample = 0; sample < samples; sample += 1) {
     const r = (semiDiameter * sample) / (samples - 1);
-    points.push(new Vector2(r, vertexZ + sag(curvature, r)));
+    points.push(new Vector2(r, vertexZ + surfaceProfileSag(shape, r)));
   }
   return points;
 }
@@ -127,6 +124,8 @@ export function buildOpticalScene(
   };
   const isGlass = (index: number): boolean =>
     Math.abs(system.surfaceAt(index).material.indexAt(system.primaryWavelengthNm) - 1) >= 1e-9;
+  const media = signedMediaIndices(system, system.primaryWavelengthNm);
+  const travelAfter = (index: number): number => Math.sign(media[index] ?? 1);
 
   const elements: ElementGeometry[] = [];
   const consumed = new Set<number>();
@@ -138,8 +137,8 @@ export function buildOpticalScene(
     }
     const frontRadius = radiusOf(index);
     const backRadius = radiusOf(index + 1);
-    const frontCurvature = system.surfaceAt(index).curvature;
-    const backCurvature = system.surfaceAt(index + 1).curvature;
+    const frontShape = system.surfaceAt(index).shape;
+    const backShape = system.surfaceAt(index + 1).shape;
     const frontZ = system.vertexZAt(index);
     const backZ = system.vertexZAt(index + 1);
 
@@ -147,15 +146,15 @@ export function buildOpticalScene(
     // Both ends land on the axis, which is what closes the revolution into a
     // solid rather than leaving two open caps.
     const profile = [
-      ...surfaceProfile(frontCurvature, frontZ, frontRadius, samples),
-      ...surfaceProfile(backCurvature, backZ, backRadius, samples).reverse(),
+      ...surfaceProfile(frontShape, frontZ, frontRadius, samples),
+      ...surfaceProfile(backShape, backZ, backRadius, samples).reverse(),
     ];
 
     elements.push({
       frontIndex: index,
       backIndex: index + 1,
       geometry: lathe(profile, segments),
-      crossed: leastAxialGap(system, index, samples) < 0,
+      crossed: leastAxialGap(system, index, samples, travelAfter(index)) < 0,
     });
     consumed.add(index);
     consumed.add(index + 1);
@@ -170,11 +169,12 @@ export function buildOpticalScene(
     surfaces.push({
       surfaceIndex: index,
       geometry: lathe(
-        surfaceProfile(surface.curvature, system.vertexZAt(index), radiusOf(index), samples),
+        surfaceProfile(surface.shape, system.vertexZAt(index), radiusOf(index), samples),
         segments,
       ),
       isStop: surface.isStop,
       isImage: surface.type === 'IMAGE',
+      isMirror: surface.reflective,
     });
   }
 
@@ -200,25 +200,38 @@ export function buildOpticalScene(
 }
 
 /**
- * Least axial distance between a surface and the next over the aperture they
- * share. Negative means the rear surface has crossed in front of the front one,
- * so the revolved solid passes through itself — the same fault the 2-D layout
- * marks, measured the same way so the two views agree.
+ * Least distance between a surface and the next, along the light, over the
+ * aperture they share. Negative means the rear surface has crossed in front of
+ * the front one, so the revolved solid passes through itself — the same fault
+ * the 2-D layout marks, measured the same way so the two views agree.
+ *
+ * `travel` is the direction the light is going between the two, taken from the
+ * sign of the medium's index. After a mirror the next surface sits at smaller z
+ * quite legitimately, and measuring along the axis instead of along the light
+ * would call every reflecting element self-intersecting.
  */
-function leastAxialGap(system: OpticalSystem, index: number, samples: number): number {
+function leastAxialGap(
+  system: OpticalSystem,
+  index: number,
+  samples: number,
+  travel: number,
+): number {
   const front = system.surfaceAt(index);
   const back = system.surfaceAt(index + 1);
   const frontZ = system.vertexZAt(index);
   const backZ = system.vertexZAt(index + 1);
   const shared = Math.min(front.semiDiameter, back.semiDiameter);
   if (!Number.isFinite(shared)) {
-    return backZ - frontZ;
+    return travel * (backZ - frontZ);
   }
 
-  let least = backZ + sag(back.curvature, shared) - (frontZ + sag(front.curvature, shared));
+  const gapAt = (r: number): number =>
+    travel *
+    (backZ + surfaceProfileSag(back.shape, r) - (frontZ + surfaceProfileSag(front.shape, r)));
+
+  let least = gapAt(shared);
   for (let sample = 0; sample < samples; sample += 1) {
-    const r = (shared * sample) / (samples - 1);
-    least = Math.min(least, backZ + sag(back.curvature, r) - (frontZ + sag(front.curvature, r)));
+    least = Math.min(least, gapAt((shared * sample) / (samples - 1)));
   }
   return least;
 }
@@ -288,7 +301,7 @@ function sceneBounds(
   for (let index = 1; index < system.surfaces.length; index += 1) {
     const r = radiusOf(index);
     const vertexZ = system.vertexZAt(index);
-    const sagAtRim = sag(system.surfaceAt(index).curvature, r);
+    const sagAtRim = system.surfaceAt(index).sagAt(r);
     minZ = Math.min(minZ, vertexZ, vertexZ + sagAtRim);
     maxZ = Math.max(maxZ, vertexZ, vertexZ + sagAtRim);
     radius = Math.max(radius, r);

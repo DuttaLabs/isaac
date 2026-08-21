@@ -17,6 +17,7 @@ const TOKENS = {
   glass: ['--accent', '#2a78d6'],
   faulty: ['--danger', '#c0362f'],
   surface: ['--glass-stroke', '#6f6d66'],
+  mirror: ['--mirror', '#5f7180'],
   stop: ['--stop-mark', '#0b0b0b'],
   highlight: ['--surface-highlight', '#fcba05'],
   axis: ['--axis', '#b5b4ac'],
@@ -29,6 +30,7 @@ export interface ThemeColors {
   glass: string;
   faulty: string;
   surface: string;
+  mirror: string;
   stop: string;
   highlight: string;
   axis: string;
@@ -53,6 +55,7 @@ function read(): ThemeColors {
     glass: value(...TOKENS.glass),
     faulty: value(...TOKENS.faulty),
     surface: value(...TOKENS.surface),
+    mirror: value(...TOKENS.mirror),
     stop: value(...TOKENS.stop),
     highlight: value(...TOKENS.highlight),
     axis: value(...TOKENS.axis),

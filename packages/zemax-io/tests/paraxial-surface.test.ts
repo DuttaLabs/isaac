@@ -112,6 +112,6 @@ test('other surface types are still refused, and say so by name', () => {
     () => importZmx(paraxialFile('  TYPE COORDBRK'), { resolveMaterial }),
     (error: unknown) =>
       error instanceof ZmxImportError &&
-      /only STANDARD and PARAXIAL surfaces are supported/.test(error.message),
+      /only STANDARD, PARAXIAL, EVENASPH surfaces are supported/.test(error.message),
   );
 });

@@ -227,8 +227,14 @@ test('header settings that change how rays are launched become warnings', () => 
     vignetted.warnings.some((warning) => /Vignetting factors are set \(VDYN\)/.test(warning)),
   );
 
-  const aimed = importDoublet(DOUBLET.replace('RAIM 0 0 1', 'RAIM 1 0 1'));
-  assert.ok(aimed.warnings.some((warning) => /requests ray aiming \(RAIM 1\)/.test(warning)));
+  // RAIM's leading value is a dead `tol` placeholder, so a non-zero there is *not* ray aiming;
+  // the mode is the second value. Both halves are pinned, since reading the wrong column
+  // silently disables this warning on every real file (they all carry tol = 0).
+  const notAimed = importDoublet(DOUBLET.replace('RAIM 0 0 1', 'RAIM 1 0 1'));
+  assert.ok(!notAimed.warnings.some((warning) => /ray aiming/.test(warning)));
+
+  const aimed = importDoublet(DOUBLET.replace('RAIM 0 0 1', 'RAIM 0 2 1'));
+  assert.ok(aimed.warnings.some((warning) => /requests real ray aiming \(RAIM 2\)/.test(warning)));
 
   // The file's own ENVD is the standard environment, which the catalog
   // indices already assume, so only a departure from it is reported.

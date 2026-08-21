@@ -389,11 +389,14 @@ function warnHeaderSettings(document: ZmxDocument, warnings: string[]): void {
     );
   }
 
-  const rayAiming = numericValue(firstValue(document.header, 'RAIM'));
+  // RAIM is `tol type ...`; the leading tol is a dead placeholder (zero in every file seen), so
+  // the aiming mode is the *second* value: 0 none, 1 paraxial, 2 real.
+  const rayAiming = numericValue(findRecord(document.header, 'RAIM')?.values[1]);
   if (rayAiming !== undefined && rayAiming !== 0) {
+    const mode = rayAiming === 1 ? 'paraxial' : rayAiming === 2 ? 'real' : `mode ${rayAiming}`;
     warnings.push(
-      `The file requests ray aiming (RAIM ${rayAiming}); rays here are aimed paraxially, so rays near ` +
-        'the pupil edge can be clipped at the stop.',
+      `The file requests ${mode} ray aiming (RAIM ${rayAiming}); rays here are aimed paraxially, so ` +
+        'rays near the pupil edge can be clipped at the stop.',
     );
   }
 

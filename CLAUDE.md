@@ -44,7 +44,7 @@ Reads `.zmx` files in two stages, so unknown tokens are never guessed at:
 
 Token semantics: `CURV` is curvature (invert for radius), `DISZ` is thickness (`INFINITY` allowed), `DIAM` is the **semi**-diameter (`0` = no aperture ⇒ `Infinity`), `GLAS` names the medium *after* the surface, `STOP` is a bare flag, `WAVM n λ w` is in **micrometers**, `PWAV` is 1-based, and `FTYP <fieldType> <telecentric> <nFields> <nWaves>` gives the counts that trim the padded `WAVM`/`XFLN`/`YFLN` lists. On a `TYPE PARAXIAL` surface `PARM 1` is the focal length and `PARM 2` is the OPD mode (which moves no ray, so it stays in `ignoredTokens`); any *other* `PARM` there is refused rather than guessed at, and `PARM` counts as handled only on a paraxial surface — elsewhere its meaning is unverified, so it stays reported. Aperture tokens: `ENPD`/`FNUM`/`OBNA`/`FLOA`.
 
-The format has **no public specification** (dropped from the Zemax help system ~2005), so the rule is: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modeled (non-`STANDARD` surface types, non-zero `CONI`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
+The format has **no *current* public specification** (dropped from the Zemax help system ~2005), but a pre-2005 one survives: **Chapter 29 of the 2000 Zemax manual** in `SupportingMaterial/` (gitignored) is a full keyword table, and Chapter 14 gives the per-surface-type `PARM` column meanings. Its argument *orders* still match all 471 OpticStudio sample files; it predates later additions, so it is stale on argument *counts* (`WAVM`, the extended `FTYP`/`UNIT`). Check it before inferring a token's meaning — and note that several tokens lead with a placeholder, so `firstValue()` is only correct for single-argument records (`RAIM`'s first value is a dead `tol` field, not the aiming mode). Beyond what it covers, the rule stands: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modeled (non-`STANDARD` surface types, non-zero `CONI`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
 
 **`ignoredTokens` is not a defect list.** A real file carries 30-plus record types that are annotation, not prescription — notes, tolerancing, display flags, multi-configuration, non-sequential and physical-optics settings — so a long list is normal and says nothing about whether the import is right. What matters is separated out into `warnings`: `UNMODELED_SURFACE_TOKENS` (`CLAP`, `SQAP`, `OBDC`, `UDAD`/`USAP`, `PKUP`, `XDAT`/`YDAT`) are the ignored *surface* records that would move a ray, so their presence is warned about per surface; and `warnHeaderSettings` reports vignetting factors (`VDXN`/`VDYN`/`VCXN`/`VCYN`/`VANN`) that are not all zero, ray aiming (`RAIM` ≠ 0, which this reader cannot do — see "Aiming is paraxial"), and an `ENVD` environment away from 20 °C / 1 atm. Each is warned about only when it departs from the no-op value nearly every file carries. Don't add a token to those lists on a guess about its meaning; leave it in `ignoredTokens`. The UI must present the two differently — warnings up front, ignored tokens folded away.
 
@@ -101,4 +101,19 @@ Three.js geometry for an `OpticalSystem` and nothing else: **no React, no render
 
 ## Scope discipline
 
-`Architecture.md` deliberately limits current capabilities to spherical/plane surfaces, Snell refraction, mirror reflection, and sequential tracing. Optimization, tolerancing, diffraction, MTF/PSF, coatings, polarization, non-sequential tracing, and complex aspheres are explicitly **out of scope for now** — don't add them speculatively. Surface types are limited to `OBJECT`/`STANDARD`/`PARAXIAL`/`IMAGE`; `ASPHERIC`/`COORDINATE_BREAK`/`MIRROR` etc. are planned but intentionally absent.
+The goal is to replicate **most of what OpticStudio does** (see `Architecture.md`). Nothing is
+"out of scope" on principle — mirrors, coordinate breaks, conics/aspheres, optimization, MTF, and
+PSF are all wanted, and non-sequential tracing is wanted eventually. What follows is the *current
+state*, not a fence.
+
+Implemented today: spherical/plane surfaces, Snell refraction, real reflection, sequential tracing,
+and first-order/paraxial analysis. Surface types are `OBJECT`/`STANDARD`/`PARAXIAL`/`IMAGE`.
+
+The discipline is **completeness, not restraint**: a capability lands modeled, traced, *paraxially
+analyzed*, tested, and shown in the UI — not stubbed. A half-built feature that silently returns
+wrong numbers is worse than an absent one, because the UI will plot it without complaint. So keep
+refusing what cannot yet be modeled, with a clear message, rather than approximating it.
+
+The live example: `Surface.reflective` traces correctly in `trace.ts`, but `paraxial.ts` throws on
+any mirror, so first-order analysis can't describe a system the real tracer handles. Closing that
+gap is part of mirror support, not a follow-up.

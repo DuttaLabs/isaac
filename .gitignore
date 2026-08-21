@@ -7,3 +7,10 @@ node_modules/
 # Editor / tooling local state
 .claude/settings.local.json
 *.log
+
+# OpticStudio's bundled sample files are Zemax/Ansys copyright — usable locally,
+# never committed to this public repo.
+zmx files from Zemax/
+
+# Local reference texts and working notes — kept on disk, not pushed.
+SupportingMaterial/

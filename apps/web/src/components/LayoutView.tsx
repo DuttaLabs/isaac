@@ -356,6 +356,15 @@ export interface FirstOrderOverlay {
   rays: FirstOrderRays | undefined;
   entrance: PupilMark | undefined;
   exit: PupilMark | undefined;
+  /** Where the focal length is measured from; absent for an afocal system. */
+  principal: PrincipalPlanes | undefined;
+}
+
+/** The pair of unit-magnification planes, and how tall to draw them. */
+export interface PrincipalPlanes {
+  frontZ: number;
+  rearZ: number;
+  radius: number;
 }
 
 /**
@@ -395,9 +404,10 @@ function FirstOrderOverlayLayer({
   /** Current viewBox scale, so labels keep one size on screen at any zoom. */
   zoom: number;
 }) {
-  const { rays, entrance, exit } = overlay;
+  const { rays, entrance, exit, principal } = overlay;
   return (
     <g className="first-order">
+      {principal ? <PrincipalPlaneMarks planes={principal} project={project} zoom={zoom} /> : null}
       {entrance ? (
         <PupilPlane mark={entrance} kind="entrance" project={project} zoom={zoom} />
       ) : null}
@@ -522,6 +532,60 @@ function PupilAim({
         <path d={toPath([aim.contact, aim.atPupil], project)} fill="none" strokeDasharray="3 3" />
       ) : null}
       <circle cx={dot.x} cy={dot.y} r={2.5 * zoom} />
+    </g>
+  );
+}
+
+/**
+ * The two principal planes, `P` and `P'`.
+ *
+ * Drawn in plain ink rather than a color of their own. Every other thing in this
+ * overlay is somewhere light goes — a ray, or a plane light passes through — and
+ * a principal plane is neither: it is pure bookkeeping, the place a thick lens
+ * behaves as though all its bending happened at. Neutral says that, and it keeps
+ * a fourth hue out of an overlay that already carries three.
+ *
+ * They are worth showing because they are where a focal length is measured
+ * *from*, and on a real lens they are almost never where you would guess — often
+ * inside the glass, sometimes outside it, and on a strongly asymmetric design
+ * crossed over each other so that P' sits ahead of P.
+ */
+function PrincipalPlaneMarks({
+  planes,
+  project,
+  zoom,
+}: {
+  planes: PrincipalPlanes;
+  project: (point: LayoutPoint) => { x: number; y: number };
+  zoom: number;
+}) {
+  return (
+    <g className="principal-planes">
+      {(
+        [
+          { key: 'front', z: planes.frontZ, label: 'P' },
+          { key: 'rear', z: planes.rearZ, label: 'P′' },
+        ] as const
+      ).map(({ key, z, label }) => {
+        if (!Number.isFinite(z)) {
+          return null;
+        }
+        const top = project({ z, y: planes.radius });
+        const bottom = project({ z, y: -planes.radius });
+        return (
+          <g key={key}>
+            <title>
+              {key === 'front'
+                ? 'Front principal plane P: the front focal point lies one focal length before it.'
+                : 'Rear principal plane P′: the rear focal point lies one focal length after it. To first order the whole lens behaves as a thin one placed here.'}
+            </title>
+            <line x1={top.x} y1={top.y} x2={bottom.x} y2={bottom.y} strokeDasharray="9 5" />
+            <text x={top.x + 3 * zoom} y={top.y - 4 * zoom} fontSize={11 * zoom}>
+              {label}
+            </text>
+          </g>
+        );
+      })}
     </g>
   );
 }

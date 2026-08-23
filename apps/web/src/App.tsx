@@ -428,6 +428,7 @@ export function App() {
                       rays={firstOrderOverlay.rays}
                       entrance={firstOrderOverlay.entrance}
                       exit={firstOrderOverlay.exit}
+                      principal={firstOrderOverlay.principal}
                       units={system.units}
                     />
                   ) : null}
@@ -520,13 +521,21 @@ function buildFirstOrderOverlay(
   rays: Result<FirstOrderRays> | undefined,
 ): FirstOrderOverlay {
   if (!firstOrder.ok) {
-    return { rays: undefined, entrance: undefined, exit: undefined };
+    return { rays: undefined, entrance: undefined, exit: undefined, principal: undefined };
   }
-  const { entrance, exit, entrancePupilRadius: beamRadius } = firstOrder.value;
+  const { entrance, exit, entrancePupilRadius: beamRadius, properties } = firstOrder.value;
   const fill = entrance && entrance.radius > 0 ? beamRadius / entrance.radius : 1;
+  const { frontPrincipalPlaneZ, rearPrincipalPlaneZ } = properties;
   return {
     rays: rays?.ok ? rays.value : undefined,
     entrance: entrance ? { z: entrance.z, radius: beamRadius } : undefined,
     exit: exit ? { z: exit.z, radius: exit.radius * fill } : undefined,
+    // Drawn to the beam's height, like the pupils: the incoming ray and the
+    // outgoing one meet on a principal plane at the height they came in at, so
+    // the beam radius is the extent that construction actually spans.
+    principal:
+      Number.isFinite(frontPrincipalPlaneZ) || Number.isFinite(rearPrincipalPlaneZ)
+        ? { frontZ: frontPrincipalPlaneZ, rearZ: rearPrincipalPlaneZ, radius: beamRadius }
+        : undefined,
   };
 }

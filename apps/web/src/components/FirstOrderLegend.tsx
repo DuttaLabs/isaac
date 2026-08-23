@@ -1,4 +1,4 @@
-import type { PupilMark } from './LayoutView.tsx';
+import type { PrincipalPlanes, PupilMark } from './LayoutView.tsx';
 import type { FirstOrderRays } from '../lib/analysis.ts';
 import { formatLength } from '../lib/format.ts';
 
@@ -15,11 +15,13 @@ export function FirstOrderLegend({
   rays,
   entrance,
   exit,
+  principal,
   units,
 }: {
   rays: FirstOrderRays | undefined;
   entrance: PupilMark | undefined;
   exit: PupilMark | undefined;
+  principal: PrincipalPlanes | undefined;
   units: string;
 }) {
   const items: { key: string; className: string; dash?: string; label: string; title: string }[] =
@@ -59,6 +61,21 @@ export function FirstOrderLegend({
         key === 'entrance'
           ? 'The aperture stop as object space sees it. Every ray in the system is aimed at this plane.'
           : 'The aperture stop as image space sees it. The cone converging on the image appears to come from here.',
+    });
+  }
+
+  if (principal) {
+    const where = [
+      Number.isFinite(principal.frontZ) ? `P at z = ${formatLength(principal.frontZ)}` : undefined,
+      Number.isFinite(principal.rearZ) ? `P′ at z = ${formatLength(principal.rearZ)}` : undefined,
+    ].filter(Boolean);
+    items.push({
+      key: 'principal',
+      className: 'swatch-principal',
+      dash: '9 5',
+      label: `principal planes · ${where.join(', ')} ${units}`,
+      title:
+        'The pair of unit-magnification planes. A focal length is measured from these, not from the glass — the front focal point lies one focal length before P, the rear one focal length after P′. To first order the whole lens behaves as a thin one placed there.',
     });
   }
 

@@ -262,3 +262,49 @@ test('Surface.with and OpticalSystem.withSurfaceAt copy rather than mutate', () 
   assert.equal(restacked.name, system.name);
   assert.throws(() => system.withSurfaceAt(9, system.surfaceAt(1)), /No surface at index 9/);
 });
+
+test('the principal planes are where the focal length is measured from', () => {
+  // Plano-convex, curved side to the object: the textbook case, and the one that
+  // shows the planes are not at the glass. P sits on the curved vertex; P' sits
+  // *inside* the glass, one focal length before the rear focal point.
+  const properties = paraxialProperties(planoConvexSinglet());
+  const efl = properties.effectiveFocalLength;
+
+  assert.ok(Math.abs(properties.frontPrincipalPlaneZ - 0) < 1e-9, 'P is at the curved vertex');
+  assert.ok(Math.abs(properties.rearPrincipalPlaneZ - (100 * (1 - 2.5 / 75) + 5 - 100)) < 1e-9);
+  // ...which is inside the glass, between the two surfaces.
+  assert.ok(properties.rearPrincipalPlaneZ > 0 && properties.rearPrincipalPlaneZ < 5);
+
+  // The defining relation, both ways round: a focal length is exactly the
+  // distance from a principal plane to the focal point beside it. S2's vertex is
+  // at z = 5, so the rear focal point is at 5 + BFD; S1's is at z = 0.
+  assert.ok(
+    Math.abs(properties.rearPrincipalPlaneZ + efl - (5 + properties.backFocalDistance)) < 1e-9,
+  );
+  assert.ok(Math.abs(properties.frontPrincipalPlaneZ - efl - properties.frontFocalDistance) < 1e-9);
+
+  // A thin lens has both planes on the lens itself, which is what makes it thin.
+  const thin = paraxialProperties(thinLens());
+  assert.ok(Math.abs(thin.frontPrincipalPlaneZ) < 1e-6);
+  assert.ok(Math.abs(thin.rearPrincipalPlaneZ) < 1e-6);
+});
+
+test('an afocal system has no principal planes to report', () => {
+  // Two surfaces of equal and opposite power a focal length apart: collimated in,
+  // collimated out. There is no focal length, so there is nothing to measure from.
+  const afocal = new OpticalSystem({
+    wavelengthsNm: [WAVELENGTH_NM],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({ id: 'a', type: 'PARAXIAL', focalLength: 50, thickness: 100 }),
+      new Surface({ id: 'b', type: 'PARAXIAL', focalLength: 50, thickness: 50 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+
+  const properties = paraxialProperties(afocal);
+  assert.equal(properties.effectiveFocalLength, Infinity);
+  assert.ok(!Number.isFinite(properties.frontPrincipalPlaneZ));
+  assert.ok(!Number.isFinite(properties.rearPrincipalPlaneZ));
+});

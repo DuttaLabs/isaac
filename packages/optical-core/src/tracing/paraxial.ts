@@ -106,6 +106,23 @@ export interface ParaxialProperties {
   imageDistance: number;
   /** Global z of the paraxial image plane. */
   paraxialImageZ: number;
+  /**
+   * Global z of the front (object-side) principal plane, `P`.
+   *
+   * The principal planes are the pair of conjugate planes at unit magnification,
+   * and they are what a focal length is measured *from*: the front focal point
+   * lies one EFL before `P`, the rear focal point one EFL after `P'`. That is
+   * the whole content of the thin-lens formula applied to a thick system — the
+   * lens behaves, to first order, exactly like a thin one placed at these
+   * planes. They may lie inside the glass, outside it, or crossed over each
+   * other, none of which is a fault.
+   *
+   * `NaN` for an afocal system, which has no focal length to measure and so no
+   * planes to measure it from.
+   */
+  frontPrincipalPlaneZ: number;
+  /** Global z of the rear (image-side) principal plane, `P'`. */
+  rearPrincipalPlaneZ: number;
   /** Global z of the currently defined IMAGE surface. */
   imageSurfaceZ: number;
   /** Paraxial (transverse) magnification; 0 for an object at infinity. */
@@ -209,6 +226,12 @@ export function paraxialProperties(
   }
 
   const lastVertexZ = system.vertexZAt(last);
+  // The focal points, less one focal length each: F' = P' + EFL by definition,
+  // and F = P − EFL. Both come out non-finite for an afocal system, which the
+  // callers test for rather than being handed a plausible number.
+  const rearPrincipalPlaneZ = lastVertexZ + backFocalDistance - effectiveFocalLength;
+  const frontPrincipalPlaneZ = system.vertexZAt(1) + frontFocalDistance + effectiveFocalLength;
+
   return {
     wavelengthNm,
     effectiveFocalLength,
@@ -217,6 +240,8 @@ export function paraxialProperties(
     frontFocalDistance,
     imageDistance,
     paraxialImageZ: lastVertexZ + imageDistance,
+    frontPrincipalPlaneZ,
+    rearPrincipalPlaneZ,
     imageSurfaceZ: system.vertexZAt(system.surfaces.length - 1),
     magnification,
     lastRefractingSurface: last,

@@ -46,7 +46,7 @@
   --surface-highlight: #fcba05;
   --glass-stroke: #6f6d66;
   --mirror: #5f7180;
-  --marginal-ray: #c2410c;
+  --marginal-ray: #78350f;
   --chief-ray: #7c3aed;
   --pupil: #0f766e;
   --axis: #b5b4ac;
@@ -92,7 +92,7 @@
     --surface-highlight: #fcba05;
     --glass-stroke: #8e8c84;
     --mirror: #9fb4c4;
-    --marginal-ray: #fb923c;
+    --marginal-ray: #d0a35c;
     --chief-ray: #b79bf7;
     --pupil: #4fd1c5;
     --axis: #4e4d46;
@@ -135,7 +135,7 @@
   --surface-highlight: #fcba05;
   --glass-stroke: #8e8c84;
   --mirror: #9fb4c4;
-  --marginal-ray: #fb923c;
+  --marginal-ray: #d0a35c;
   --chief-ray: #b79bf7;
   --pupil: #4fd1c5;
   --axis: #4e4d46;
@@ -870,4 +870,18 @@ input.coefficient {
    the same color; the label and the tooltip carry which is which. */
 .pupil-plane.exit line {
   opacity: 0.72;
+}
+
+/* Principal planes wear plain ink: they are the one thing in this overlay that
+   is not somewhere light goes, and a fourth hue would crowd the other three. */
+.principal-planes line,
+.swatch-principal line {
+  stroke: var(--text-secondary);
+  stroke-width: 1.5;
+}
+
+.principal-planes text {
+  fill: var(--text-secondary);
+  font-family: var(--mono);
+  font-weight: 600;
 }

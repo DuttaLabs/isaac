@@ -9,15 +9,26 @@ export interface GlassLookup {
    * equivalent was substituted (see {@link GlassCatalogOptions.allowLegacyNames}).
    */
   substitutedFor?: string;
+  /**
+   * Set when the requested name is one SCHOTT has retired in favour of another
+   * name for the *same* glass — `BAFN10` for `N-BAF10`. Unlike
+   * {@link substitutedFor} this is not an approximation: the dispersion is the
+   * one the requested name has always had, so the trace is unaffected and only
+   * the reported name differs.
+   */
+  renamedFrom?: string;
 }
 
 export interface GlassCatalogOptions extends GlassMaterialOptions {
   /**
-   * Accept obsolete lead-containing names by falling back to SCHOTT's
-   * lead-free replacement, which the manufacturer names by prefixing `N-`
-   * (BK7 → N-BK7, SK16 → N-SK16). The replacements are designed to the same
-   * nd/vd, but they are *not* the same glass: indices differ in the fourth
-   * decimal. Off by default; lookups report the substitution when it happens.
+   * Accept an obsolete name by falling back to the glass SCHOTT names by
+   * prefixing `N-`, *without* checking that the two are the same glass. This
+   * is a guess from the spelling, and it is often wrong: `SF18` and `N-SF19`
+   * differ by 0.055 in index, and `PK2` and `N-PK52A` by 16.6 in Abbe number.
+   * Renames that were verified as the same glass do not need this option — see
+   * {@link SCHOTT_RENAMES} — so what is left here really is a different glass.
+   * Off by default; lookups report the substitution in
+   * {@link GlassLookup.substitutedFor} when it happens.
    */
   allowLegacyNames?: boolean;
 }
@@ -30,8 +41,14 @@ export interface GlassCatalogOptions extends GlassMaterialOptions {
 export class GlassCatalog {
   private readonly byNormalizedName: ReadonlyMap<string, GlassRecord>;
   private readonly options: GlassCatalogOptions;
+  /** Normalized retired name → normalized current name. */
+  private readonly renames: ReadonlyMap<string, string>;
 
-  public constructor(records: readonly GlassRecord[], options: GlassCatalogOptions = {}) {
+  public constructor(
+    records: readonly GlassRecord[],
+    options: GlassCatalogOptions = {},
+    renames: ReadonlyArray<readonly [legacy: string, current: string]> = [],
+  ) {
     const byNormalizedName = new Map<string, GlassRecord>();
     for (const record of records) {
       const key = normalizeGlassName(record.name);
@@ -43,8 +60,24 @@ export class GlassCatalog {
       }
       byNormalizedName.set(key, record);
     }
+
+    const renameMap = new Map<string, string>();
+    for (const [legacy, current] of renames) {
+      const key = normalizeGlassName(legacy);
+      // A retired name that is also a live glass is a contradiction in the
+      // data, and the rename would be unreachable behind the direct hit.
+      const shadowed = byNormalizedName.get(key);
+      if (shadowed) {
+        throw new RangeError(
+          `"${legacy}" is listed as a retired name for "${current}" but is itself in the catalog as "${shadowed.name}".`,
+        );
+      }
+      renameMap.set(key, normalizeGlassName(current));
+    }
+
     this.byNormalizedName = byNormalizedName;
     this.options = options;
+    this.renames = renameMap;
   }
 
   public get size(): number {
@@ -69,11 +102,20 @@ export class GlassCatalog {
     return this.lookup(name)?.glass;
   }
 
-  /** Like {@link get}, but also reports whether a legacy substitution was made. */
+  /** Like {@link get}, but also reports whether a rename or substitution was made. */
   public lookup(name: string): GlassLookup | undefined {
     const direct = this.byNormalizedName.get(normalizeGlassName(name));
     if (direct) {
       return { glass: new GlassMaterial(direct, this.options) };
+    }
+
+    // A retired name for a glass that is still in the catalog under a current
+    // name. Needs no opt-in: the dispersion was verified identical, so this
+    // resolves the same glass rather than approximating it with another.
+    const current = this.renames.get(normalizeGlassName(name));
+    const renamed = current === undefined ? undefined : this.byNormalizedName.get(current);
+    if (renamed) {
+      return { glass: new GlassMaterial(renamed, this.options), renamedFrom: name.trim() };
     }
 
     if (this.options.allowLegacyNames) {
@@ -87,7 +129,7 @@ export class GlassCatalog {
 
   /** Returns a catalog with different lookup options. */
   public with(options: GlassCatalogOptions): GlassCatalog {
-    return new GlassCatalog(this.records(), { ...this.options, ...options });
+    return new GlassCatalog(this.records(), { ...this.options, ...options }, [...this.renames]);
   }
 
   /** A resolver function shaped for `zemax-io`'s `resolveMaterial` option. */

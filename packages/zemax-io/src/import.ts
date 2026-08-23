@@ -578,9 +578,10 @@ function readMaterial(
 
   const material = context.resolve(glassName);
   if (material) {
-    // A resolver may answer with a different glass — a catalog substituting a
-    // modern equivalent for an obsolete name, say. That is an approximation the
-    // caller has to know about, so it is reported rather than left implicit.
+    // A resolver may answer under a different name — a catalog resolving an
+    // obsolete name, which may be the same glass renamed or a different one
+    // substituted. Only the resolver knows which, so the difference is reported
+    // rather than left implicit.
     const substituted = !sameGlassName(glassName, material.name);
     context.glasses.push({
       name: glassName,
@@ -651,10 +652,11 @@ function readModelGlass(
 }
 
 /**
- * A resolver may answer with a different glass — a catalog substituting a
- * modern equivalent for an obsolete name, say. That is an approximation the
- * caller has to know about, so it is reported once per glass rather than left
- * implicit or repeated for every surface the glass appears on.
+ * A resolver may answer under a different name — a catalog resolving an obsolete
+ * name, which may be the same glass renamed or a different one substituted for
+ * it. This reader cannot tell those apart: `resolveMaterial` hands back a
+ * material, not a provenance. So the difference in name is reported once per
+ * glass, without claiming which of the two it is.
  */
 /**
  * Model glasses are an approximation of a real melt, so the import says how many
@@ -692,8 +694,9 @@ function warnGlassSubstitutions(glasses: readonly ZmxGlassReference[], warnings:
   }
   for (const [name, resolvedAs] of substitutions) {
     warnings.push(
-      `Glass "${name}" is not in the catalog and was traced as "${resolvedAs}"; ` +
-        'it is a substitute, not the same glass.',
+      `Glass "${name}" is not in the catalog under that name and was traced as ` +
+        `"${resolvedAs}"; that may be the same glass renamed or a different one ` +
+        'substituted for it, which the resolver does not say.',
     );
   }
 }

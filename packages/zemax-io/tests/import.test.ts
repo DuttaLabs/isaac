@@ -118,9 +118,10 @@ test('resolved glasses are reported alongside the system', () => {
   ]);
 });
 
-test('a glass the resolver substitutes is reported once, not left implicit', () => {
-  // A catalog answering "SK16" with its lead-free replacement is making an
-  // approximation, so the import must say so even though the lookup succeeded.
+test('a glass resolved under another name is reported once, not left implicit', () => {
+  // A catalog answering "BK7" with "N-BK7" has changed the name the file used,
+  // so the import must say so even though the lookup succeeded — whether that
+  // is a rename or a substitution is the resolver's to know, not this reader's.
   const substituting = (name: string): Material | undefined =>
     name.trim().toUpperCase() === 'BK7'
       ? new ConstantMaterial('N-BK7', 1.5168)
@@ -134,9 +135,14 @@ test('a glass the resolver substitutes is reported once, not left implicit', () 
     resolvedAs: 'N-BK7',
   });
   assert.equal(glasses[1]!.resolvedAs, undefined); // F2 resolved to F2
-  const substitutions = warnings.filter((warning) => /is a substitute/.test(warning));
-  assert.equal(substitutions.length, 1);
-  assert.match(substitutions[0]!, /"BK7" is not in the catalog and was traced as "N-BK7"/);
+  const renames = warnings.filter((warning) => /was traced as/.test(warning));
+  assert.equal(renames.length, 1);
+  assert.match(
+    renames[0]!,
+    /"BK7" is not in the catalog under that name and was traced as "N-BK7"/,
+  );
+  // The reader cannot tell a rename from a substitution, so it must claim neither.
+  assert.match(renames[0]!, /may be the same glass renamed or a different one substituted/);
 
   // Case and separators are spelling, not substitution: catalogs answer
   // "BK7" with "bk-7" and "F2" with "f 2" without changing the glass.

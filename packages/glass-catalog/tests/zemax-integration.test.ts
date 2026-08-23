@@ -6,7 +6,8 @@ import { SCHOTT } from '../src/index.ts';
 
 /**
  * The classic crown/flint doublet, written in ZMX form. It names BK7 and F2 —
- * BK7 being an obsolete name that only resolves through legacy substitution.
+ * BK7 being the name SCHOTT has retired for N-BK7, so it resolves to the same
+ * glass under the current name.
  * A 100 mm f/5 achromat: the last thickness is the designer's back focus.
  */
 const DOUBLET = `MODE SEQ
@@ -51,13 +52,15 @@ SURF 4
 `;
 
 test('a lens file resolves its glasses straight from the catalog', () => {
-  const catalog = SCHOTT.with({ allowLegacyNames: true });
-  const { system, glasses, warnings } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
+  const { system, glasses, warnings } = importZmx(DOUBLET, { resolveMaterial: SCHOTT.resolver() });
 
-  // The legacy substitution is an approximation, so the import reports it
-  // rather than quietly tracing a different glass from the one the file names.
+  // The file's name and the catalog's differ, so the import says so rather than
+  // quietly tracing a name the file never used. It does not claim to know
+  // whether that is a rename or a substitution — only the resolver knows.
   assert.deepEqual(warnings, [
-    'Glass "BK7" is not in the catalog and was traced as "N-BK7"; it is a substitute, not the same glass.',
+    'Glass "BK7" is not in the catalog under that name and was traced as "N-BK7"; ' +
+      'that may be the same glass renamed or a different one substituted for it, ' +
+      'which the resolver does not say.',
   ]);
   assert.deepEqual(glasses, [
     { name: 'BK7', surfaceNumber: 1, resolved: true, resolvedAs: 'N-BK7' },
@@ -67,16 +70,22 @@ test('a lens file resolves its glasses straight from the catalog', () => {
   assert.equal(system.surfaceAt(2).material.name, 'F2');
 });
 
-test('without legacy substitution the obsolete name is reported, not guessed', () => {
+test('a name that can only be guessed at is refused rather than approximated', () => {
+  // BAF10 is not in SCHOTT's catalog under any name, so reaching N-BAF10 from
+  // it is inference from the spelling — off unless the caller asks for it.
+  const guessable = DOUBLET.replace('GLAS BK7', 'GLAS BAF10');
   assert.throws(
-    () => importZmx(DOUBLET, { resolveMaterial: SCHOTT.resolver() }),
-    /Unknown glass "BK7" on surface 1/,
+    () => importZmx(guessable, { resolveMaterial: SCHOTT.resolver() }),
+    /Unknown glass "BAF10" on surface 1/,
   );
+
+  const lenient = SCHOTT.with({ allowLegacyNames: true });
+  const { system } = importZmx(guessable, { resolveMaterial: lenient.resolver() });
+  assert.equal(system.surfaceAt(1).material.name, 'N-BAF10');
 });
 
 test('with real dispersion the doublet reproduces its designed first-order data', () => {
-  const catalog = SCHOTT.with({ allowLegacyNames: true });
-  const { system } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
+  const { system } = importZmx(DOUBLET, { resolveMaterial: SCHOTT.resolver() });
   const properties = paraxialProperties(system);
 
   // Designed as a 100 mm lens; the file's last thickness (97.376) is its back focus.
@@ -91,8 +100,7 @@ test('with real dispersion the doublet reproduces its designed first-order data'
 });
 
 test('the crown/flint pair suppresses color compared with a single crown element', () => {
-  const catalog = SCHOTT.with({ allowLegacyNames: true });
-  const { system } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
+  const { system } = importZmx(DOUBLET, { resolveMaterial: SCHOTT.resolver() });
 
   const [blue, green, red] = system.wavelengthsNm.map(
     (wavelength) => paraxialProperties(system, wavelength).backFocalDistance,
@@ -105,7 +113,7 @@ test('the crown/flint pair suppresses color compared with a single crown element
   // f/vd. Pairing the crown with a flint has to beat that by a wide margin, or
   // the dispersion data is not reaching the calculation.
   const focalLength = paraxialProperties(system).effectiveFocalLength;
-  const singletSplit = focalLength / catalog.get('N-BK7')!.abbeNumber; // ≈ 1.56 mm
+  const singletSplit = focalLength / SCHOTT.get('N-BK7')!.abbeNumber; // ≈ 1.56 mm
   const doubletSplit = red! - blue!;
 
   assert.ok(
@@ -118,8 +126,7 @@ test('the crown/flint pair suppresses color compared with a single crown element
 });
 
 test('rays trace through the catalog-resolved system to a real focus', () => {
-  const catalog = SCHOTT.with({ allowLegacyNames: true });
-  const { system } = importZmx(DOUBLET, { resolveMaterial: catalog.resolver() });
+  const { system } = importZmx(DOUBLET, { resolveMaterial: SCHOTT.resolver() });
   const results = traceRays(system, generateRayFan(system, { count: 9 }));
 
   assert.ok(results.every((result) => result.status === 'TERMINATED'));

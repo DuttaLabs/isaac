@@ -7,6 +7,7 @@ import {
   GlassMaterial,
   SCHOTT,
   SCHOTT_GLASSES,
+  SCHOTT_RENAMES,
   normalizeGlassName,
 } from '../src/index.ts';
 
@@ -76,19 +77,57 @@ test('lookup ignores case and the separators lens files vary on', () => {
   assert.equal(SCHOTT.has('NOT-A-GLASS'), false);
 });
 
-test('obsolete names resolve only when legacy substitution is enabled', () => {
-  // BK7 was replaced by the lead-free N-BK7 and is no longer in the catalog.
-  assert.equal(SCHOTT.get('BK7'), undefined);
+test('a retired name resolves to the same glass without being asked', () => {
+  // BK7 is the name SCHOTT retired for N-BK7. It needs no opt-in, because the
+  // two are not different glasses: SCHOTT's own catalog gives the retired name
+  // the dispersion N-BK7 has, which is how the pair was verified.
+  const lookup = SCHOTT.lookup('BK7');
+  assert.equal(lookup?.glass.name, 'N-BK7');
+  assert.equal(lookup?.renamedFrom, 'BK7');
+  // A rename is not a substitution, and must not be reported as one.
+  assert.equal(lookup?.substitutedFor, undefined);
+
+  // Spelling is normalized before the rename is looked up, as for any name.
+  assert.equal(SCHOTT.get('bafn 10')?.name, 'N-BAF10');
+  // Glasses still in the catalog under their own name are untouched.
+  assert.equal(SCHOTT.lookup('F2')?.renamedFrom, undefined);
+});
+
+test('a guess from the spelling is a substitution, and stays opt-in', () => {
+  // BAF10 is not in SCHOTT's catalog at all, so there is nothing to verify it
+  // against: reaching N-BAF10 from it is inference from the name. Contrast
+  // BAFN10, which SCHOTT does still list and which was checked against N-BAF10.
+  assert.equal(SCHOTT.get('BAF10'), undefined);
+  assert.equal(SCHOTT.get('BAFN10')?.name, 'N-BAF10');
 
   const lenient = SCHOTT.with({ allowLegacyNames: true });
-  const lookup = lenient.lookup('BK7');
-  assert.equal(lookup?.glass.name, 'N-BK7');
-  assert.equal(lookup?.substitutedFor, 'BK7');
+  const lookup = lenient.lookup('BAF10');
+  assert.equal(lookup?.glass.name, 'N-BAF10');
+  assert.equal(lookup?.substitutedFor, 'BAF10');
+  assert.equal(lookup?.renamedFrom, undefined);
 
   // A name with no N- counterpart stays unresolved even when lenient.
   assert.equal(lenient.get('NOT-A-GLASS'), undefined);
-  // Glasses that are still in the catalog are never substituted.
-  assert.equal(lenient.lookup('F2')?.substitutedFor, undefined);
+  // Enabling substitution does not turn a verified rename into one.
+  assert.equal(lenient.lookup('BAFN10')?.substitutedFor, undefined);
+  assert.equal(lenient.lookup('BAFN10')?.renamedFrom, 'BAFN10');
+});
+
+test('every retired name points at a glass that is actually in the catalog', () => {
+  // The table is generated against a specific schott.ts; if that file is
+  // regenerated and a glass disappears, the alias must not resolve to nothing.
+  for (const [legacy, current] of SCHOTT_RENAMES) {
+    assert.ok(SCHOTT.has(current), `${legacy} points at missing glass ${current}`);
+    assert.equal(SCHOTT.get(legacy)?.name, current, `${legacy} did not resolve to ${current}`);
+  }
+});
+
+test('a retired name that is also a live glass is a contradiction, and refused', () => {
+  const record = SCHOTT.records().find((entry) => entry.name === 'N-BK7')!;
+  assert.throws(
+    () => new GlassCatalog([record], {}, [['N-BK7', 'N-BK7']]),
+    /is itself in the catalog/,
+  );
 });
 
 test('an index outside the published fit range is refused, not extrapolated', () => {
@@ -131,6 +170,7 @@ test('a catalog rejects names that collide once normalized', () => {
 test('the catalog exposes a resolver shaped for lens-file import', () => {
   const resolve = SCHOTT.resolver();
   assert.equal(resolve('N-BK7')?.name, 'N-BK7');
-  assert.equal(resolve('BK7'), undefined);
-  assert.equal(SCHOTT.with({ allowLegacyNames: true }).resolver()('BK7')?.name, 'N-BK7');
+  assert.equal(resolve('BK7')?.name, 'N-BK7'); // retired name, same glass
+  assert.equal(resolve('BAF10'), undefined); // a guess, so it needs opting in
+  assert.equal(SCHOTT.with({ allowLegacyNames: true }).resolver()('BAF10')?.name, 'N-BAF10');
 });

@@ -21,15 +21,12 @@ import { attempt, type Result } from './result.ts';
  */
 
 /**
- * The catalog used for glass lookup. Names SCHOTT has merely renamed resolve on
- * their own, so this option buys only the *unverified* fallback: an obsolete
- * name with no counterpart in SCHOTT's current catalog, reached by guessing that
- * the modern name is the old one with `N-` in front. That guess is often a
- * different glass — the import warns per glass when it fires — and it is on here
- * because a design from an old file is better opened with a warning than not at
- * all. Turn it off to make the editor refuse anything it cannot resolve exactly.
+ * The catalog used for glass lookup: SCHOTT's, entry for entry, including the
+ * names they have retired. An old file naming BK7 finds BK7, so the editor
+ * needs no tolerance for obsolete spellings and never quietly swaps one glass
+ * for another — a name it cannot find is reported instead.
  */
-export const GLASS_CATALOG = SCHOTT.with({ allowLegacyNames: true });
+export const GLASS_CATALOG = SCHOTT;
 
 /** What the Material column shows, and what you type there, for a model glass. */
 export const MODEL_MATERIAL_LABEL = 'MODEL';

@@ -23,6 +23,9 @@ export {
   ConstantMaterial,
   SellmeierMaterial,
   ModelGlassMaterial,
+  SchottDispersionMaterial,
+  DISPERSION_FORMULA,
+  dispersionMaterial,
   SPECTRAL_LINES,
   normalLinePartialDispersion,
   AIR,
@@ -30,7 +33,12 @@ export {
   N_BK7,
   MATERIAL_CATALOG,
 } from './model/material.ts';
-export type { Material, SellmeierCoefficients, ModelGlassOptions } from './model/material.ts';
+export type {
+  Material,
+  SellmeierCoefficients,
+  SchottDispersionCoefficients,
+  ModelGlassOptions,
+} from './model/material.ts';
 export { Surface, ASPHERIC_SURFACE_TYPES, STOP_CAPABLE_SURFACE_TYPES } from './model/surface.ts';
 export type { SurfaceConfig, SurfaceType } from './model/surface.ts';
 export { OpticalSystem } from './model/optical-system.ts';

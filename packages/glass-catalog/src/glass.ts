@@ -1,4 +1,4 @@
-import { SellmeierMaterial, type Material } from '@isaac/optical-core';
+import { dispersionMaterial, type Material } from '@isaac/optical-core';
 import type { GlassRecord } from './types.ts';
 
 /** Fraunhofer lines used for the Abbe number. */
@@ -9,27 +9,30 @@ export const C_LINE_NM = 656.2725; // hydrogen C
 export interface GlassMaterialOptions {
   /**
    * When true (the default), asking for an index outside the published fit
-   * range throws instead of extrapolating. A Sellmeier fit is only meaningful
+   * range throws instead of extrapolating. A dispersion fit is only meaningful
    * over the range it was fitted to; far outside it the numbers look plausible
-   * but are meaningless.
+   * but are meaningless — and the Schott formula, being a power series with no
+   * poles, misbehaves more quietly out there than a Sellmeier fit does.
    */
   strictRange?: boolean;
 }
 
 /**
  * A catalog glass as an optical-core {@link Material}: the manufacturer's
- * Sellmeier fit, plus the metadata needed to know when to trust it.
+ * dispersion fit, plus the metadata needed to know when to trust it. Which
+ * equation that fit belongs to comes from the record, not from an assumption —
+ * SCHOTT's catalog is nearly all Sellmeier, but not entirely.
  */
 export class GlassMaterial implements Material {
   public readonly name: string;
   public readonly record: GlassRecord;
-  private readonly sellmeier: SellmeierMaterial;
+  private readonly dispersion: Material;
   private readonly strictRange: boolean;
 
   public constructor(record: GlassRecord, options: GlassMaterialOptions = {}) {
     this.record = record;
     this.name = record.name;
-    this.sellmeier = new SellmeierMaterial(record.name, record.coefficients);
+    this.dispersion = dispersionMaterial(record.name, record.formula, record.coefficients);
     this.strictRange = options.strictRange ?? true;
   }
 
@@ -41,7 +44,7 @@ export class GlassMaterial implements Material {
           'Pass { strictRange: false } to extrapolate anyway.',
       );
     }
-    return this.sellmeier.indexAt(wavelengthNm);
+    return this.dispersion.indexAt(wavelengthNm);
   }
 
   /** True when the wavelength lies inside the published fit range. */
@@ -55,18 +58,22 @@ export class GlassMaterial implements Material {
     return new GlassMaterial(this.record, { strictRange: this.strictRange, ...options });
   }
 
-  /** Refractive index at the helium d-line, the catalog's `nd`. */
+  /**
+   * Refractive index at the helium d-line, computed from the fit. The catalog
+   * also *prints* an nd, available as `record.nd`; the two agree to better than
+   * 5e-5 for every glass, which the generator checks before writing the file.
+   */
   public get nd(): number {
     this.requireVisibleFit('nd');
-    return this.sellmeier.indexAt(D_LINE_NM);
+    return this.dispersion.indexAt(D_LINE_NM);
   }
 
-  /** Abbe number vd = (nd − 1) / (nF − nC). */
+  /** Abbe number vd = (nd − 1) / (nF − nC), computed from the fit. */
   public get abbeNumber(): number {
     this.requireVisibleFit('the Abbe number');
-    const nd = this.sellmeier.indexAt(D_LINE_NM);
-    const nF = this.sellmeier.indexAt(F_LINE_NM);
-    const nC = this.sellmeier.indexAt(C_LINE_NM);
+    const nd = this.dispersion.indexAt(D_LINE_NM);
+    const nF = this.dispersion.indexAt(F_LINE_NM);
+    const nC = this.dispersion.indexAt(C_LINE_NM);
     return (nd - 1) / (nF - nC);
   }
 

@@ -2,40 +2,17 @@ import type { Material } from '@isaac/optical-core';
 import { GlassMaterial, type GlassMaterialOptions } from './glass.ts';
 import type { GlassRecord } from './types.ts';
 
-export interface GlassLookup {
-  glass: GlassMaterial;
-  /**
-   * Set when the requested name was not in the catalog and a modern
-   * equivalent was substituted (see {@link GlassCatalogOptions.allowLegacyNames}).
-   */
-  substitutedFor?: string;
-  /**
-   * Set when the requested name is one SCHOTT has retired in favour of another
-   * name for the same glass — `BAFN10` for `N-BAF10`. Unlike
-   * {@link substitutedFor} this is not a guess from the spelling: the pairing
-   * was verified against SCHOTT's own published fit for the retired name, and
-   * across the visible the two agree to better than 5e-5. About half the pairs
-   * are bit-identical fits; for the others SCHOTT publishes two fits that agree
-   * in the visible and drift by up to 4e-3 at the far ends of the published
-   * range, so treat this as exact where Isaac's wavelengths lie and approximate
-   * in the UV and near IR.
-   */
-  renamedFrom?: string;
-}
-
-export interface GlassCatalogOptions extends GlassMaterialOptions {
-  /**
-   * Accept an obsolete name by falling back to the glass SCHOTT names by
-   * prefixing `N-`, *without* checking that the two are the same glass. This
-   * is a guess from the spelling, and it is often wrong: `SF18` and `N-SF19`
-   * differ by 0.055 in index, and `PK2` and `N-PK52A` by 16.6 in Abbe number.
-   * Renames that were verified as the same glass do not need this option — see
-   * {@link SCHOTT_RENAMES} — so what is left here really is a different glass.
-   * Off by default; lookups report the substitution in
-   * {@link GlassLookup.substitutedFor} when it happens.
-   */
-  allowLegacyNames?: boolean;
-}
+/**
+ * Options for a catalog. There is deliberately nothing here about resolving a
+ * name the catalog does not hold: it used to be able to guess, reaching `N-<x>`
+ * from `<x>`, and that guess bought nothing once SCHOTT's retired names became
+ * entries of their own — measured over the 471 OpticStudio samples it unlocked
+ * exactly zero further files — while being wrong often enough to matter
+ * (`SF18` and `N-SF19` differ by 0.055 in index, `PK2` and `N-PK52A` by 16.6 in
+ * Abbe number). A name is now either in the manufacturer's catalog or it is
+ * not, and an unknown one is reported rather than approximated.
+ */
+export type GlassCatalogOptions = GlassMaterialOptions;
 
 /**
  * A searchable set of glasses. Lookup is insensitive to case and to the
@@ -45,14 +22,8 @@ export interface GlassCatalogOptions extends GlassMaterialOptions {
 export class GlassCatalog {
   private readonly byNormalizedName: ReadonlyMap<string, GlassRecord>;
   private readonly options: GlassCatalogOptions;
-  /** Normalized retired name → normalized current name. */
-  private readonly renames: ReadonlyMap<string, string>;
 
-  public constructor(
-    records: readonly GlassRecord[],
-    options: GlassCatalogOptions = {},
-    renames: ReadonlyArray<readonly [legacy: string, current: string]> = [],
-  ) {
+  public constructor(records: readonly GlassRecord[], options: GlassCatalogOptions = {}) {
     const byNormalizedName = new Map<string, GlassRecord>();
     for (const record of records) {
       const key = normalizeGlassName(record.name);
@@ -65,23 +36,8 @@ export class GlassCatalog {
       byNormalizedName.set(key, record);
     }
 
-    const renameMap = new Map<string, string>();
-    for (const [legacy, current] of renames) {
-      const key = normalizeGlassName(legacy);
-      // A retired name that is also a live glass is a contradiction in the
-      // data, and the rename would be unreachable behind the direct hit.
-      const shadowed = byNormalizedName.get(key);
-      if (shadowed) {
-        throw new RangeError(
-          `"${legacy}" is listed as a retired name for "${current}" but is itself in the catalog as "${shadowed.name}".`,
-        );
-      }
-      renameMap.set(key, normalizeGlassName(current));
-    }
-
     this.byNormalizedName = byNormalizedName;
     this.options = options;
-    this.renames = renameMap;
   }
 
   public get size(): number {
@@ -98,43 +54,18 @@ export class GlassCatalog {
   }
 
   public has(name: string): boolean {
-    return this.lookup(name) !== undefined;
+    return this.byNormalizedName.has(normalizeGlassName(name));
   }
 
   /** Finds a glass by name, or returns `undefined`. */
   public get(name: string): GlassMaterial | undefined {
-    return this.lookup(name)?.glass;
-  }
-
-  /** Like {@link get}, but also reports whether a rename or substitution was made. */
-  public lookup(name: string): GlassLookup | undefined {
-    const direct = this.byNormalizedName.get(normalizeGlassName(name));
-    if (direct) {
-      return { glass: new GlassMaterial(direct, this.options) };
-    }
-
-    // A retired name for a glass that is still in the catalog under a current
-    // name. Needs no opt-in: the dispersion was checked against SCHOTT's own fit
-    // for the retired name, so this resolves the glass the name meant rather
-    // than guessing at one from the spelling.
-    const current = this.renames.get(normalizeGlassName(name));
-    const renamed = current === undefined ? undefined : this.byNormalizedName.get(current);
-    if (renamed) {
-      return { glass: new GlassMaterial(renamed, this.options), renamedFrom: name.trim() };
-    }
-
-    if (this.options.allowLegacyNames) {
-      const replacement = this.byNormalizedName.get(normalizeGlassName(`N-${name}`));
-      if (replacement) {
-        return { glass: new GlassMaterial(replacement, this.options), substitutedFor: name.trim() };
-      }
-    }
-    return undefined;
+    const record = this.byNormalizedName.get(normalizeGlassName(name));
+    return record && new GlassMaterial(record, this.options);
   }
 
   /** Returns a catalog with different lookup options. */
   public with(options: GlassCatalogOptions): GlassCatalog {
-    return new GlassCatalog(this.records(), { ...this.options, ...options }, [...this.renames]);
+    return new GlassCatalog(this.records(), { ...this.options, ...options });
   }
 
   /** A resolver function shaped for `zemax-io`'s `resolveMaterial` option. */

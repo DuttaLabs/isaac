@@ -30,12 +30,14 @@ test('a named glass keeps its name, and air stays blank', () => {
   assert.equal(modelGlassText(N_BK7), undefined, 'a catalog glass has no model parameters');
 
   // Names still resolve the way they did before the column was renamed,
-  // including the blank-means-air and legacy-name cases.
+  // including the blank-means-air case.
   assert.equal(materialFromText('', AIR), AIR);
   assert.equal(materialFromText('  ', N_BK7), AIR);
   assert.equal(materialFromText('air', N_BK7), AIR);
   assert.equal(materialFromText('n bk7', AIR)?.name, 'N-BK7');
-  assert.equal(materialFromText('BK7', AIR)?.name, 'N-BK7', 'legacy names are allowed');
+  // SCHOTT publishes its retired names too, so BK7 is a glass in its own right
+  // and typing it gives you BK7 rather than quietly swapping in N-BK7.
+  assert.equal(materialFromText('BK7', AIR)?.name, 'BK7');
   assert.equal(materialFromText('not a glass', AIR), undefined);
 });
 

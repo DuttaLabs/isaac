@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { N_BK7 } from '@isaac/optical-core';
+import { DISPERSION_FORMULA, N_BK7 } from '@isaac/optical-core';
 import {
   D_LINE_NM,
   GlassCatalog,
   GlassMaterial,
   SCHOTT,
   SCHOTT_GLASSES,
-  SCHOTT_RENAMES,
   normalizeGlassName,
 } from '../src/index.ts';
 
@@ -24,20 +23,80 @@ const PUBLISHED: readonly (readonly [string, number, number])[] = [
   ['N-BAK4', 1.56883, 55.98],
 ];
 
-test('the catalog carries the SCHOTT glasses with usable Sellmeier fits', () => {
+test("the catalog reproduces SCHOTT's own, entry for entry", () => {
   assert.equal(SCHOTT.size, SCHOTT_GLASSES.length);
-  assert.ok(SCHOTT.size > 150, `expected a full catalog, got ${SCHOTT.size} glasses`);
+  assert.equal(SCHOTT.size, 366, 'the June 2025 catalog publishes 366 glasses');
   assert.ok(SCHOTT.names().includes('N-BK7'));
   assert.ok(SCHOTT.names().includes('F2'));
 
-  // Every record must be a complete three-term fit over a positive range.
   for (const record of SCHOTT_GLASSES) {
     const [min, max] = record.rangeNm;
     assert.ok(min > 0 && max > min, `${record.name} has a bad range ${min}–${max}`);
     assert.equal(record.manufacturer, 'SCHOTT');
-    for (const key of ['b1', 'b2', 'b3', 'c1', 'c2', 'c3'] as const) {
-      assert.ok(Number.isFinite(record.coefficients[key]), `${record.name}.${key} is not finite`);
+    assert.ok(record.coefficients.length > 0, `${record.name} has no coefficients`);
+    for (const [index, value] of record.coefficients.entries()) {
+      assert.ok(Number.isFinite(value), `${record.name} coefficient ${index} is not finite`);
     }
+    assert.ok(record.nd > 1 && record.nd < 3, `${record.name} has an implausible nd ${record.nd}`);
+    assert.ok(record.abbeNumber > 0, `${record.name} has a non-positive Abbe number`);
+  }
+});
+
+test('a retired name is an entry of its own, not an alias', () => {
+  // SCHOTT still publishes BK7 alongside N-BK7, so both resolve directly and
+  // nothing has to map one onto the other. Their optical fits are identical...
+  const bk7 = SCHOTT.get('BK7')!;
+  const nbk7 = SCHOTT.get('N-BK7')!;
+  assert.equal(bk7.name, 'BK7');
+  assert.equal(nbk7.name, 'N-BK7');
+  assert.deepEqual(bk7.record.coefficients, nbk7.record.coefficients);
+
+  // ...but the records are not, which is the reason to keep both. They are
+  // different products: SCHOTT publishes different valid ranges for them.
+  assert.deepEqual(bk7.record.rangeNm, [310, 2325]);
+  assert.deepEqual(nbk7.record.rangeNm, [300, 2500]);
+  assert.equal(bk7.record.status, 'OBSOLETE');
+  assert.equal(nbk7.record.status, 'PREFERRED');
+});
+
+test('each glass carries the dispersion formula its coefficients belong to', () => {
+  // Nearly all of SCHOTT's catalog is Sellmeier, which is exactly why the one
+  // exception has to travel with the glass rather than be assumed globally.
+  const b270 = SCHOTT.get('B270')!;
+  assert.equal(b270.record.formula, DISPERSION_FORMULA.SCHOTT);
+  assert.equal(SCHOTT.get('N-BK7')!.record.formula, DISPERSION_FORMULA.SELLMEIER_1);
+
+  const onSchottFormula = SCHOTT_GLASSES.filter(
+    (record) => record.formula === DISPERSION_FORMULA.SCHOTT,
+  );
+  assert.deepEqual(
+    onSchottFormula.map((record) => record.name),
+    ['B270'],
+  );
+
+  // B270 is the glass that motivated a second formula: it blocks more sample
+  // lens files than any other single name.
+  assert.ok(Math.abs(b270.nd - 1.52308) < 5e-5, `B270 nd ${b270.nd}`);
+  assert.ok(Math.abs(b270.abbeNumber - 58.571369) < 0.01, `B270 Vd ${b270.abbeNumber}`);
+});
+
+test("every fit reproduces the catalog's own printed nd and Abbe number", () => {
+  // The strongest integrity check available: the catalog prints nd and Vd
+  // independently of the coefficients, so recomputing them from the fit catches
+  // a column read wrongly or a fit handed to the wrong equation.
+  for (const record of SCHOTT_GLASSES) {
+    const glass = SCHOTT.get(record.name)!;
+    if (!glass.isWithinRange(486.1327) || !glass.isWithinRange(656.2725)) {
+      continue; // an infrared fit has no F or C line to check against
+    }
+    assert.ok(
+      Math.abs(glass.nd - record.nd) < 5e-5,
+      `${record.name}: fit gives nd ${glass.nd.toFixed(6)}, catalog prints ${record.nd}`,
+    );
+    assert.ok(
+      Math.abs(glass.abbeNumber - record.abbeNumber) < 0.01,
+      `${record.name}: fit gives Vd ${glass.abbeNumber.toFixed(4)}, catalog prints ${record.abbeNumber}`,
+    );
   }
 });
 
@@ -77,59 +136,6 @@ test('lookup ignores case and the separators lens files vary on', () => {
   assert.equal(SCHOTT.has('NOT-A-GLASS'), false);
 });
 
-test('a retired name resolves to the same glass without being asked', () => {
-  // BK7 is the name SCHOTT retired for N-BK7. It needs no opt-in, because the
-  // two are not different glasses: SCHOTT's own catalog gives the retired name
-  // the dispersion N-BK7 has, which is how the pair was verified.
-  const lookup = SCHOTT.lookup('BK7');
-  assert.equal(lookup?.glass.name, 'N-BK7');
-  assert.equal(lookup?.renamedFrom, 'BK7');
-  // A rename is not a substitution, and must not be reported as one.
-  assert.equal(lookup?.substitutedFor, undefined);
-
-  // Spelling is normalized before the rename is looked up, as for any name.
-  assert.equal(SCHOTT.get('bafn 10')?.name, 'N-BAF10');
-  // Glasses still in the catalog under their own name are untouched.
-  assert.equal(SCHOTT.lookup('F2')?.renamedFrom, undefined);
-});
-
-test('a guess from the spelling is a substitution, and stays opt-in', () => {
-  // BAF10 is not in SCHOTT's catalog at all, so there is nothing to verify it
-  // against: reaching N-BAF10 from it is inference from the name. Contrast
-  // BAFN10, which SCHOTT does still list and which was checked against N-BAF10.
-  assert.equal(SCHOTT.get('BAF10'), undefined);
-  assert.equal(SCHOTT.get('BAFN10')?.name, 'N-BAF10');
-
-  const lenient = SCHOTT.with({ allowLegacyNames: true });
-  const lookup = lenient.lookup('BAF10');
-  assert.equal(lookup?.glass.name, 'N-BAF10');
-  assert.equal(lookup?.substitutedFor, 'BAF10');
-  assert.equal(lookup?.renamedFrom, undefined);
-
-  // A name with no N- counterpart stays unresolved even when lenient.
-  assert.equal(lenient.get('NOT-A-GLASS'), undefined);
-  // Enabling substitution does not turn a verified rename into one.
-  assert.equal(lenient.lookup('BAFN10')?.substitutedFor, undefined);
-  assert.equal(lenient.lookup('BAFN10')?.renamedFrom, 'BAFN10');
-});
-
-test('every retired name points at a glass that is actually in the catalog', () => {
-  // The table is generated against a specific schott.ts; if that file is
-  // regenerated and a glass disappears, the alias must not resolve to nothing.
-  for (const [legacy, current] of SCHOTT_RENAMES) {
-    assert.ok(SCHOTT.has(current), `${legacy} points at missing glass ${current}`);
-    assert.equal(SCHOTT.get(legacy)?.name, current, `${legacy} did not resolve to ${current}`);
-  }
-});
-
-test('a retired name that is also a live glass is a contradiction, and refused', () => {
-  const record = SCHOTT.records().find((entry) => entry.name === 'N-BK7')!;
-  assert.throws(
-    () => new GlassCatalog([record], {}, [['N-BK7', 'N-BK7']]),
-    /is itself in the catalog/,
-  );
-});
-
 test('an index outside the published fit range is refused, not extrapolated', () => {
   const nbk7 = SCHOTT.get('N-BK7')!;
   assert.deepEqual(nbk7.record.rangeNm, [300, 2500]);
@@ -149,9 +155,12 @@ test('nd and the Abbe number are refused when the fit does not cover the visible
   const infrared = new GlassMaterial({
     name: 'TEST-IR',
     manufacturer: 'SCHOTT',
-    catalog: 'infrared',
-    coefficients: { b1: 1, b2: 0, b3: 0, c1: 0.01, c2: 0, c3: 0 },
+    formula: DISPERSION_FORMULA.SELLMEIER_1,
+    coefficients: [1, 0.01, 0, 0, 0, 0],
     rangeNm: [1000, 5000],
+    nd: 1.5,
+    abbeNumber: 50,
+    status: 'SPECIAL',
   });
 
   assert.throws(() => infrared.nd, /needs the F and C lines/);
@@ -170,7 +179,7 @@ test('a catalog rejects names that collide once normalized', () => {
 test('the catalog exposes a resolver shaped for lens-file import', () => {
   const resolve = SCHOTT.resolver();
   assert.equal(resolve('N-BK7')?.name, 'N-BK7');
-  assert.equal(resolve('BK7')?.name, 'N-BK7'); // retired name, same glass
-  assert.equal(resolve('BAF10'), undefined); // a guess, so it needs opting in
-  assert.equal(SCHOTT.with({ allowLegacyNames: true }).resolver()('BAF10')?.name, 'N-BAF10');
+  // A retired name resolves to itself now that the catalog carries it, so a
+  // file naming BK7 traces BK7 and the import reports no substitution at all.
+  assert.equal(resolve('BK7')?.name, 'BK7');
 });

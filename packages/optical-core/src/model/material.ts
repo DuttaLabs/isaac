@@ -66,6 +66,117 @@ export class SellmeierMaterial implements Material {
   }
 }
 
+/** Coefficients of the Schott dispersion formula (wavelength in micrometers). */
+export interface SchottDispersionCoefficients {
+  a0: number;
+  a1: number;
+  a2: number;
+  a3: number;
+  a4: number;
+  a5: number;
+}
+
+/**
+ * A dispersive material described by the *Schott formula*, a power series in
+ * λ² rather than a resonance model:
+ *
+ *   n(λ)² = a₀ + a₁λ² + a₂λ⁻² + a₃λ⁻⁴ + a₄λ⁻⁶ + a₅λ⁻⁸,   λ in micrometers.
+ *
+ * Do not read the name as "the formula SCHOTT glasses use" — it is the older
+ * form the company published before switching to Sellmeier, and in SCHOTT's
+ * current catalog exactly one glass still carries it (B270, a soda-lime sheet
+ * glass rather than an optical melt). The formula number in the catalog is what
+ * says which of the two applies, glass by glass; see {@link dispersionMaterial}.
+ *
+ * It has no pole to fall into, so it cannot produce the non-physical index a
+ * Sellmeier fit can near a resonance — but it also extrapolates far worse, which
+ * is the more reason to honor the published wavelength range.
+ */
+export class SchottDispersionMaterial implements Material {
+  public readonly name: string;
+  private readonly coefficients: SchottDispersionCoefficients;
+
+  public constructor(name: string, coefficients: SchottDispersionCoefficients) {
+    this.name = name;
+    this.coefficients = coefficients;
+  }
+
+  public indexAt(wavelengthNm: number): number {
+    if (!Number.isFinite(wavelengthNm) || wavelengthNm <= 0) {
+      throw new RangeError('wavelengthNm must be a positive, finite number.');
+    }
+    const l2 = (wavelengthNm / 1000) ** 2; // micrometers, squared
+    const { a0, a1, a2, a3, a4, a5 } = this.coefficients;
+    const nSquared = a0 + a1 * l2 + a2 / l2 + a3 / l2 ** 2 + a4 / l2 ** 3 + a5 / l2 ** 4;
+    if (!(nSquared > 0)) {
+      throw new RangeError(
+        `Schott dispersion model produced a non-physical index for ${this.name}.`,
+      );
+    }
+    return Math.sqrt(nSquared);
+  }
+}
+
+/**
+ * Dispersion formulas, numbered as a Zemax-format glass catalog numbers them.
+ * The number is part of the manufacturer's data — a catalog states, per glass,
+ * which equation its coefficients belong to — so it is carried through rather
+ * than normalized away, and an unrecognized one is refused rather than assumed.
+ *
+ * Only the two SCHOTT actually publishes are implemented. The gaps are real
+ * formula numbers (3 Herzberger, 4 Sellmeier 2, 5 Conrady, …) left unimplemented
+ * because no glass in the catalog uses them; add them here when one does.
+ */
+export const DISPERSION_FORMULA = {
+  /** n² = a₀ + a₁λ² + a₂λ⁻² + a₃λ⁻⁴ + a₄λ⁻⁶ + a₅λ⁻⁸ */
+  SCHOTT: 1,
+  /** n² − 1 = Σ Bᵢλ²/(λ² − Cᵢ) */
+  SELLMEIER_1: 2,
+} as const;
+
+/**
+ * Builds the right {@link Material} for a catalog entry's formula number and its
+ * raw coefficient list, in the order the catalog writes them.
+ *
+ * Taking the coefficients as a plain list is deliberate: it is how a catalog
+ * stores them, and each formula reads a different number of them for different
+ * purposes, so naming them can only happen *after* the formula is known.
+ */
+export function dispersionMaterial(
+  name: string,
+  formula: number,
+  coefficients: readonly number[],
+): Material {
+  const need = (count: number): number[] => {
+    const values = coefficients.slice(0, count);
+    if (values.length < count || values.some((value) => !Number.isFinite(value))) {
+      throw new RangeError(
+        `${name}: dispersion formula ${formula} needs ${count} finite coefficients, got ${coefficients.length}.`,
+      );
+    }
+    return values;
+  };
+
+  switch (formula) {
+    case DISPERSION_FORMULA.SCHOTT: {
+      const [a0, a1, a2, a3, a4, a5] = need(6) as [number, number, number, number, number, number];
+      return new SchottDispersionMaterial(name, { a0, a1, a2, a3, a4, a5 });
+    }
+    case DISPERSION_FORMULA.SELLMEIER_1: {
+      // Written interleaved in the catalog — B₁ C₁ B₂ C₂ B₃ C₃ — not grouped.
+      const [b1, c1, b2, c2, b3, c3] = need(6) as [number, number, number, number, number, number];
+      return new SellmeierMaterial(name, { b1, b2, b3, c1, c2, c3 });
+    }
+    default:
+      throw new RangeError(
+        `${name}: dispersion formula ${formula} is not implemented. ` +
+          `Supported: ${Object.entries(DISPERSION_FORMULA)
+            .map(([key, value]) => `${value} (${key})`)
+            .join(', ')}.`,
+      );
+  }
+}
+
 /** The spectral lines a model glass is anchored to, in nanometers. */
 export const SPECTRAL_LINES = {
   /** Helium d, the reference for nd and the Abbe number. */
@@ -202,7 +313,14 @@ export const AIR: Material = new ConstantMaterial('AIR', 1);
 /** Vacuum. */
 export const VACUUM: Material = new ConstantMaterial('VACUUM', 1);
 
-/** Schott N-BK7 borosilicate crown glass (measured Sellmeier coefficients). */
+/**
+ * SCHOTT N-BK7 borosilicate crown, the reference glass of most textbook
+ * examples, kept here so the core has one real dispersive material without
+ * depending on a catalog. The coefficients are SCHOTT's own published Sellmeier
+ * fit, and `glass-catalog` has a test asserting this copy still agrees with the
+ * catalog's entry to 1e-12 — if the manufacturer refits the glass, that test is
+ * what will say so.
+ */
 export const N_BK7: Material = new SellmeierMaterial('N-BK7', {
   b1: 1.03961212,
   b2: 0.231792344,

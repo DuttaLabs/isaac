@@ -6,8 +6,8 @@ import { SCHOTT } from '../src/index.ts';
 
 /**
  * The classic crown/flint doublet, written in ZMX form. It names BK7 and F2 —
- * BK7 being the name SCHOTT has retired for N-BK7, so it resolves to the same
- * glass under the current name.
+ * both of which SCHOTT still publishes, BK7 as an obsolete entry, so the file
+ * traces the glasses it actually names.
  * A 100 mm f/5 achromat: the last thickness is the designer's back focus.
  */
 const DOUBLET = `MODE SEQ
@@ -54,34 +54,29 @@ SURF 4
 test('a lens file resolves its glasses straight from the catalog', () => {
   const { system, glasses, warnings } = importZmx(DOUBLET, { resolveMaterial: SCHOTT.resolver() });
 
-  // The file's name and the catalog's differ, so the import says so rather than
-  // quietly tracing a name the file never used. It does not claim to know
-  // whether that is a rename or a substitution — only the resolver knows.
-  assert.deepEqual(warnings, [
-    'Glass "BK7" is not in the catalog under that name and was traced as "N-BK7"; ' +
-      'that may be the same glass renamed or a different one substituted for it, ' +
-      'which the resolver does not say.',
-  ]);
+  // Both names are in SCHOTT's catalog, so nothing is substituted and there is
+  // nothing to warn about. Reproducing the manufacturer's list rather than only
+  // its current products is what makes a file this old import cleanly.
+  assert.deepEqual(warnings, []);
   assert.deepEqual(glasses, [
-    { name: 'BK7', surfaceNumber: 1, resolved: true, resolvedAs: 'N-BK7' },
-    { name: 'F2', surfaceNumber: 2, resolved: true }, // still in the catalog under its own name
+    { name: 'BK7', surfaceNumber: 1, resolved: true },
+    { name: 'F2', surfaceNumber: 2, resolved: true },
   ]);
-  assert.equal(system.surfaceAt(1).material.name, 'N-BK7');
+  assert.equal(system.surfaceAt(1).material.name, 'BK7');
   assert.equal(system.surfaceAt(2).material.name, 'F2');
 });
 
-test('a name that can only be guessed at is refused rather than approximated', () => {
-  // BAF10 is not in SCHOTT's catalog under any name, so reaching N-BAF10 from
-  // it is inference from the spelling — off unless the caller asks for it.
-  const guessable = DOUBLET.replace('GLAS BK7', 'GLAS BAF10');
+test('a name SCHOTT never published is refused rather than approximated', () => {
+  // BAF10 appears in old lens files but is in no SCHOTT catalog. The spelling
+  // invites a guess at N-BAF10; the catalog does not make it, because the two
+  // are different glasses and a wrong one traces and plots without complaint.
+  const unknown = DOUBLET.replace('GLAS BK7', 'GLAS BAF10');
   assert.throws(
-    () => importZmx(guessable, { resolveMaterial: SCHOTT.resolver() }),
+    () => importZmx(unknown, { resolveMaterial: SCHOTT.resolver() }),
     /Unknown glass "BAF10" on surface 1/,
   );
-
-  const lenient = SCHOTT.with({ allowLegacyNames: true });
-  const { system } = importZmx(guessable, { resolveMaterial: lenient.resolver() });
-  assert.equal(system.surfaceAt(1).material.name, 'N-BAF10');
+  assert.equal(SCHOTT.get('BAF10'), undefined);
+  assert.ok(SCHOTT.has('N-BAF10'), 'the near-miss name really is in the catalog');
 });
 
 test('with real dispersion the doublet reproduces its designed first-order data', () => {
@@ -113,7 +108,7 @@ test('the crown/flint pair suppresses color compared with a single crown element
   // f/vd. Pairing the crown with a flint has to beat that by a wide margin, or
   // the dispersion data is not reaching the calculation.
   const focalLength = paraxialProperties(system).effectiveFocalLength;
-  const singletSplit = focalLength / SCHOTT.get('N-BK7')!.abbeNumber; // ≈ 1.56 mm
+  const singletSplit = focalLength / SCHOTT.get('BK7')!.abbeNumber; // ≈ 1.56 mm
   const doubletSplit = red! - blue!;
 
   assert.ok(

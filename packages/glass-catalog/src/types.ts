@@ -39,18 +39,30 @@ export interface GlassRecord {
   nd: number;
   abbeNumber: number;
   /**
-   * The catalog's status for this glass: `PREFERRED`, `OBSOLETE` or `SPECIAL`.
-   * Obsolete entries are kept — a lens file from 1985 names them, and refusing
-   * to open it helps nobody — but the UI should rank a preferred glass first.
+   * The catalog's status for this glass — see {@link GLASS_STATUS}. Obsolete
+   * entries are kept: a lens file from 1985 names them, and refusing to open it
+   * helps nobody. The UI should rank an available glass above a discontinued one.
    */
   status: GlassStatus;
 }
 
-/** Status codes a Zemax-format catalog gives a glass. */
+/**
+ * Status codes a Zemax-format catalog gives a glass, in the order the
+ * OpticStudio manual lists them: Standard, Preferred, Obsolete, Special, Melt.
+ * The manual also warns that "the status classification may differ slightly
+ * between vendors", so treat it as the maker's shelf-availability hint rather
+ * than a hard fact — SCHOTT uses 1–3, Ohara 0–2.
+ *
+ * `MELT` marks a glass fitted from melt data inside OpticStudio rather than
+ * published by the manufacturer. None appears in a vendor file, but the code is
+ * listed here so encountering one is recognized rather than refused.
+ */
 export const GLASS_STATUS = {
+  0: 'STANDARD',
   1: 'PREFERRED',
   2: 'OBSOLETE',
   3: 'SPECIAL',
+  4: 'MELT',
 } as const;
 
 export type GlassStatus = (typeof GLASS_STATUS)[keyof typeof GLASS_STATUS];

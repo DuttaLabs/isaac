@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DISPERSION_FORMULA, N_BK7 } from '@isaac/optical-core';
 import {
+  ALL_GLASSES,
   D_LINE_NM,
   GlassCatalog,
   GlassMaterial,
+  OHARA,
+  OHARA_GLASSES,
   SCHOTT,
   SCHOTT_GLASSES,
   normalizeGlassName,
@@ -182,4 +185,64 @@ test('the catalog exposes a resolver shaped for lens-file import', () => {
   // A retired name resolves to itself now that the catalog carries it, so a
   // file naming BK7 traces BK7 and the import reports no substitution at all.
   assert.equal(resolve('BK7')?.name, 'BK7');
+});
+
+test("Ohara's catalog is carried the same way SCHOTT's is", () => {
+  assert.equal(OHARA.size, OHARA_GLASSES.length);
+  assert.equal(OHARA.size, 433, "Ohara publishes 433 glasses, matching OpticStudio's library");
+  for (const record of OHARA_GLASSES) {
+    assert.equal(record.manufacturer, 'OHARA');
+  }
+
+  // S-BSL7 is Ohara's answer to N-BK7: the same workhorse crown, and a
+  // genuinely different glass — nd 1.516330 against N-BK7's 1.516800. Both
+  // catalogs are present at once and neither name reaches the other's entry.
+  const bsl7 = OHARA.get('S-BSL7')!;
+  assert.ok(Math.abs(bsl7.nd - 1.51633) < 5e-5, `S-BSL7 nd ${bsl7.nd}`);
+  assert.ok(Math.abs(bsl7.abbeNumber - 64.142022) < 0.01, `S-BSL7 Vd ${bsl7.abbeNumber}`);
+  assert.equal(SCHOTT.get('S-BSL7'), undefined);
+  assert.equal(OHARA.get('N-BK7'), undefined);
+});
+
+test('Ohara leans on the Schott formula, which is why it had to exist', () => {
+  // 188 of Ohara's 433 use dispersion formula 1. Added for B270 — one SCHOTT
+  // glass — it turns out to carry 43% of the next catalog through the door.
+  const onSchottFormula = OHARA_GLASSES.filter(
+    (record) => record.formula === DISPERSION_FORMULA.SCHOTT,
+  );
+  assert.equal(onSchottFormula.length, 188);
+
+  // Whichever formula a glass uses, its fit must rebuild the printed nd and Vd.
+  for (const record of OHARA_GLASSES) {
+    const glass = OHARA.get(record.name)!;
+    if (!glass.isWithinRange(486.1327) || !glass.isWithinRange(656.2725)) {
+      continue;
+    }
+    assert.ok(
+      Math.abs(glass.nd - record.nd) < 5e-5,
+      `${record.name}: fit gives nd ${glass.nd.toFixed(6)}, catalog prints ${record.nd}`,
+    );
+    assert.ok(
+      Math.abs(glass.abbeNumber - record.abbeNumber) < 0.01,
+      `${record.name}: fit gives Vd ${glass.abbeNumber.toFixed(4)}, prints ${record.abbeNumber}`,
+    );
+  }
+});
+
+test('one catalog spans every manufacturer, and refuses an ambiguous name', () => {
+  // A .zmx names a glass, not the catalog it came from, so lookup has to span
+  // makers. Both of these resolve from the one catalog.
+  assert.equal(ALL_GLASSES.size, SCHOTT.size + OHARA.size);
+  assert.equal(ALL_GLASSES.get('N-BK7')?.name, 'N-BK7');
+  assert.equal(ALL_GLASSES.get('S-BSL7')?.name, 'S-BSL7');
+  assert.equal(ALL_GLASSES.get('B270')?.record.manufacturer, 'SCHOTT');
+  assert.equal(ALL_GLASSES.get('S-FPL51')?.record.manufacturer, 'OHARA');
+
+  // If two makers ever ship one name, the combined catalog must not pick a
+  // winner silently — the file would be ambiguous and the wrong glass traces.
+  const schottRecord = SCHOTT_GLASSES[0]!;
+  assert.throws(
+    () => new GlassCatalog([schottRecord, { ...schottRecord, manufacturer: 'OHARA' }]),
+    /indistinguishable after normalization/,
+  );
 });

@@ -1,16 +1,16 @@
 // GENERATED FILE — do not edit by hand.
-// Regenerate with: npm run regenerate --workspace @isaac/glass-catalog -- <path to .AGF>
+// Regenerate with: npm run regenerate --workspace @isaac/glass-catalog
 //
-// Source: SCHOTT June 2025 preferred, inquiry, AR glasses
+// Source: schott glasses preferred and special June-2025-B.AGF
+// SCHOTT June 2025 preferred, inquiry, AR glasses
 //
-// SCHOTT's own Zemax-format catalog, reproduced entry for entry. It is the only
-// source of glass data in this repo: the numbers below are the manufacturer's,
-// not a third party's transcription of them.
+// SCHOTT's own Zemax-format catalog, reproduced entry for entry. A
+// manufacturer's own file is the only source of glass data in this repo: the
+// numbers below are theirs, not a third party's transcription of them.
 //
-// All 366 entries are here, including names SCHOTT has retired. `BK7` and
-// `N-BK7` both appear and carry the same dispersion — they are separate products
-// whose optical properties coincide — so a lens file naming either resolves
-// directly and no alias table is needed.
+// All 366 entries are here, including glasses no longer made — an old lens
+// file is exactly where a discontinued one turns up, so `record.status` says
+// which those are rather than the catalog leaving them out.
 //
 // Dispersion fits: 1 on formula 1 (SCHOTT), 365 on formula 2 (SELLMEIER_1).
 //

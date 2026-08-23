@@ -13,7 +13,7 @@
   "scripts": {
     "test": "node --experimental-strip-types --test 'tests/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
-    "regenerate": "node --experimental-strip-types scripts/build-schott.ts"
+    "regenerate": "node --experimental-strip-types scripts/build-catalogs.ts"
   },
   "engines": {
     "node": ">=22.6"

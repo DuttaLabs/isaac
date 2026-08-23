@@ -5,7 +5,7 @@ import {
   SPECTRAL_LINES,
   type Material,
 } from '@isaac/optical-core';
-import { SCHOTT } from '@isaac/glass-catalog';
+import { ALL_GLASSES } from '@isaac/glass-catalog';
 import { MIRROR_GLASS_NAME, MODEL_GLASS_NAME } from '@isaac/zemax-io';
 import { attempt, type Result } from './result.ts';
 
@@ -21,12 +21,13 @@ import { attempt, type Result } from './result.ts';
  */
 
 /**
- * The catalog used for glass lookup: SCHOTT's, entry for entry, including the
- * names they have retired. An old file naming BK7 finds BK7, so the editor
- * needs no tolerance for obsolete spellings and never quietly swaps one glass
+ * The catalog used for glass lookup: every manufacturer Isaac carries, each
+ * reproduced entry for entry including the glasses they no longer make. A lens
+ * file names a glass and not the catalog it came from, so lookup spans them all.
+ * An old file naming BK7 finds BK7, and the editor never quietly swaps one glass
  * for another — a name it cannot find is reported instead.
  */
-export const GLASS_CATALOG = SCHOTT;
+export const GLASS_CATALOG = ALL_GLASSES;
 
 /** What the Material column shows, and what you type there, for a model glass. */
 export const MODEL_MATERIAL_LABEL = 'MODEL';

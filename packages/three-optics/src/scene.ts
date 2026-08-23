@@ -58,6 +58,8 @@ export interface SurfaceShellGeometry {
  */
 export interface RayBundleGeometry {
   wavelengthIndex: number;
+  /** Which field the bundle belongs to, for a view that colors by it. */
+  fieldIndex: number;
   /** Never reached the image: drawn faint, as in the 2-D layout. */
   blocked: boolean;
   geometry: BufferGeometry;
@@ -77,6 +79,7 @@ export interface OpticalScene {
 export interface SceneTrace {
   result: RayTraceResult;
   wavelengthIndex: number;
+  fieldIndex: number;
 }
 
 const DEFAULT_SEGMENTS = 64;
@@ -238,14 +241,19 @@ function leastAxialGap(
 
 /** Groups rays by wavelength and fate, then merges each group into one buffer. */
 function buildRayBundles(traces: readonly SceneTrace[]): RayBundleGeometry[] {
-  const groups = new Map<string, { wavelengthIndex: number; blocked: boolean; values: number[] }>();
+  const groups = new Map<
+    string,
+    { wavelengthIndex: number; fieldIndex: number; blocked: boolean; values: number[] }
+  >();
 
-  for (const { result, wavelengthIndex } of traces) {
+  // Grouped by field as well as wavelength, so a view that colors by field has
+  // one buffer per color rather than one buffer holding several.
+  for (const { result, wavelengthIndex, fieldIndex } of traces) {
     const blocked = result.status !== 'TERMINATED';
-    const key = `${wavelengthIndex}:${blocked}`;
+    const key = `${fieldIndex}:${wavelengthIndex}:${blocked}`;
     let group = groups.get(key);
     if (group === undefined) {
-      group = { wavelengthIndex, blocked, values: [] };
+      group = { wavelengthIndex, fieldIndex, blocked, values: [] };
       groups.set(key, group);
     }
 
@@ -262,6 +270,7 @@ function buildRayBundles(traces: readonly SceneTrace[]): RayBundleGeometry[] {
     geometry.setAttribute('position', new Float32BufferAttribute(group.values, 3));
     return {
       wavelengthIndex: group.wavelengthIndex,
+      fieldIndex: group.fieldIndex,
       blocked: group.blocked,
       geometry,
       segmentCount: group.values.length / 6,

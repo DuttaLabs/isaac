@@ -27,6 +27,7 @@ import { RayFanPlot } from './components/RayFanPlot.tsx';
 import { SourcePanel } from './components/SourcePanel.tsx';
 import { SpotDiagram } from './components/SpotDiagram.tsx';
 import { WavelengthLegend } from './components/WavelengthLegend.tsx';
+import { FieldLegend } from './components/FieldLegend.tsx';
 
 // Three.js and its React bindings are most of the bundle, and a session that
 // never opens the 3-D view should never download them. Loaded on first use.
@@ -414,7 +415,14 @@ export function App() {
                       />
                     </div>
                   )}
-                  {allWavelengths ? <WavelengthLegend system={system} /> : null}
+                  <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
+                  {/* Dash-only, and 2-D only. Color belongs to the field now, so
+                      a colored wavelength swatch would name a mapping that is not
+                      on screen — and a line material has no dash to offer, so in
+                      3-D the wavelengths are drawn but not distinguished. */}
+                  {allWavelengths && view === '2d' ? (
+                    <WavelengthLegend system={system} pattern />
+                  ) : null}
                   {firstOrderOverlay ? (
                     <FirstOrderLegend
                       rays={firstOrderOverlay.rays}

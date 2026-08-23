@@ -25,6 +25,16 @@
   --wave-green: #008300;
   --wave-red: #e34948;
 
+  /* Field series for the layout, in fixed order. Steps from the same validated
+     ramps as the wavelength colors; see lib/fields.ts for why this order. */
+  --field-1: #008300;
+  --field-2: #2a78d6;
+  --field-3: #e34948;
+  --field-4: #1baf7a;
+  --field-5: #4a3aa7;
+  --field-6: #eb6834;
+  --field-other: #78766f;
+
   --glass-fill: rgba(42, 120, 214, 0.13);
   /* An element whose surfaces cross: same weight of tint as the normal glass,
      so it reads as the same kind of mark rather than as an overlay. */
@@ -69,6 +79,14 @@
     --wave-green: #008300;
     --wave-red: #e66767;
 
+    --field-1: #008300;
+    --field-2: #3987e5;
+    --field-3: #e66767;
+    --field-4: #199e70;
+    --field-5: #9085e9;
+    --field-6: #d95926;
+    --field-other: #92908a;
+
     --glass-fill: rgba(57, 135, 229, 0.18);
     --glass-fill-crossed: rgba(240, 138, 132, 0.22);
     --surface-highlight: #fcba05;
@@ -103,6 +121,14 @@
   --wave-blue: #3987e5;
   --wave-green: #008300;
   --wave-red: #e66767;
+
+  --field-1: #008300;
+  --field-2: #3987e5;
+  --field-3: #e66767;
+  --field-4: #199e70;
+  --field-5: #9085e9;
+  --field-6: #d95926;
+  --field-other: #92908a;
 
   --glass-fill: rgba(57, 135, 229, 0.18);
   --glass-fill-crossed: rgba(240, 138, 132, 0.22);

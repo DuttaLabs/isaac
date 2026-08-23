@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { buildOpticalScene, type OpticalScene } from '@isaac/three-optics';
 import type { LayoutTrace } from '../lib/analysis.ts';
-import { wavelengthStyle } from '../lib/wavelengths.ts';
+import { fieldStyle } from '../lib/fields.ts';
 import { useThemeColors } from '../lib/theme-colors.ts';
 
 // Three's own controls rather than a wrapper library: the app needs one class
@@ -156,14 +156,15 @@ export function Layout3DView({
         ))}
 
         {scene.rays.map((bundle, index) => {
-          const style = wavelengthStyle(
-            system.wavelengthsNm[bundle.wavelengthIndex] ?? 550,
-            bundle.wavelengthIndex,
-          );
+          // Color by field, as the 2-D view does. There is no dash pattern in a
+          // line material to carry the wavelength as well, so in three
+          // dimensions the field is the only series shown — which is the one a
+          // reader is separating in a spatial picture anyway.
+          const style = fieldStyle(system.fields[bundle.fieldIndex], bundle.fieldIndex);
           return (
             <lineSegments key={`rays-${index}`} geometry={bundle.geometry}>
               <lineBasicMaterial
-                color={colors.wavelengths[style.colorVariable] ?? colors.surface}
+                color={colors.fields[style.colorVariable] ?? colors.surface}
                 transparent
                 opacity={bundle.blocked ? 0.16 : 0.7}
               />

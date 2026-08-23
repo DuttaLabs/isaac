@@ -46,7 +46,7 @@ function singlet(): OpticalSystem {
 
 function tracesFor(system: OpticalSystem): SceneTrace[] {
   const rays = generateRayFan(system, { field: 0, wavelengthNm: 587.5618, count: 5 });
-  return traceRays(system, rays).map((result) => ({ result, wavelengthIndex: 0 }));
+  return traceRays(system, rays).map((result) => ({ result, wavelengthIndex: 0, fieldIndex: 0 }));
 }
 
 /** Reads a geometry's vertices back as [x, y, z] triples. */
@@ -196,7 +196,11 @@ test('rays keep the three dimensions the engine traced them in', () => {
     wavelengthNm: 587.5618,
     count: 5,
   });
-  const traces = traceRays(system, rays).map((result) => ({ result, wavelengthIndex: 0 }));
+  const traces = traceRays(system, rays).map((result) => ({
+    result,
+    wavelengthIndex: 0,
+    fieldIndex: 1,
+  }));
   const scene = buildOpticalScene(system, traces, { defaultSemiDiameter: 10 });
 
   const ys = scene.rays.flatMap((bundle) => vertices(bundle.geometry).map(([, y]) => Math.abs(y)));

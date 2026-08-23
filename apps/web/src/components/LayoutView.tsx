@@ -11,6 +11,7 @@ import {
 import type { FirstOrderRays, LayoutTrace } from '../lib/analysis.ts';
 import type { RayTraceResult } from '@isaac/optical-core';
 import { wavelengthStyle } from '../lib/wavelengths.ts';
+import { fieldStyle } from '../lib/fields.ts';
 
 const WIDTH = 900;
 const HEIGHT = 340;
@@ -114,19 +115,24 @@ export function LayoutView({
       ))}
 
       {geometry.rayPaths.map((path, index) => {
-        const style = wavelengthStyle(
+        // Color carries the field and the dash carries the wavelength. In a
+        // spatial picture the bundles are the series: each leaves at its own
+        // angle and lands at its own height, so that is what a reader is
+        // separating. Wavelength keeps the cue it can spare.
+        const field = fieldStyle(system.fields[path.fieldIndex], path.fieldIndex);
+        const wavelength = wavelengthStyle(
           system.wavelengthsNm[path.wavelengthIndex] ?? 550,
           path.wavelengthIndex,
         );
-        // Rays are drawn solid when only one wavelength is on screen: with
-        // nothing to tell apart, a dash pattern just reads as a broken ray.
-        const dash = multipleWavelengths ? style.dash : undefined;
+        // Solid when only one wavelength is on screen: with nothing to tell
+        // apart, a dash pattern just reads as a broken ray.
+        const dash = multipleWavelengths ? wavelength.dash : undefined;
         return (
           <path
             key={`ray-${index}`}
             d={toPath(path.points, project)}
             fill="none"
-            stroke={style.color}
+            stroke={field.color}
             strokeWidth={1}
             strokeDasharray={dash}
             opacity={path.blocked ? 0.25 : 0.85}

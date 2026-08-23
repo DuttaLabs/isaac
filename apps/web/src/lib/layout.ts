@@ -47,7 +47,13 @@ export interface GlassBody {
 export interface LayoutGeometry {
   profiles: SurfaceProfile[];
   bodies: GlassBody[];
-  rayPaths: { points: LayoutPoint[]; wavelengthIndex: number; blocked: boolean }[];
+  rayPaths: {
+    points: LayoutPoint[];
+    wavelengthIndex: number;
+    /** Which field the ray belongs to; the layout colors by it. */
+    fieldIndex: number;
+    blocked: boolean;
+  }[];
   bounds: { minZ: number; maxZ: number; minY: number; maxY: number };
 }
 
@@ -108,7 +114,7 @@ function leastAxialGap(
  */
 export function buildLayout(
   system: OpticalSystem,
-  traces: readonly { result: RayTraceResult; wavelengthIndex: number }[],
+  traces: readonly { result: RayTraceResult; wavelengthIndex: number; fieldIndex: number }[],
   defaultSemiDiameter: number,
 ): LayoutGeometry {
   const profiles: SurfaceProfile[] = [];
@@ -189,9 +195,10 @@ export function buildLayout(
     });
   }
 
-  const rayPaths = traces.map(({ result, wavelengthIndex }) => ({
+  const rayPaths = traces.map(({ result, wavelengthIndex, fieldIndex }) => ({
     points: rayPath(result),
     wavelengthIndex,
+    fieldIndex,
     blocked: result.status !== 'TERMINATED',
   }));
 

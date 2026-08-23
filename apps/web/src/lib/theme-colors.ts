@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FIELD_COLOR_VARIABLES, FIELD_OVERFLOW_VARIABLE } from './fields.ts';
 
 /**
  * The theme's colors as values WebGL can use.
@@ -24,6 +25,7 @@ const TOKENS = {
 } as const;
 
 const WAVELENGTH_TOKENS = ['--wave-blue', '--wave-green', '--wave-red'] as const;
+const FIELD_TOKENS = [...FIELD_COLOR_VARIABLES, FIELD_OVERFLOW_VARIABLE];
 
 export interface ThemeColors {
   background: string;
@@ -36,6 +38,8 @@ export interface ThemeColors {
   axis: string;
   /** Resolved wavelength colors, keyed by the custom property name. */
   wavelengths: Record<string, string>;
+  /** Resolved field-series colors, keyed by the custom property name. */
+  fields: Record<string, string>;
 }
 
 function read(): ThemeColors {
@@ -49,6 +53,10 @@ function read(): ThemeColors {
   for (const token of WAVELENGTH_TOKENS) {
     wavelengths[token] = value(token, '#808080');
   }
+  const fields: Record<string, string> = {};
+  for (const token of FIELD_TOKENS) {
+    fields[token] = value(token, '#808080');
+  }
 
   return {
     background: value(...TOKENS.background),
@@ -60,6 +68,7 @@ function read(): ThemeColors {
     highlight: value(...TOKENS.highlight),
     axis: value(...TOKENS.axis),
     wavelengths,
+    fields,
   };
 }
 

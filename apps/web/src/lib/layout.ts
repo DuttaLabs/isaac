@@ -1,4 +1,5 @@
 import {
+  Point3,
   signedMediaIndices,
   surfaceProfileSag,
   type OpticalSystem,
@@ -127,7 +128,13 @@ export function buildLayout(
   // Surface 0 is the object, which sits at −∞ for a distant object; never drawn.
   for (let index = 1; index < system.surfaces.length; index += 1) {
     const surface = system.surfaceAt(index);
-    const vertexZ = system.vertexZAt(index);
+    // A coordinate break has no shape and no aperture: there is nothing to draw,
+    // and drawing it would put a full-height plane across the fold. Its effect
+    // is already in where the following surfaces sit.
+    if (surface.type === 'COORDINATE_BREAK') {
+      continue;
+    }
+    const pose = system.poseAt(index);
     const semiDiameter = Number.isFinite(surface.semiDiameter)
       ? surface.semiDiameter
       : defaultSemiDiameter;
@@ -136,7 +143,12 @@ export function buildLayout(
     const points: LayoutPoint[] = [];
     for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
       const y = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
-      points.push({ z: vertexZ + sag(surface.shape, y), y });
+      // The profile is drawn in the surface's own frame and then carried into
+      // global coordinates, so a tilted element is drawn tilted. For a centered
+      // system this is the vertex offset it always was.
+      const local = new Point3(0, y, sag(surface.shape, y));
+      const global = pose.apply(local);
+      points.push({ z: global.z, y: global.y });
     }
     profiles.push({
       surfaceIndex: index,
@@ -150,12 +162,18 @@ export function buildLayout(
   // A glass body spans a surface whose following medium is not air.
   const bodies: GlassBody[] = [];
   for (let index = 1; index < system.surfaces.length - 1; index += 1) {
-    const material = system.surfaceAt(index).material;
+    const surface = system.surfaceAt(index);
+    if (surface.type === 'COORDINATE_BREAK') {
+      continue;
+    }
+    const material = surface.material;
     if (Math.abs(material.indexAt(system.primaryWavelengthNm) - 1) < 1e-9) {
       continue;
     }
     const front = profiles.find((profile) => profile.surfaceIndex === index);
-    const back = profiles.find((profile) => profile.surfaceIndex === index + 1);
+    // The rear surface is the next one that is actually drawn: a break between
+    // the two faces of an element contributes no profile to close the body on.
+    const back = profiles.find((profile) => profile.surfaceIndex > index);
     if (!front || !back) {
       continue;
     }
@@ -176,8 +194,8 @@ export function buildLayout(
       leastAxialGap(
         system.surfaceAt(index).shape,
         system.vertexZAt(index),
-        system.surfaceAt(index + 1).shape,
-        system.vertexZAt(index + 1),
+        system.surfaceAt(back.surfaceIndex).shape,
+        system.vertexZAt(back.surfaceIndex),
         Math.min(Math.abs(frontTop.y), Math.abs(backTop.y)),
         travel,
       ),
@@ -187,7 +205,7 @@ export function buildLayout(
     bodies.push({
       points: [...front.points, ...[...back.points].reverse()],
       frontIndex: index,
-      backIndex: index + 1,
+      backIndex: back.surfaceIndex,
       topEdge: [frontTop, backTop],
       bottomEdge: [frontBottom, backBottom],
       leastGap,

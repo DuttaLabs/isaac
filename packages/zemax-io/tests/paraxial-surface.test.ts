@@ -108,10 +108,14 @@ test('a paraxial surface immersed in glass is refused, since the convention is u
 });
 
 test('other surface types are still refused, and say so by name', () => {
+  // TOROIDAL, not COORDBRK: coordinate breaks are modelled now, and the point
+  // of this test is that an unmodelled shape is named rather than approximated
+  // as the sphere it is not.
   assert.throws(
-    () => importZmx(paraxialFile('  TYPE COORDBRK'), { resolveMaterial }),
+    () => importZmx(paraxialFile('  TYPE TOROIDAL'), { resolveMaterial }),
     (error: unknown) =>
       error instanceof ZmxImportError &&
-      /only STANDARD, PARAXIAL, EVENASPH surfaces are supported/.test(error.message),
+      /is TYPE TOROIDAL/.test(error.message) &&
+      /only STANDARD, PARAXIAL, EVENASPH, COORDBRK surfaces are supported/.test(error.message),
   );
 });

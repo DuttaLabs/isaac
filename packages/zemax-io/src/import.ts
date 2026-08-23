@@ -10,6 +10,7 @@ import {
   type ApertureType,
   type Field,
   type LinearUnit,
+  type CoordinateBreak,
   type Material,
   type SurfaceType,
 } from '@isaac/optical-core';
@@ -115,7 +116,7 @@ const HANDLED_SURFACE_TOKENS = new Set(['TYPE', 'CURV', 'DISZ', 'DIAM', 'GLAS', 
  * Zemax surface types this reader maps onto the model. Everything else is
  * refused by name rather than approximated as a sphere.
  */
-const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH']);
+const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH', 'COORDBRK']);
 
 /**
  * Surface records that carry *geometry* this reader does not model, mapped to a
@@ -259,6 +260,7 @@ function toSurface(
   }
   const isParaxial = surfaceType === 'PARAXIAL';
   const isEvenAsphere = surfaceType === 'EVENASPH';
+  const isCoordinateBreak = surfaceType === 'COORDBRK';
 
   const conic = numericValue(firstValue(records, 'CONI')) ?? 0;
   if (!Number.isFinite(conic)) {
@@ -283,7 +285,9 @@ function toSurface(
         ? 'PARAXIAL'
         : isEvenAsphere
           ? 'EVEN_ASPHERE'
-          : 'STANDARD';
+          : isCoordinateBreak
+            ? 'COORDINATE_BREAK'
+            : 'STANDARD';
 
   // An aspheric object or image surface is not refused — a curved detector is a
   // real thing — but the polynomial belongs to a surface that bends rays, and
@@ -299,6 +303,16 @@ function toSurface(
   if (isParaxial && (isObject || isImage)) {
     throw new ZmxImportError(
       `Surface ${number} is TYPE PARAXIAL but is the ${isObject ? 'object' : 'image'} surface.`,
+    );
+  }
+
+  // The manual is explicit that the object surface can never be a coordinate
+  // break; an image one is the same contradiction at the other end, since the
+  // system has to end somewhere a ray can land.
+  if (isCoordinateBreak && (isObject || isImage)) {
+    throw new ZmxImportError(
+      `Surface ${number} is TYPE COORDBRK but is the ${isObject ? 'object' : 'image'} surface; ` +
+        'a coordinate break is a change of frame, not a place a ray can land.',
     );
   }
 
@@ -322,6 +336,21 @@ function toSurface(
       `Surface ${number} is marked STOP but is the ${type} surface; ignoring the stop.`,
     );
     isStop = false;
+  }
+
+  if (type === 'COORDINATE_BREAK') {
+    // No radius, no conic, no aperture: a break has no shape to carry them, and
+    // the model refuses them. Files write `CURV 0` and `DIAM 0` here anyway.
+    // The medium is filled in by `adoptMirrorMedia`, which carries the previous
+    // surface's material forward — a break cannot be a boundary between media.
+    return new Surface({
+      id: `surf-${number}`,
+      type,
+      coordinateBreak: readCoordinateBreak(records, number),
+      thickness,
+      isStop,
+      comment: readComment(records),
+    });
   }
 
   if (type === 'PARAXIAL') {
@@ -377,11 +406,60 @@ function adoptMirrorMedia(surfaces: readonly Surface[]): Surface[] {
   const resolved = [...surfaces];
   for (let index = 1; index < resolved.length; index += 1) {
     const surface = resolved[index]!;
-    if (surface.reflective) {
+    // A coordinate break is in the same position as a mirror and for the same
+    // reason: it names no glass, because it cannot be a boundary between two
+    // media. Zemax shows "-" in its glass column to say so. Both carry the
+    // medium of the surface before them, and the model refuses anything else.
+    if (surface.reflective || surface.type === 'COORDINATE_BREAK') {
       resolved[index] = surface.with({ material: resolved[index - 1]!.material });
     }
   }
   return resolved;
+}
+
+/**
+ * The six numbers of a COORDBRK surface, written as `PARM 1` through `PARM 6`:
+ * decenter x and y, tilt about x, y and z, and the order flag.
+ *
+ * The tilts are degrees and the decenters lens units, both straight from the
+ * file. `PARM 6` is a flag, not a quantity: Zemax reads *any* non-zero value as
+ * "tilt first", so it is compared that way rather than tested against 1.
+ *
+ * A missing column is a zero, which is what a file omitting one means, but an
+ * unrecognized `PARM` is refused — on this surface type the column numbers carry
+ * the whole meaning, and one that is not among the six is not something to guess
+ * at. That is the same rule the PARAXIAL and EVENASPH readers follow.
+ */
+function readCoordinateBreak(
+  records: readonly ZmxRecord[],
+  surfaceNumber: number,
+): CoordinateBreak {
+  const values = new Map<number, number>();
+  for (const record of findRecords(records, 'PARM')) {
+    const column = numericValue(record.values[0]);
+    const value = numericValue(record.values[1]) ?? 0;
+    if (column === undefined || !Number.isInteger(column) || column < 1 || column > 6) {
+      throw new ZmxImportError(
+        `Surface ${surfaceNumber} is TYPE COORDBRK with an unrecognized PARM ${record.values[0]}; ` +
+          'only PARM 1 through 6 (the decenters, tilts and order flag) are understood.',
+      );
+    }
+    if (!Number.isFinite(value)) {
+      throw new ZmxImportError(
+        `Surface ${surfaceNumber} has a COORDBRK PARM ${column} of ${record.values[1]}.`,
+      );
+    }
+    values.set(column, value);
+  }
+
+  return {
+    decenterX: values.get(1) ?? 0,
+    decenterY: values.get(2) ?? 0,
+    tiltXDeg: values.get(3) ?? 0,
+    tiltYDeg: values.get(4) ?? 0,
+    tiltZDeg: values.get(5) ?? 0,
+    tiltFirst: (values.get(6) ?? 0) !== 0,
+  };
 }
 
 /**

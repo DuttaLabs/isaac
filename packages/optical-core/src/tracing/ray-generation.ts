@@ -106,7 +106,7 @@ export function entrancePupilRadius(system: OpticalSystem): number {
  * when a stop is defined, otherwise the vertex plane of the first surface.
  */
 export function entrancePupilZ(system: OpticalSystem): number {
-  return system.stopIndex === undefined ? system.vertexZAt(1) : entrancePupil(system).z;
+  return system.stopIndex === undefined ? system.axialPositionAt(1) : entrancePupil(system).z;
 }
 
 /**
@@ -186,7 +186,7 @@ export function generateRay(
   if (field.angleDeg !== undefined) {
     throw new RangeError('A finite object takes object heights, not field angles.');
   }
-  const origin = new Point3(0, field.objectHeight ?? 0, system.vertexZAt(0));
+  const origin = new Point3(0, field.objectHeight ?? 0, system.axialPositionAt(0));
   if (pupilZ <= origin.z) {
     throw new RangeError(
       'The entrance pupil lies at or behind the object plane; rays cannot be aimed at it.',
@@ -290,5 +290,5 @@ function defaultStartZ(system: OpticalSystem, pupilRadius: number, pupilZ: numbe
   const frontmost = Math.min(0, surface.sagAt(height));
   const margin = Math.max(1, 0.1 * pupilRadius);
   // Stay ahead of both the first surface and the pupil plane (which may be virtual).
-  return Math.min(system.vertexZAt(1) + frontmost, pupilZ) - margin;
+  return Math.min(system.axialPositionAt(1) + frontmost, pupilZ) - margin;
 }

@@ -3,6 +3,7 @@ import { Vector3 } from '../geometry/vector3.ts';
 import { intersectSurface } from '../geometry/surface-intersection.ts';
 import type { OpticalSystem } from '../model/optical-system.ts';
 import { Ray, type RayStatus } from '../model/ray.ts';
+import type { Material } from '../model/material.ts';
 import type { Surface } from '../model/surface.ts';
 import { angleOfIncidence, reflect, refract } from './optics.ts';
 import { surfacePower } from './paraxial.ts';
@@ -61,38 +62,61 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
 
   for (let index = 1; index < system.surfaces.length; index += 1) {
     const surface = system.surfaceAt(index);
-    const vertexZ = system.vertexZAt(index);
 
-    // Move into the surface's local frame (pure axial translation for now).
-    const localOrigin = new Point3(ray.origin.x, ray.origin.y, ray.origin.z - vertexZ);
-    const hit = intersectSurface(localOrigin, ray.direction, surface.shape);
+    // A coordinate break is not a surface: it meets no ray and bends nothing.
+    // Its whole effect is on where the *following* surfaces sit, and the system
+    // has already folded that into their poses, so the ray simply carries on.
+    if (surface.type === 'COORDINATE_BREAK') {
+      continue;
+    }
+
+    // Move into the surface's local frame — vertex at the origin, axis along
+    // +z. For a centered system this is the axial shift it always was; after a
+    // coordinate break it is a rotation as well.
+    const pose = system.poseAt(index);
+    const localOrigin = pose.toLocal(ray.origin);
+    const localDirection = pose.toLocalDirection(ray.direction);
+    const hit = intersectSurface(localOrigin, localDirection, surface.shape);
 
     if (hit === null || hit.distance < -DISTANCE_EPSILON) {
       return finish(inputRay, ray, intersections, 'MISSED', index);
     }
 
-    const point = new Point3(hit.point.x, hit.point.y, hit.point.z + vertexZ);
+    const point = pose.apply(hit.point);
 
-    // Clip against the clear aperture (semi-diameter).
-    const radial = Math.hypot(point.x, point.y);
+    // Clip against the clear aperture, which is radial about the surface's own
+    // axis — not the global one, or a tilted element would vignette by its tilt.
+    const radial = Math.hypot(hit.point.x, hit.point.y);
     if (radial > surface.semiDiameter + DISTANCE_EPSILON) {
       ray = ray.with({ origin: point, status: 'BLOCKED' });
       return finish(inputRay, ray, intersections, 'BLOCKED', index);
     }
 
     // Optical path length accrues in the medium just traversed.
-    const indexBefore = system.surfaceAt(index - 1).material.indexAt(wavelengthNm);
+    const indexBefore = mediumBefore(system, index).indexAt(wavelengthNm);
     const opticalPathLength = ray.opticalPathLength + hit.distance * indexBefore;
     const incoming = ray.direction;
-    const aoi = angleOfIncidence(incoming, hit.normal);
+    // Everything optical happens in the local frame, where the surface normal is
+    // defined, and only the results are carried back out to global coordinates.
+    const localIncoming = localDirection;
+    const aoi = angleOfIncidence(localIncoming, hit.normal);
 
-    const outcome = interact(surface, incoming, hit.normal, indexBefore, wavelengthNm, hit.point);
+    const outcome = interact(
+      surface,
+      localIncoming,
+      hit.normal,
+      indexBefore,
+      wavelengthNm,
+      hit.point,
+    );
+    const globalNormal = pose.applyDirection(hit.normal);
+    const outgoing = pose.applyDirection(outcome.direction);
     if (outcome.status === 'TIR') {
       intersections.push({
         surfaceIndex: index,
         surfaceId: surface.id,
         point,
-        normal: hit.normal,
+        normal: globalNormal,
         incomingDirection: incoming,
         outgoingDirection: incoming,
         distance: hit.distance,
@@ -109,9 +133,9 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
       surfaceIndex: index,
       surfaceId: surface.id,
       point,
-      normal: hit.normal,
+      normal: globalNormal,
       incomingDirection: incoming,
-      outgoingDirection: outcome.direction,
+      outgoingDirection: outgoing,
       distance: hit.distance,
       indexBefore,
       indexAfter: outcome.indexAfter,
@@ -122,7 +146,7 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
     const reachedImage = surface.type === 'IMAGE';
     ray = ray.with({
       origin: point,
-      direction: outcome.direction,
+      direction: outgoing,
       medium: outcome.medium,
       opticalPathLength,
       status: reachedImage ? 'TERMINATED' : 'ACTIVE',
@@ -135,6 +159,25 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
 
   // A well-formed system always ends on an IMAGE surface; reaching here means none was found.
   return finish(inputRay, ray, intersections, 'TERMINATED');
+}
+
+/**
+ * The medium the ray has just crossed to reach surface `index`.
+ *
+ * Normally the surface before, but a coordinate break carries no glass — it
+ * cannot be a boundary between two media, which is why Zemax shows "-" in its
+ * glass column — so the search walks back past any number of them to the last
+ * real surface. `OpticalSystem` also refuses a break whose material disagrees
+ * with that one, so the two never differ; this simply does not depend on it.
+ */
+function mediumBefore(system: OpticalSystem, index: number): Material {
+  for (let i = index - 1; i > 0; i -= 1) {
+    const surface = system.surfaceAt(i);
+    if (surface.type !== 'COORDINATE_BREAK') {
+      return surface.material;
+    }
+  }
+  return system.surfaceAt(0).material;
 }
 
 interface Interaction {

@@ -1,4 +1,10 @@
-import { AIR, OpticalSystem, Surface, type Material } from '@isaac/optical-core';
+import {
+  AIR,
+  OpticalSystem,
+  Surface,
+  type CoordinateBreak,
+  type Material,
+} from '@isaac/optical-core';
 import { newSurfaceId } from './default-system.ts';
 import { attempt, type Result } from './result.ts';
 
@@ -33,7 +39,17 @@ export function updateSurface(
 export const DEFAULT_PARAXIAL_FOCAL_LENGTH = 100;
 
 /** The surface types a user can choose between; OBJECT and IMAGE are fixed by position. */
-export type EditableSurfaceType = 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL';
+export type EditableSurfaceType = 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL' | 'COORDINATE_BREAK';
+
+/** A coordinate break starts flat: it is added first and aimed afterwards. */
+export const ZERO_COORDINATE_BREAK: CoordinateBreak = {
+  decenterX: 0,
+  decenterY: 0,
+  tiltXDeg: 0,
+  tiltYDeg: 0,
+  tiltZDeg: 0,
+  tiltFirst: false,
+};
 
 /**
  * Switches a surface between the types a user may choose.
@@ -51,6 +67,11 @@ export type EditableSurfaceType = 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL';
  * coefficients — which have nowhere to live on a STANDARD surface — are dropped
  * on the way back. That is the conversion a designer actually performs, turning
  * a spherical element aspheric once the design needs it.
+ *
+ * COORDINATE_BREAK drops the most: it has no shape, no aperture and no glass of
+ * its own, so a surface becoming one keeps only its thickness and its place in
+ * the list. It also takes the medium of the surface before it, which is the one
+ * value the model insists on — a break cannot be a boundary between two media.
  */
 export function setSurfaceType(
   system: OpticalSystem,
@@ -66,7 +87,24 @@ export function setSurfaceType(
       return system;
     }
 
-    const shaped = surface.type !== 'PARAXIAL' && type !== 'PARAXIAL';
+    if (type === 'COORDINATE_BREAK') {
+      return system.withSurfaceAt(
+        index,
+        new Surface({
+          id: surface.id,
+          type,
+          thickness: surface.thickness,
+          coordinateBreak: ZERO_COORDINATE_BREAK,
+          // The medium must match the surface before, and a break can carry no
+          // aperture, no shape, no stop and no mirror — the model refuses each.
+          material: system.surfaceAt(index - 1).material,
+          comment: surface.comment,
+        }),
+      );
+    }
+
+    const shaped =
+      surface.type !== 'PARAXIAL' && surface.type !== 'COORDINATE_BREAK' && type !== 'PARAXIAL';
     return system.withSurfaceAt(
       index,
       new Surface({
@@ -186,4 +224,29 @@ function nearbySemiDiameter(system: OpticalSystem, index: number): number {
   const neighbor = system.surfaces[index] ?? system.surfaces[1];
   const semiDiameter = neighbor?.semiDiameter ?? 10;
   return Number.isFinite(semiDiameter) ? semiDiameter : 10;
+}
+
+/**
+ * Changes one of a coordinate break's six numbers.
+ *
+ * Kept as a whole-object replacement rather than a field patch because the
+ * model takes them together: five quantities and the flag that says which half
+ * happens first, and the flag changes what the other five mean.
+ */
+export function updateCoordinateBreak(
+  system: OpticalSystem,
+  index: number,
+  changes: Partial<CoordinateBreak>,
+): Result<OpticalSystem> {
+  return attempt(() => {
+    const surface = system.surfaceAt(index);
+    const current = surface.coordinateBreak;
+    if (current === undefined) {
+      throw new RangeError(`Surface ${index} is not a coordinate break.`);
+    }
+    return system.withSurfaceAt(
+      index,
+      surface.with({ coordinateBreak: { ...current, ...changes } }),
+    );
+  });
 }

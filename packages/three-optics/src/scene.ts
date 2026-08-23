@@ -1,10 +1,11 @@
-import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Vector2 } from 'three';
+import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Matrix4, Vector2 } from 'three';
 import {
   signedMediaIndices,
   surfaceProfileSag,
   type OpticalSystem,
   type RayTraceResult,
   type SurfaceShape,
+  type Transform3,
 } from '@isaac/optical-core';
 
 /**
@@ -106,11 +107,41 @@ export function surfaceProfile(
   return points;
 }
 
-function lathe(points: Vector2[], segments: number): LatheGeometry {
+function lathe(points: Vector2[], segments: number, pose?: Transform3): LatheGeometry {
   const geometry = new LatheGeometry(points, segments);
   // Lathe revolves about Y; the optical axis is Z.
   geometry.rotateX(Math.PI / 2);
+  if (pose !== undefined) {
+    // Everything is revolved about the surface's *own* axis and then carried
+    // into place, so a coordinate break tilts the element rather than shearing
+    // it. Baked into the vertices because the scene is built outside React and
+    // handed over as plain geometry, with no node to hang a transform on.
+    geometry.applyMatrix4(toMatrix4(pose));
+  }
   return geometry;
+}
+
+/** A core `Transform3` as the matrix Three wants. */
+function toMatrix4(pose: Transform3): Matrix4 {
+  const r = pose.rotation;
+  return new Matrix4().set(
+    r[0]!,
+    r[1]!,
+    r[2]!,
+    pose.origin.x,
+    r[3]!,
+    r[4]!,
+    r[5]!,
+    pose.origin.y,
+    r[6]!,
+    r[7]!,
+    r[8]!,
+    pose.origin.z,
+    0,
+    0,
+    0,
+    1,
+  );
 }
 
 export function buildOpticalScene(
@@ -135,28 +166,36 @@ export function buildOpticalScene(
 
   // Surface 0 is the object, which may sit at −∞; never drawn.
   for (let index = 1; index < system.surfaces.length - 1; index += 1) {
-    if (!isGlass(index)) {
+    if (!isGlass(index) || system.surfaceAt(index).type === 'COORDINATE_BREAK') {
+      continue;
+    }
+    // A coordinate break between the two faces would mean they no longer share
+    // an axis, and a single revolved solid cannot express that. The two surfaces
+    // are drawn separately instead of being welded into a shape neither has.
+    if (system.surfaceAt(index + 1).type === 'COORDINATE_BREAK') {
       continue;
     }
     const frontRadius = radiusOf(index);
     const backRadius = radiusOf(index + 1);
     const frontShape = system.surfaceAt(index).shape;
     const backShape = system.surfaceAt(index + 1).shape;
-    const frontZ = system.vertexZAt(index);
-    const backZ = system.vertexZAt(index + 1);
+    // Built in the front surface's frame — the rear vertex is a distance along
+    // its axis — and carried into place as one piece.
+    const pose = system.poseAt(index);
+    const backOffset = system.vertexZAt(index + 1) - system.vertexZAt(index);
 
     // Out along the front surface, across the ground edge, back along the rear.
     // Both ends land on the axis, which is what closes the revolution into a
     // solid rather than leaving two open caps.
     const profile = [
-      ...surfaceProfile(frontShape, frontZ, frontRadius, samples),
-      ...surfaceProfile(backShape, backZ, backRadius, samples).reverse(),
+      ...surfaceProfile(frontShape, 0, frontRadius, samples),
+      ...surfaceProfile(backShape, backOffset, backRadius, samples).reverse(),
     ];
 
     elements.push({
       frontIndex: index,
       backIndex: index + 1,
-      geometry: lathe(profile, segments),
+      geometry: lathe(profile, segments, pose),
       crossed: leastAxialGap(system, index, samples, travelAfter(index)) < 0,
     });
     consumed.add(index);
@@ -169,11 +208,16 @@ export function buildOpticalScene(
       continue;
     }
     const surface = system.surfaceAt(index);
+    // A coordinate break has no shape and no aperture — nothing to revolve.
+    if (surface.type === 'COORDINATE_BREAK') {
+      continue;
+    }
     surfaces.push({
       surfaceIndex: index,
       geometry: lathe(
-        surfaceProfile(surface.shape, system.vertexZAt(index), radiusOf(index), samples),
+        surfaceProfile(surface.shape, 0, radiusOf(index), samples),
         segments,
+        system.poseAt(index),
       ),
       isStop: surface.isStop,
       isImage: surface.type === 'IMAGE',

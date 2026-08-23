@@ -84,6 +84,21 @@ export function FirstOrderPanel({
           />
         ) : null}
       </div>
+
+      {/* First-order optics describes a centered system: powers and separations
+          measured along one straight axis. A coordinate break bends or shifts
+          that axis, and these numbers are then those of the *unfolded*
+          equivalent — exactly right for a fold mirror, where the tilts cancel
+          and only the path length matters, and an approximation once an element
+          is genuinely tilted or decentered. Said plainly rather than left for a
+          reader to discover, because nothing in the numbers themselves shows it. */}
+      {!system.isCentered ? (
+        <p className="hint">
+          A coordinate break moves the axis, so these are the first-order properties of the{' '}
+          <strong>unfolded</strong> system. Distances are measured along the axis wherever it
+          points; positions in z are not where the surfaces actually are.
+        </p>
+      ) : null}
     </Panel>
   );
 }

@@ -19,6 +19,7 @@ import {
   setMirror,
   setStop,
   setSurfaceType,
+  updateCoordinateBreak,
   updateSurface,
   type EditableSurfaceType,
 } from '../lib/edits.ts';
@@ -26,6 +27,7 @@ import { quickFocus } from '../lib/focus.ts';
 import { formatLength, formatMicrons } from '../lib/format.ts';
 import { chain, type Result } from '../lib/result.ts';
 import { AsphericCoefficientsDialog, AsphericSummaryButton } from './AsphericCoefficients.tsx';
+import { CoordinateBreakDialog, CoordinateBreakSummaryButton } from './CoordinateBreakEditor.tsx';
 import { ErrorNote, Panel } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
@@ -54,6 +56,7 @@ export function LensDataEditor({
   const [status, setStatus] = useState<string | undefined>(undefined);
   /** Surface whose aspheric coefficients are open in the modal, if any. */
   const [asphereSurface, setAsphereSurface] = useState<number | undefined>(undefined);
+  const [breakSurface, setBreakSurface] = useState<number | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
   const [pointerInside, setPointerInside] = useState(false);
@@ -249,6 +252,7 @@ export function LensDataEditor({
               const isObject = surface.type === 'OBJECT';
               const isImage = surface.type === 'IMAGE';
               const isParaxial = surface.type === 'PARAXIAL';
+              const isBreak = surface.type === 'COORDINATE_BREAK';
               const isFixed = isObject || isImage;
               const modelParameters = modelGlassText(surface.material);
               // Zemax names the ends of the system and the stop rather than
@@ -311,6 +315,8 @@ export function LensDataEditor({
                   <td>
                     {isParaxial ? (
                       <EmptyCell reason="A paraxial surface is a plane; its power is its focal length." />
+                    ) : isBreak ? (
+                      <EmptyCell reason="A coordinate break has no shape; it moves the axis and bends nothing." />
                     ) : (
                       <NumericCell
                         value={surface.radius}
@@ -334,6 +340,8 @@ export function LensDataEditor({
                   <td>
                     {isParaxial ? (
                       <EmptyCell reason="A paraxial surface is a plane; it has no conic constant." />
+                    ) : isBreak ? (
+                      <EmptyCell reason="A coordinate break has no shape, so no conic constant." />
                     ) : (
                       <NumericCell
                         value={surface.conic}
@@ -344,8 +352,10 @@ export function LensDataEditor({
                     )}
                   </td>
 
-                  {/* Eight coefficients would be eight more columns; they open in
-                      a window instead, and the cell reports what is in there. */}
+                  {/* One column, two meanings — the same arrangement Zemax's
+                      parameter columns have, and for the same reason: what the
+                      numbers are depends on the surface type, and giving each
+                      type its own columns would leave most of them empty. */}
                   <td>
                     {surface.type === 'EVEN_ASPHERE' ? (
                       <AsphericSummaryButton
@@ -353,8 +363,14 @@ export function LensDataEditor({
                         surfaceLabel={label}
                         onOpen={() => setAsphereSurface(index)}
                       />
+                    ) : isBreak && surface.coordinateBreak !== undefined ? (
+                      <CoordinateBreakSummaryButton
+                        parameters={surface.coordinateBreak}
+                        surfaceLabel={label}
+                        onOpen={() => setBreakSurface(index)}
+                      />
                     ) : (
-                      <EmptyCell reason="Set the surface type to EVEN_ASPHERE to give it aspheric coefficients." />
+                      <EmptyCell reason="Set the surface type to EVEN_ASPHERE or COORDINATE_BREAK to give it parameters." />
                     )}
                   </td>
 
@@ -384,25 +400,34 @@ export function LensDataEditor({
                   </td>
 
                   <td>
-                    <MaterialCell
-                      material={surface.material}
-                      reflective={surface.reflective}
-                      ariaLabel={`Material after surface ${label}`}
-                      disabled={isImage || isParaxial}
-                      onCommit={(material) =>
-                        apply(
-                          surface.reflective
-                            ? // Leaving MIRROR: drop the reflection first, so the
-                              // new medium is applied to a refracting surface
-                              // rather than to one the model still calls a mirror.
-                              chain(setMirror(system, index, false), (next) =>
-                                updateSurface(next, index, { material }),
-                              )
-                            : updateSurface(system, index, { material }),
-                        )
-                      }
-                      onMirror={() => mirror(index)}
-                    />
+                    {/* Zemax writes "-" here for a break, because a break cannot
+                        be a boundary between two media: it carries whatever the
+                        surface before it did, and the model refuses anything
+                        else. Showing a blank editable cell would invite an edit
+                        that could only be rejected. */}
+                    {isBreak ? (
+                      <EmptyCell reason="A coordinate break carries the medium before it; it cannot be a boundary between two media." />
+                    ) : (
+                      <MaterialCell
+                        material={surface.material}
+                        reflective={surface.reflective}
+                        ariaLabel={`Material after surface ${label}`}
+                        disabled={isImage || isParaxial}
+                        onCommit={(material) =>
+                          apply(
+                            surface.reflective
+                              ? // Leaving MIRROR: drop the reflection first, so the
+                                // new medium is applied to a refracting surface
+                                // rather than to one the model still calls a mirror.
+                                chain(setMirror(system, index, false), (next) =>
+                                  updateSurface(next, index, { material }),
+                                )
+                              : updateSurface(system, index, { material }),
+                          )
+                        }
+                        onMirror={() => mirror(index)}
+                      />
+                    )}
                   </td>
 
                   {/* The parameters of a glass given by numbers rather than by
@@ -421,18 +446,22 @@ export function LensDataEditor({
                   </td>
 
                   <td>
-                    <NumericCell
-                      value={surface.semiDiameter}
-                      ariaLabel={`Semi-diameter of surface ${label}`}
-                      title="Clear aperture radius. 0 or blank means unapertured."
-                      onCommit={(next) =>
-                        apply(
-                          updateSurface(system, index, {
-                            semiDiameter: normalizeSemiDiameter(next),
-                          }),
-                        )
-                      }
-                    />
+                    {isBreak ? (
+                      <EmptyCell reason="A coordinate break meets no ray, so it has no clear aperture." />
+                    ) : (
+                      <NumericCell
+                        value={surface.semiDiameter}
+                        ariaLabel={`Semi-diameter of surface ${label}`}
+                        title="Clear aperture radius. 0 or blank means unapertured."
+                        onCommit={(next) =>
+                          apply(
+                            updateSurface(system, index, {
+                              semiDiameter: normalizeSemiDiameter(next),
+                            }),
+                          )
+                        }
+                      />
+                    )}
                   </td>
 
                   <td className="stop-cell">
@@ -497,6 +526,17 @@ export function LensDataEditor({
           onClose={() => setAsphereSurface(undefined)}
         />
       ) : null}
+
+      {breakSurface !== undefined &&
+      system.surfaceAt(breakSurface).coordinateBreak !== undefined ? (
+        <CoordinateBreakDialog
+          key={system.surfaceAt(breakSurface).id}
+          surfaceLabel={String(breakSurface)}
+          parameters={system.surfaceAt(breakSurface).coordinateBreak!}
+          onCommit={(changes) => apply(updateCoordinateBreak(system, breakSurface, changes))}
+          onClose={() => setBreakSurface(undefined)}
+        />
+      ) : null}
     </Panel>
   );
 }
@@ -506,6 +546,7 @@ const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = [
   'STANDARD',
   'EVEN_ASPHERE',
   'PARAXIAL',
+  'COORDINATE_BREAK',
 ];
 
 /**

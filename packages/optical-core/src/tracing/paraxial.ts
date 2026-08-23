@@ -27,6 +27,14 @@ export function surfacePower(surface: Surface, indexBefore: number, indexAfter: 
   if (surface.type === 'PARAXIAL') {
     return 1 / surface.focalLength!;
   }
+  if (surface.type === 'COORDINATE_BREAK') {
+    // A coordinate break has no shape and no glass boundary, so it has no power.
+    // Its thickness still separates the surfaces around it, which the recurrence
+    // picks up from the transfer step — the axis has been re-pointed, but the
+    // distance measured along it is the same, which is why a folded system has
+    // the focal length of its unfolded equivalent.
+    return 0;
+  }
   return (indexAfter - indexBefore) * surface.paraxialCurvature;
 }
 
@@ -225,12 +233,13 @@ export function paraxialProperties(
         : (objectIndex * 1) / (conjugateExit.indexAfter * conjugateExit.angleAfter);
   }
 
-  const lastVertexZ = system.vertexZAt(last);
+  const lastVertexZ = system.axialPositionAt(last);
   // The focal points, less one focal length each: F' = P' + EFL by definition,
   // and F = P − EFL. Both come out non-finite for an afocal system, which the
   // callers test for rather than being handed a plausible number.
   const rearPrincipalPlaneZ = lastVertexZ + backFocalDistance - effectiveFocalLength;
-  const frontPrincipalPlaneZ = system.vertexZAt(1) + frontFocalDistance + effectiveFocalLength;
+  const frontPrincipalPlaneZ =
+    system.axialPositionAt(1) + frontFocalDistance + effectiveFocalLength;
 
   return {
     wavelengthNm,
@@ -242,7 +251,7 @@ export function paraxialProperties(
     paraxialImageZ: lastVertexZ + imageDistance,
     frontPrincipalPlaneZ,
     rearPrincipalPlaneZ,
-    imageSurfaceZ: system.vertexZAt(system.surfaces.length - 1),
+    imageSurfaceZ: system.axialPositionAt(system.surfaces.length - 1),
     magnification,
     lastRefractingSurface: last,
   };
@@ -319,7 +328,7 @@ export function entrancePupil(
   }
   // Axis crossing in the reversed frame, converted back to a global z.
   const zeta = -axial.height / axial.slope;
-  const z = system.vertexZAt(1) - zeta;
+  const z = system.axialPositionAt(1) - zeta;
   const heightAtPupil = edge.height + edge.slope * zeta;
 
   return {
@@ -362,7 +371,8 @@ export function exitPupil(
   if (Math.abs(axial.slope) < PARAXIAL_EPSILON) {
     throw new RangeError('The exit pupil is at infinity (image-space telecentric).');
   }
-  const reference = stopIndex >= last ? system.vertexZAt(stopIndex) : system.vertexZAt(last);
+  const reference =
+    stopIndex >= last ? system.axialPositionAt(stopIndex) : system.axialPositionAt(last);
   const offset = -axial.height / axial.slope;
   const heightAtPupil = edge.height + edge.slope * offset;
 

@@ -53,6 +53,59 @@ Consequences worth knowing:
 - **Anything measuring one surface against the next has to measure along the light**, not along +Z. The crossed-element test in `lib/layout.ts` and `three-optics` takes a travel sign from `signedMediaIndices` for exactly this reason; without it every reflecting arm is reported as self-intersecting.
 
 
+
+**Coordinate breaks.** A `COORDINATE_BREAK` surface is not a surface: it has no shape, no glass, no
+aperture, and meets no ray. Its whole content is a change of frame for everything after it — the
+decenter and tilt that make a fold mirror, a tilted element, or a decentered group possible. The
+model refuses anything that would give it optical behavior (a radius, a conic, an aperture, a stop,
+a mirror flag), and refuses one that claims to change medium, for the same reason a mirror is
+refused: `trace.ts` walks back past breaks to find the medium a ray crossed, so a wrong value would
+be ignored by the trace and believed by everything else.
+
+The generalization that made this work is **`OpticalSystem` holding a chain of rigid frames rather
+than a list of z coordinates**. `poseAt(i)` is a `Transform3` (`geometry/transform3.ts` — a rotation
+matrix and a translation, inverse by transpose) taking a surface's local frame into global
+coordinates. The walk is two compositions per surface: a break re-points the frame, then the
+thickness advances along whatever axis the frame now has. A system with no breaks comes out as the
+plain running sum of thicknesses it always was, which is why nothing about centered systems changed.
+
+Two coordinates now differ, and confusing them is the easy mistake:
+
+- **`poseAt(i)` / `vertexZAt(i)` are where a surface really is.** Drawing wants these.
+- **`axialPositionAt(i)` is how far along the axis it is**, unfolded — the running sum of
+  thicknesses, blind to tilts. The first-order layer wants this, because *the paraxial properties of
+  a folded system are those of its unfolded equivalent*: a break has no power, and bending the axis
+  does not change the distance measured along it. `paraxial.ts` and `ray-generation.ts` use it.
+
+`OpticalSystem.isCentered` says which case a system is in, and the First Order panel says so on
+screen — first-order optics describes one straight axis, so on a folded system those numbers
+describe the unfolded equivalent. Exactly right for a fold mirror, where the tilts cancel; an
+approximation once an element is genuinely tilted.
+
+**Conventions, all verified against the manual and a real file** (`Short course/Archive/
+sc_newtonian3.zmx`, a Newtonian whose diagonal folds the beam out to the eyepiece):
+
+- Tilts are **degrees, right-handed about the positive axes**, relative to the previous surface's
+  frame. The order flag matters and both values are in the corpus: false (the file's `0`, 155 of
+  185 breaks) decenters first, then tilts about x, the *new* y, the *new* z — composing as
+  `Rx·Ry·Rz`. True reverses both halves, and is what lets one break exactly undo another by negating
+  all five numbers. There is a test on that round trip, because it is the property the whole
+  three-surface fold idiom rests on.
+- **Mirrors needed nothing added.** A fold is a break, a mirror, and a break; the thickness after
+  the mirror is negative exactly as it always was, and turns positive again after a second
+  reflection. The Newtonian above is written that way and imports with no coordinate machinery
+  beyond the frame chain.
+- **The clear aperture is radial about the surface's own axis**, not the global one — otherwise
+  decentering an element would vignette it by its own decenter.
+- The tracer `continue`s past a break, so it contributes no `Intersection`. A consumer counting
+  interactions will not see it, which is correct: nothing happened there.
+
+In the corpus, 54 files carry 185 breaks, all sequential. **Tilt about x dominates (105 of them)**,
+which is why the 2-D meridional view can draw these properly: a tilt about x keeps the fold in the
+y–z plane the view already is. Both layout views draw surfaces in their poses and skip breaks
+entirely; the 3-D view builds each lathe about the surface's own axis and carries it into place with
+a `Matrix4`, and declines to weld an element into one solid when a break sits between its two faces.
+
 - **tracing/** — `optics.ts` (`refract`/`reflect`/`angleOfIncidence`), `trace.ts` (`traceRay(system, ray) → RayTraceResult`), `ray-generation.ts` (turns the system's aperture + fields into rays: `generateRay`/`generateRayFan`/`generatePupilGrid`, plus `traceRays`), and `paraxial.ts` (`paraxialTrace`, `paraxialProperties` → EFL/BFD/FFD/image distance/magnification, `withImageAtParaxialFocus`).
 
 ### `zemax-io`
@@ -63,7 +116,7 @@ Reads `.zmx` files in two stages, so unknown tokens are never guessed at:
 - **`import.ts`** — `importZmx(textOrBytes, options)` maps a document onto `OpticalSystem`, returning `{system, warnings, glasses, ignoredTokens, document}`.
 - **`decode.ts`** — `decodeZmx(bytes)` handles UTF-16 (BOM or zero-byte sniffing) and UTF-8.
 
-Token semantics: `CURV` is curvature (invert for radius), `DISZ` is thickness (`INFINITY` allowed), `DIAM` is the **semi**-diameter (`0` = no aperture ⇒ `Infinity`), `GLAS` names the medium *after* the surface, `STOP` is a bare flag, `WAVM n λ w` is in **micrometers**, `PWAV` is 1-based, and `FTYP <fieldType> <telecentric> <nFields> <nWaves>` gives the counts that trim the padded `WAVM`/`XFLN`/`YFLN` lists. On a `TYPE PARAXIAL` surface `PARM 1` is the focal length and `PARM 2` is the OPD mode (which moves no ray, so it stays in `ignoredTokens`); any *other* `PARM` there is refused rather than guessed at. On a `TYPE EVENASPH` surface `PARM 1`–`PARM 8` are the aspheric coefficients, and **`PARM 1` is the coefficient on r², not r⁴** — Chapter 14 gives the sag as `α₁r² + α₂r⁴ + … + α₈r¹⁶` and maps the eight parameter columns straight onto α₁…α₈, so the series starts at the second power. Reading it as r⁴ would shift every term by one power, and the result would still trace and still look like a lens while being the wrong lens. Outside those two types `PARM`'s meaning is unverified, so it stays in `ignoredTokens`. `CONI` is the conic constant and is read onto the surface. `GLAS MIRROR` is not a glass at all: it makes the surface reflective and leaves the medium alone, so the reader takes that medium from the surface before — never stated in the file, and wrong as AIR for a mirror inside glass. `UNIT`'s first value spells meters `METER`; no file in the corpus writes `M`. Aperture tokens: `ENPD`/`FNUM`/`OBNA`/`FLOA`.
+Token semantics: `CURV` is curvature (invert for radius), `DISZ` is thickness (`INFINITY` allowed), `DIAM` is the **semi**-diameter (`0` = no aperture ⇒ `Infinity`), `GLAS` names the medium *after* the surface, `STOP` is a bare flag, `WAVM n λ w` is in **micrometers**, `PWAV` is 1-based, and `FTYP <fieldType> <telecentric> <nFields> <nWaves>` gives the counts that trim the padded `WAVM`/`XFLN`/`YFLN` lists. On a `TYPE PARAXIAL` surface `PARM 1` is the focal length and `PARM 2` is the OPD mode (which moves no ray, so it stays in `ignoredTokens`); any *other* `PARM` there is refused rather than guessed at. On a `TYPE EVENASPH` surface `PARM 1`–`PARM 8` are the aspheric coefficients, and **`PARM 1` is the coefficient on r², not r⁴** — Chapter 14 gives the sag as `α₁r² + α₂r⁴ + … + α₈r¹⁶` and maps the eight parameter columns straight onto α₁…α₈, so the series starts at the second power. Reading it as r⁴ would shift every term by one power, and the result would still trace and still look like a lens while being the wrong lens. On a `TYPE COORDBRK` surface `PARM 1`–`PARM 6` are decenter x, decenter y, tilt about x, y and z, and the order flag; `PARM 6` is a *flag*, so any non-zero value means "tilt first", and it is compared that way rather than tested against 1. Outside those three types `PARM`'s meaning is unverified, so it stays in `ignoredTokens`. `CONI` is the conic constant and is read onto the surface. A `COORDBRK` surface names no glass either, and `adoptMirrorMedia` gives it the medium before it for the same reason it does a mirror — Zemax shows "-" in that column to say a break cannot be a boundary between two media. `GLAS MIRROR` is not a glass at all: it makes the surface reflective and leaves the medium alone, so the reader takes that medium from the surface before — never stated in the file, and wrong as AIR for a mirror inside glass. `UNIT`'s first value spells meters `METER`; no file in the corpus writes `M`. Aperture tokens: `ENPD`/`FNUM`/`OBNA`/`FLOA`.
 
 The format has **no *current* public specification** (dropped from the Zemax help system ~2005), but a pre-2005 one survives: **Chapter 29 of the 2000 Zemax manual** in `SupportingMaterial/` (gitignored) is a full keyword table, and Chapter 14 gives the per-surface-type `PARM` column meanings. Its argument *orders* still match all 471 OpticStudio sample files; it predates later additions, so it is stale on argument *counts* (`WAVM`, the extended `FTYP`/`UNIT`). Check it before inferring a token's meaning — and note that several tokens lead with a placeholder, so `firstValue()` is only correct for single-argument records (`RAIM`'s first value is a dead `tol` field, not the aiming mode). Beyond what it covers, the rule stands: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modeled (surface types outside `STANDARD`/`PARAXIAL`/`EVENASPH`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
 
@@ -104,6 +157,7 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
 - **Neither palette relies on hue alone.** F-blue/d-green/C-red sits in the 6–8 ΔE band under protanopia, so the plots also carry dash patterns and marker shapes. The six field hues are steps from the same validated ramps, in a fixed order chosen so the first three — which cover all but a handful of real designs — are also the three that clear 3:1 on the light surface, and so the two hues the first-order overlay uses come last. A design with more fields than hues shares one neutral rather than repeating a color, which would say two fields are the same thing. Both legends are always present once there is more than one series.
 - **A field's color follows its index in the system, never its position among the fields being drawn.** Otherwise unchecking one in the Display column repaints all the others.
 - **A mirror is typed where the glass goes**, as `MIRROR` in the Material column — Zemax's own spelling, and the natural place, since the column answers "what happens here". `setMirror` moves two things at once: the medium becomes the medium before the surface (the model refuses anything else), and the thickness changes sign, because otherwise the rest of the design sits where no light goes and every ray comes back `MISSED`. Only that one thickness is flipped, and the editor says so in the status line rather than doing a second, untyped edit silently.
+- **The parameter column has one meaning per surface type**, which is Zemax's own arrangement and for the same reason: an `EVEN_ASPHERE` opens its eight coefficients there, a `COORDINATE_BREAK` its decenters and tilts, and giving each type its own columns would leave most of them empty on every row. A break also blanks the cells it cannot carry — radius, conic, semi-diameter, and the Material column, which shows "-" because a break takes the medium before it and an editable blank would only invite a rejected edit.
 - **A surface's shape is two columns and a window.** Radius and conic sit side by side, because together they are the shape: the radius is where it starts, the conic is how it departs from a sphere. The eight aspheric coefficients would be eight more columns, pushing radius, thickness and glass off the side of the screen for numbers that are set once and then optimized — so the table keeps one cell summarizing the series and the terms live in a `<dialog>` (`AsphericCoefficients.tsx`). `showModal()` is what makes it modal; the `open` attribute gives no focus trap, no backdrop, and no Escape. Editing there is live, exactly like a table cell, so the layout and plots follow along behind the open dialog.
 - Plots are hand-drawn SVG (`lib/plot.ts` has the scale and tick helpers); there is no charting dependency.
 - **Which fields the layout draws is a view setting, not part of the design.** The Display checkboxes in the Source panel live in `App` state, never on `OpticalSystem`: hiding a field to see past it must not land on the undo stack or be written back into a lens file. Hiding one costs its rays rather than just their visibility — `computeLayoutTraces`/`computeVolumeTraces` take the field list, so nothing is traced for a field that is not drawn. The flags are moved by `ListEditor` at the row that knows *which* row was removed, because reconciling two lists by length afterwards silently re-points them at their neighbours; `App` then pads with "visible" as a safety net for systems arriving from a file, an undo, or Reset. Only the layout is affected — the ray-fan and spot panels have their own field selector.
@@ -146,8 +200,9 @@ PSF are all wanted, and non-sequential tracing is wanted eventually. What follow
 state*, not a fence.
 
 Implemented today: plane, spherical, conic and even-aspheric surfaces, Snell refraction, mirrors
-(traced, paraxially analyzed, and drawn), sequential tracing, and first-order/paraxial analysis.
-Surface types are `OBJECT`/`STANDARD`/`EVEN_ASPHERE`/`PARAXIAL`/`IMAGE`, with reflection a flag on
+(traced, paraxially analyzed, and drawn), **coordinate breaks**, sequential tracing, and
+first-order/paraxial analysis. Surface types are
+`OBJECT`/`STANDARD`/`EVEN_ASPHERE`/`PARAXIAL`/`COORDINATE_BREAK`/`IMAGE`, with reflection a flag on
 a surface rather than a type of its own.
 
 The discipline is **completeness, not restraint**: a capability lands modeled, traced, *paraxially

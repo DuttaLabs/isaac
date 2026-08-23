@@ -269,7 +269,7 @@ test('geometry the core cannot model is rejected rather than approximated', () =
       importDoublet(
         DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE TOROIDAL\n  CURV 1.07'),
       ),
-    /only STANDARD, PARAXIAL, EVENASPH surfaces/,
+    /only STANDARD, PARAXIAL, EVENASPH, COORDBRK surfaces/,
   );
   assert.throws(
     () => importDoublet('MODE SEQ\nSURF 0\n  DISZ 0\n'),
@@ -413,4 +413,127 @@ test('UNIT METER is meters, which is how the corpus spells it', () => {
   const warned = importDoublet(DOUBLET.replace('UNIT MM', 'UNIT FURLONG'));
   assert.equal(warned.system.units, 'mm');
   assert.ok(warned.warnings.some((warning) => /FURLONG/.test(warning)));
+});
+
+/**
+ * The fold-mirror idiom as OpticStudio's own samples write it, taken from
+ * `Archive/sc_newtonian3.zmx`: a primary, then a pair of −45° breaks around the
+ * diagonal. Note `DISZ -700` after the primary and `DISZ 100` after the second
+ * break — the thickness turns negative in mirror space and positive again after
+ * the second reflection, exactly as it does without any breaks at all.
+ */
+const NEWTONIAN = `MODE SEQ
+NAME NEWTONIAN
+UNIT MM X W X CM MR CPMM
+ENPD 100
+FTYP 0 0 1 1 0 0 0
+XFLN 0
+YFLN 0
+WAVM 1 5.875618E-1 1
+PWAV 1
+SURF 0
+  TYPE STANDARD
+  CURV 0.0
+  DISZ INFINITY
+SURF 1
+  TYPE STANDARD
+  CURV 0.0
+  DISZ 800
+  DIAM 60
+SURF 2
+  TYPE STANDARD
+  CURV -6.25E-4
+  DISZ -700
+  GLAS MIRROR 0 0 1.5 40
+  DIAM 60
+SURF 3
+  TYPE COORDBRK
+  CURV 0.0
+  DISZ 0
+  PARM 1 0
+  PARM 2 0
+  PARM 3 -45
+  PARM 4 0
+  PARM 5 0
+  PARM 6 0
+SURF 4
+  TYPE STANDARD
+  CURV 0.0
+  DISZ 0
+  GLAS MIRROR 0 0 1.5 40
+  DIAM 40
+SURF 5
+  TYPE COORDBRK
+  CURV 0.0
+  DISZ 100
+  PARM 1 0
+  PARM 2 0
+  PARM 3 -45
+  PARM 4 0
+  PARM 5 0
+  PARM 6 0
+SURF 6
+  TYPE STANDARD
+  CURV 0.0
+  DISZ 0
+  DIAM 60
+`;
+
+test('a coordinate break reads its decenters, tilts and order flag', () => {
+  const { system } = importZmx(NEWTONIAN, { resolveMaterial });
+
+  const first = system.surfaceAt(3);
+  assert.equal(first.type, 'COORDINATE_BREAK');
+  assert.deepEqual(first.coordinateBreak, {
+    decenterX: 0,
+    decenterY: 0,
+    tiltXDeg: -45,
+    tiltYDeg: 0,
+    tiltZDeg: 0,
+    tiltFirst: false,
+  });
+  assert.equal(first.thickness, 0);
+  assert.equal(system.surfaceAt(5).thickness, 100);
+
+  // A break names no glass, so it takes the medium of the surface before it —
+  // the same rule as a mirror, and the model refuses anything else.
+  assert.equal(first.material.name, system.surfaceAt(2).material.name);
+});
+
+test('an imported fold puts the image beside the tube, not beyond it', () => {
+  const { system } = importZmx(NEWTONIAN, { resolveMaterial });
+  assert.equal(system.isCentered, false);
+
+  // Two −45° tilts turn the axis through a right angle: the image plane sits
+  // 100 out along +y from the diagonal, which is itself 100 along z.
+  const image = system.poseAt(system.surfaces.length - 1);
+  assert.ok(Math.abs(image.origin.z - 100) < 1e-9, `image z ${image.origin.z}`);
+  assert.ok(Math.abs(image.origin.y - 100) < 1e-9, `image y ${image.origin.y}`);
+
+  // The unfolded axial coordinate is untouched by the bend, which is why the
+  // first-order data of a folded system is that of its unfolded equivalent.
+  assert.equal(system.axialPositionAt(6), 200);
+});
+
+test('a coordinate break is refused where it could not mean anything', () => {
+  // PARM 7 has no meaning on a COORDBRK; the six columns carry all of it.
+  assert.throws(
+    () =>
+      importZmx(
+        NEWTONIAN.replace(
+          '  PARM 1 0\n  PARM 2 0\n  PARM 3 -45',
+          '  PARM 7 1\n  PARM 2 0\n  PARM 3 -45',
+        ),
+        { resolveMaterial },
+      ),
+    /unrecognized PARM 7/,
+  );
+  // And the object surface can never be one — the manual says so outright.
+  assert.throws(
+    () =>
+      importZmx(NEWTONIAN.replace('SURF 0\n  TYPE STANDARD', 'SURF 0\n  TYPE COORDBRK'), {
+        resolveMaterial,
+      }),
+    /is TYPE COORDBRK but is the object surface/,
+  );
 });

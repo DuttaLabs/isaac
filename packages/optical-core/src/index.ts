@@ -1,6 +1,7 @@
 // Geometry primitives
 export { Vector3 } from './geometry/vector3.ts';
 export { Point3 } from './geometry/point3.ts';
+export { Transform3 } from './geometry/transform3.ts';
 export {
   intersectSurface,
   intersectSphericalSurface,
@@ -40,7 +41,7 @@ export type {
   ModelGlassOptions,
 } from './model/material.ts';
 export { Surface, ASPHERIC_SURFACE_TYPES, STOP_CAPABLE_SURFACE_TYPES } from './model/surface.ts';
-export type { SurfaceConfig, SurfaceType } from './model/surface.ts';
+export type { SurfaceConfig, SurfaceType, CoordinateBreak } from './model/surface.ts';
 export { OpticalSystem } from './model/optical-system.ts';
 export type {
   OpticalSystemConfig,

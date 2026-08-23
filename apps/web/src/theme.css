@@ -376,6 +376,49 @@ label {
   justify-self: start;
 }
 
+/* A fixed Display column so the checkboxes line up under their heading. Each row
+   is its own grid, so an `auto` column would be as wide as its own contents and
+   the header would sit off to one side of the boxes below it. */
+.list-row.with-display {
+  grid-template-columns: minmax(0, 110px) 52px auto;
+}
+
+.list-row.with-display > .display-check {
+  justify-self: center;
+}
+
+.list-head {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.list-head > span {
+  text-align: center;
+}
+
+/* Removing an entry is the one irreversible-looking thing on this panel, so the
+   button is sized to the glyph rather than stretched across its grid cell —
+   which is what it did by default, leaving a wide invisible target next to
+   fields people are only trying to edit. Red says what it does. */
+button.subtle.remove-entry {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--danger);
+}
+
+button.subtle.remove-entry:hover:not(:disabled) {
+  background: var(--danger-surface);
+  color: var(--danger);
+}
+
 .list-row > input.numeric {
   width: 100%;
 }

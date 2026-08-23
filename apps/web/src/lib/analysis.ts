@@ -88,14 +88,17 @@ export interface FirstOrderRays {
  * first-order optics has no color in it. Drawing one per wavelength would add
  * three near-identical rays that say nothing the ray fan does not already say.
  */
-export function computeFirstOrderRays(system: OpticalSystem): Result<FirstOrderRays> {
+export function computeFirstOrderRays(
+  system: OpticalSystem,
+  fieldIndices?: readonly number[],
+): Result<FirstOrderRays> {
   return attempt(() => {
     const wavelengthNm = system.primaryWavelengthNm;
-    const outer = outermostFieldIndex(system);
+    const [inner, outer] = fieldExtremes(system, fieldIndices);
     return {
       marginal: traceRay(
         system,
-        generateMarginalRay(system, { field: fieldOption(system, 0), wavelengthNm }),
+        generateMarginalRay(system, { field: fieldOption(system, inner), wavelengthNm }),
       ),
       chief: traceRay(
         system,
@@ -107,20 +110,40 @@ export function computeFirstOrderRays(system: OpticalSystem): Result<FirstOrderR
 }
 
 /**
- * The field furthest off axis. Field lists are usually written in order, but
- * nothing enforces that, so the largest is found rather than assumed last.
+ * The innermost and outermost of the fields on offer, for the marginal and chief
+ * rays respectively.
+ *
+ * Field lists are usually written in order, but nothing enforces that, so both
+ * are found rather than assumed to be first and last. `fieldIndices` narrows the
+ * search to the fields currently being drawn: a construction ray belonging to a
+ * field the user has switched off would be the one ray on screen with nothing to
+ * belong to.
  */
-function outermostFieldIndex(system: OpticalSystem): number {
-  let best = 0;
+function fieldExtremes(
+  system: OpticalSystem,
+  fieldIndices: readonly number[] | undefined,
+): [inner: number, outer: number] {
+  const candidates = fieldIndices ?? system.fields.map((_, index) => index);
+  let inner = 0;
+  let outer = 0;
+  let smallest = Infinity;
   let largest = -Infinity;
-  for (const [index, field] of system.fields.entries()) {
+  for (const index of candidates) {
+    const field = system.fields[index];
+    if (field === undefined) {
+      continue;
+    }
     const magnitude = Math.abs(field.angleDeg ?? field.objectHeight ?? 0);
+    if (magnitude < smallest) {
+      smallest = magnitude;
+      inner = index;
+    }
     if (magnitude > largest) {
       largest = magnitude;
-      best = index;
+      outer = index;
     }
   }
-  return best;
+  return [inner, outer];
 }
 
 function describeField(field: Field | undefined): string {
@@ -136,6 +159,14 @@ function describeField(field: Field | undefined): string {
   return 'on axis';
 }
 
+/**
+ * Every field a system has, as indices. A system with no field list still draws
+ * one bundle — the on-axis one — so the count is never zero.
+ */
+export function allFieldIndices(system: OpticalSystem): number[] {
+  return Array.from({ length: Math.max(system.fields.length, 1) }, (_, index) => index);
+}
+
 export interface LayoutTrace {
   result: RayTraceResult;
   wavelengthIndex: number;
@@ -145,13 +176,17 @@ export interface LayoutTrace {
 /** Traces a fan per field for the layout drawing. */
 export function computeLayoutTraces(
   system: OpticalSystem,
-  options: { raysPerFan: number; wavelengthIndices: readonly number[] },
+  options: {
+    raysPerFan: number;
+    wavelengthIndices: readonly number[];
+    /** Fields to draw. Omitted means all of them. */
+    fieldIndices?: readonly number[];
+  },
 ): Result<LayoutTrace[]> {
   return attempt(() => {
     const traces: LayoutTrace[] = [];
-    const fieldCount = Math.max(system.fields.length, 1);
 
-    for (let fieldIndex = 0; fieldIndex < fieldCount; fieldIndex += 1) {
+    for (const fieldIndex of options.fieldIndices ?? allFieldIndices(system)) {
       for (const wavelengthIndex of options.wavelengthIndices) {
         const wavelengthNm = system.wavelengthsNm[wavelengthIndex];
         if (wavelengthNm === undefined) {
@@ -182,13 +217,17 @@ export function computeLayoutTraces(
  */
 export function computeVolumeTraces(
   system: OpticalSystem,
-  options: { gridCount: number; wavelengthIndices: readonly number[] },
+  options: {
+    gridCount: number;
+    wavelengthIndices: readonly number[];
+    /** Fields to draw. Omitted means all of them. */
+    fieldIndices?: readonly number[];
+  },
 ): Result<LayoutTrace[]> {
   return attempt(() => {
     const traces: LayoutTrace[] = [];
-    const fieldCount = Math.max(system.fields.length, 1);
 
-    for (let fieldIndex = 0; fieldIndex < fieldCount; fieldIndex += 1) {
+    for (const fieldIndex of options.fieldIndices ?? allFieldIndices(system)) {
       for (const wavelengthIndex of options.wavelengthIndices) {
         const wavelengthNm = system.wavelengthsNm[wavelengthIndex];
         if (wavelengthNm === undefined) {

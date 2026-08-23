@@ -8,6 +8,7 @@ import {
   computeRayFan,
   computeSpot,
   computeVolumeTraces,
+  allFieldIndices,
   type FirstOrder,
   type FirstOrderRays,
 } from './lib/analysis.ts';
@@ -55,6 +56,12 @@ export function App() {
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [showFirstOrder, setShowFirstOrder] = useState(false);
+  /**
+   * Which fields the layout draws. A view setting, not part of the design, so it
+   * is kept here rather than on `OpticalSystem`: switching a field off to see
+   * past it must not land on the undo stack or be written into a lens file.
+   */
+  const [fieldVisibility, setFieldVisibility] = useState<boolean[]>([]);
   const [allWavelengths, setAllWavelengths] = useState(false);
   const [view, setView] = useState<'2d' | '3d'>('2d');
   /** Bumped by the reset button; both views watch it and nothing else does. */
@@ -98,9 +105,23 @@ export function App() {
     [allWavelengths, system],
   );
 
+  // Padded rather than required to match: a system arriving from a file, an
+  // undo, or the reset button brings its own field list, and anything the flags
+  // do not cover is drawn. Removing a field keeps the flags in step at the row
+  // that knows which one went; this only has to be safe, not clever.
+  const visibleFieldIndices = useMemo(
+    () => allFieldIndices(system).filter((index) => fieldVisibility[index] ?? true),
+    [system, fieldVisibility],
+  );
+
   const layout = useMemo(
-    () => computeLayoutTraces(system, { raysPerFan, wavelengthIndices }),
-    [system, raysPerFan, wavelengthIndices],
+    () =>
+      computeLayoutTraces(system, {
+        raysPerFan,
+        wavelengthIndices,
+        fieldIndices: visibleFieldIndices,
+      }),
+    [system, raysPerFan, wavelengthIndices, visibleFieldIndices],
   );
 
   // The first-order construction: the two rays it is built from, plus the two
@@ -109,11 +130,17 @@ export function App() {
   // fail on its own (no aperture, a telecentric pupil) without touching the
   // ray bundle beside it.
   const firstOrderRays = useMemo(
-    () => (showFirstOrder ? computeFirstOrderRays(system) : undefined),
-    [showFirstOrder, system],
+    () =>
+      showFirstOrder && visibleFieldIndices.length > 0
+        ? computeFirstOrderRays(system, visibleFieldIndices)
+        : undefined,
+    [showFirstOrder, system, visibleFieldIndices],
   );
+  // With every field switched off there is nothing for a construction ray to
+  // belong to, so the overlay goes with them rather than quietly falling back to
+  // a field that is not being drawn.
   const firstOrderOverlay =
-    showFirstOrder && view === '2d'
+    showFirstOrder && view === '2d' && visibleFieldIndices.length > 0
       ? buildFirstOrderOverlay(firstOrder, firstOrderRays)
       : undefined;
 
@@ -126,10 +153,11 @@ export function App() {
       view === '3d'
         ? computeVolumeTraces(system, {
             gridCount: Math.max(3, Math.min(raysPerFan, 15)),
+            fieldIndices: visibleFieldIndices,
             wavelengthIndices,
           })
         : undefined,
-    [view, system, raysPerFan, wavelengthIndices],
+    [view, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
   );
   const fan = useMemo(() => computeRayFan(system, activeField, 21), [system, activeField]);
   const spot = useMemo(() => computeSpot(system, activeField, 15), [system, activeField]);
@@ -140,6 +168,9 @@ export function App() {
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
       pushSystem(result.system);
       setFieldIndex(0);
+      // A file brings its own field list, so flags set against the previous
+      // design mean nothing against this one. Everything starts visible.
+      setFieldVisibility([]);
       const { system: loaded, warnings, ignoredTokens } = result;
       setNotice({
         kind: 'info',
@@ -203,6 +234,7 @@ export function App() {
         <button
           onClick={() => {
             pushSystem(defaultSystem());
+            setFieldVisibility([]);
             setNotice(undefined);
           }}
         >
@@ -255,7 +287,12 @@ export function App() {
       <div className="workspace">
         <div className="column">
           <ErrorBoundary label="Source object">
-            <SourcePanel system={system} onChange={pushSystem} />
+            <SourcePanel
+              system={system}
+              onChange={pushSystem}
+              fieldVisibility={fieldVisibility}
+              onFieldVisibilityChange={setFieldVisibility}
+            />
           </ErrorBoundary>
           <ErrorBoundary label="Optical system">
             <LensDataEditor

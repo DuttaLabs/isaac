@@ -19,9 +19,19 @@ const APERTURE_LABELS: Record<ApertureType, string> = {
 export function SourcePanel({
   system,
   onChange,
+  fieldVisibility,
+  onFieldVisibilityChange,
 }: {
   system: OpticalSystem;
   onChange: (system: OpticalSystem) => void;
+  /**
+   * Which fields the layout draws, one flag per field. A *view* setting rather
+   * than part of the design, so it lives outside `OpticalSystem` — hiding a
+   * field to see past it should not land on the undo stack or be written back
+   * into a lens file.
+   */
+  fieldVisibility: readonly boolean[];
+  onFieldVisibilityChange: (next: boolean[]) => void;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -105,6 +115,8 @@ export function SourcePanel({
       <ListEditor
         label={atInfinity ? 'Field angles (°)' : 'Object heights'}
         values={system.fields.map((field) => field.angleDeg ?? field.objectHeight ?? 0)}
+        visible={system.fields.map((_, index) => fieldVisibility[index] ?? true)}
+        onVisibleChange={onFieldVisibilityChange}
         onChange={(values) =>
           apply(
             attempt(() =>
@@ -142,26 +154,59 @@ export function SourcePanel({
   );
 }
 
-/** A short editable list of numbers, optionally with one marked primary. */
+/**
+ * A short editable list of numbers, optionally with one marked primary and
+ * optionally with a per-row Display checkbox.
+ *
+ * Adding and removing a row moves the visibility flags with it, here, because
+ * this is the only place that knows *which* row went. Reconciling two lists by
+ * length afterwards would silently re-point the flags at their neighbours the
+ * moment a row is removed from the middle.
+ */
 function ListEditor({
   label,
   values,
   onChange,
   primaryIndex,
   onPrimaryChange,
+  visible,
+  onVisibleChange,
 }: {
   label: string;
   values: number[];
   onChange: (values: number[]) => void;
   primaryIndex?: number;
   onPrimaryChange?: (index: number) => void;
+  visible?: boolean[];
+  onVisibleChange?: (next: boolean[]) => void;
 }) {
+  const showDisplay = visible !== undefined && onVisibleChange !== undefined;
+  const rowClass = showDisplay ? 'list-row with-display' : 'list-row';
+
+  const remove = (index: number): void => {
+    onChange(values.filter((_, i) => i !== index));
+    onVisibleChange?.(visible!.filter((_, i) => i !== index));
+  };
+  const add = (): void => {
+    onChange([...values, values[values.length - 1] ?? 0]);
+    // A field you have just asked for is one you want to see.
+    onVisibleChange?.([...visible!, true]);
+  };
+
   return (
     <div className="field-row" style={{ alignItems: 'start' }}>
       <label>{label}</label>
       <div>
+        {showDisplay ? (
+          // The heading sits in the checkbox's own grid column, so an empty cell
+          // holds the value column open ahead of it.
+          <div className={`${rowClass} list-head`} aria-hidden="true">
+            <span />
+            <span>Display</span>
+          </div>
+        ) : null}
         {values.map((value, index) => (
-          <div className="list-row" key={index}>
+          <div className={rowClass} key={index}>
             {onPrimaryChange ? (
               <input
                 type="radio"
@@ -176,20 +221,32 @@ function ListEditor({
               ariaLabel={`${label} entry ${index + 1}`}
               onCommit={(next) => onChange(values.map((old, i) => (i === index ? next : old)))}
             />
+            {showDisplay ? (
+              <input
+                type="checkbox"
+                className="display-check"
+                checked={visible[index] ?? true}
+                aria-label={`Draw ${label} entry ${index + 1} in the layout`}
+                title="Draw this field in the layout. Unchecking it leaves the design untouched."
+                onChange={(event) =>
+                  onVisibleChange(
+                    visible.map((shown, i) => (i === index ? event.target.checked : shown)),
+                  )
+                }
+              />
+            ) : null}
             <button
-              className="subtle"
+              className="subtle remove-entry"
               aria-label={`Remove entry ${index + 1}`}
+              title={`Remove ${label} entry ${index + 1}`}
               disabled={values.length <= 1}
-              onClick={() => onChange(values.filter((_, i) => i !== index))}
+              onClick={() => remove(index)}
             >
               ×
             </button>
           </div>
         ))}
-        <button
-          className="subtle"
-          onClick={() => onChange([...values, values[values.length - 1] ?? 0])}
-        >
+        <button className="subtle" onClick={add}>
           + add
         </button>
       </div>

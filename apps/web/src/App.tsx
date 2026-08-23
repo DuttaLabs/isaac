@@ -3,20 +3,24 @@ import type { OpticalSystem } from '@isaac/optical-core';
 import { importZmx } from '@isaac/zemax-io';
 import {
   computeFirstOrder,
+  computeFirstOrderRays,
   computeLayoutTraces,
   computeRayFan,
   computeSpot,
   computeVolumeTraces,
+  type FirstOrder,
+  type FirstOrderRays,
 } from './lib/analysis.ts';
 import { defaultSystem } from './lib/default-system.ts';
 import { GLASS_CATALOG } from './lib/materials.ts';
 import { formatMicrons } from './lib/format.ts';
-import { describeError } from './lib/result.ts';
+import { describeError, type Result } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { ErrorNote, Panel } from './components/Panel.tsx';
 import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
 import { FullScreenButton } from './components/FullScreenButton.tsx';
-import { LayoutView } from './components/LayoutView.tsx';
+import { LayoutView, type FirstOrderOverlay } from './components/LayoutView.tsx';
+import { FirstOrderLegend } from './components/FirstOrderLegend.tsx';
 import { LensDataEditor } from './components/LensDataEditor.tsx';
 import { RayFanPlot } from './components/RayFanPlot.tsx';
 import { SourcePanel } from './components/SourcePanel.tsx';
@@ -50,6 +54,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>('light');
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
+  const [showFirstOrder, setShowFirstOrder] = useState(false);
   const [allWavelengths, setAllWavelengths] = useState(false);
   const [view, setView] = useState<'2d' | '3d'>('2d');
   /** Bumped by the reset button; both views watch it and nothing else does. */
@@ -97,6 +102,20 @@ export function App() {
     () => computeLayoutTraces(system, { raysPerFan, wavelengthIndices }),
     [system, raysPerFan, wavelengthIndices],
   );
+
+  // The first-order construction: the two rays it is built from, plus the two
+  // pupil planes, which the first-order summary has already solved. Computed
+  // only while it is on screen — it is a separate pair of traces, and it can
+  // fail on its own (no aperture, a telecentric pupil) without touching the
+  // ray bundle beside it.
+  const firstOrderRays = useMemo(
+    () => (showFirstOrder ? computeFirstOrderRays(system) : undefined),
+    [showFirstOrder, system],
+  );
+  const firstOrderOverlay =
+    showFirstOrder && view === '2d'
+      ? buildFirstOrderOverlay(firstOrder, firstOrderRays)
+      : undefined;
 
   // The 3-D view wants rays that fill the cone rather than a fan lying in one
   // plane, and it is the only thing that needs them, so they are not traced
@@ -279,6 +298,23 @@ export function App() {
                   />
                   all wavelengths
                 </label>
+                {/* Only offered on the cross-section: these are construction
+                    lines through the meridional plane, and the 3-D view does not
+                    draw them, so the control would otherwise promise something
+                    that does not happen. */}
+                {view === '2d' ? (
+                  <label
+                    className="inline hint"
+                    title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showFirstOrder}
+                      onChange={(event) => setShowFirstOrder(event.target.checked)}
+                    />
+                    first-order rays
+                  </label>
+                ) : null}
                 <button
                   title={
                     view === '2d'
@@ -316,6 +352,7 @@ export function App() {
                       defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                       highlightedSurface={highlightedSurface}
                       resetSignal={viewReset}
+                      firstOrder={firstOrderOverlay}
                     />
                   ) : volume?.ok ? (
                     <Suspense
@@ -341,6 +378,19 @@ export function App() {
                     </div>
                   )}
                   {allWavelengths ? <WavelengthLegend system={system} /> : null}
+                  {firstOrderOverlay ? (
+                    <FirstOrderLegend
+                      rays={firstOrderOverlay.rays}
+                      entrance={firstOrderOverlay.entrance}
+                      exit={firstOrderOverlay.exit}
+                      units={system.units}
+                    />
+                  ) : null}
+                  {showFirstOrder && view === '2d' && firstOrderRays?.ok === false ? (
+                    <p className="hint" style={{ padding: '0 12px 10px' }}>
+                      No first-order rays: {firstOrderRays.error}
+                    </p>
+                  ) : null}
                   <p className="hint view-hint">
                     {view === '2d'
                       ? 'Wheel zooms · drag pans'
@@ -408,4 +458,30 @@ export function App() {
       </div>
     </div>
   );
+}
+
+/**
+ * Gathers the first-order overlay from the two solves that feed it.
+ *
+ * The pupils are drawn at the radius the *beam* fills, not at the radius the
+ * stop image reports. Those agree in a design whose stop is sized to its
+ * aperture, and differ when it is not — and where they differ, the beam is the
+ * honest one to draw, because otherwise the marginal ray sits in the middle of
+ * the pupil it is supposed to define. The exit pupil is scaled by the same
+ * fraction, since it is the image of the same aperture.
+ */
+function buildFirstOrderOverlay(
+  firstOrder: Result<FirstOrder>,
+  rays: Result<FirstOrderRays> | undefined,
+): FirstOrderOverlay {
+  if (!firstOrder.ok) {
+    return { rays: undefined, entrance: undefined, exit: undefined };
+  }
+  const { entrance, exit, entrancePupilRadius: beamRadius } = firstOrder.value;
+  const fill = entrance && entrance.radius > 0 ? beamRadius / entrance.radius : 1;
+  return {
+    rays: rays?.ok ? rays.value : undefined,
+    entrance: entrance ? { z: entrance.z, radius: beamRadius } : undefined,
+    exit: exit ? { z: exit.z, radius: exit.radius * fill } : undefined,
+  };
 }

@@ -36,6 +36,9 @@
   --surface-highlight: #fcba05;
   --glass-stroke: #6f6d66;
   --mirror: #5f7180;
+  --marginal-ray: #c2410c;
+  --chief-ray: #7c3aed;
+  --pupil: #0f766e;
   --axis: #b5b4ac;
   --grid: #e4e3de;
   --stop-mark: #0b0b0b;
@@ -71,6 +74,9 @@
     --surface-highlight: #fcba05;
     --glass-stroke: #8e8c84;
     --mirror: #9fb4c4;
+    --marginal-ray: #fb923c;
+    --chief-ray: #b79bf7;
+    --pupil: #4fd1c5;
     --axis: #4e4d46;
     --grid: #2b2b29;
     --stop-mark: #ffffff;
@@ -103,6 +109,9 @@
   --surface-highlight: #fcba05;
   --glass-stroke: #8e8c84;
   --mirror: #9fb4c4;
+  --marginal-ray: #fb923c;
+  --chief-ray: #b79bf7;
+  --pupil: #4fd1c5;
   --axis: #4e4d46;
   --grid: #2b2b29;
   --stop-mark: #ffffff;
@@ -741,4 +750,55 @@ input.coefficient {
 
 .asphere-dialog footer button:last-child {
   margin-left: auto;
+}
+
+/* ---------- First-order overlay ---------- */
+
+/* The marginal and chief rays and the two pupil planes, drawn over the design
+   as construction lines. Deliberately outside the F/d/C wavelength palette, and
+   each carrying its own dash pattern, so none of the four depends on hue alone
+   to be told from the ray bundle underneath. */
+.first-order-ray {
+  stroke-width: 2;
+  fill: none;
+}
+
+.first-order-ray.marginal,
+.swatch-marginal line {
+  stroke: var(--marginal-ray);
+}
+
+.first-order-ray.chief,
+.swatch-chief line {
+  stroke: var(--chief-ray);
+}
+
+/* The marginal ray produced on to the pupil: the same ray, so the same color,
+   told apart from the traced part by being dashed rather than solid. */
+.pupil-aim path {
+  stroke: var(--marginal-ray);
+  stroke-width: 1.75;
+}
+
+.pupil-aim circle {
+  fill: var(--marginal-ray);
+}
+
+.pupil-plane line,
+.swatch-entrance line,
+.swatch-exit line {
+  stroke: var(--pupil);
+  stroke-width: 1.5;
+}
+
+.pupil-plane text {
+  fill: var(--pupil);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+/* The exit pupil is the same construction seen from the other side, so it is
+   the same color; the label and the tooltip carry which is which. */
+.pupil-plane.exit line {
+  opacity: 0.72;
 }

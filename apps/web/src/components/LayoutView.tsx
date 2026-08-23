@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
-import { buildLayout, toPath, type GlassBody, type LayoutPoint } from '../lib/layout.ts';
-import type { LayoutTrace } from '../lib/analysis.ts';
+import {
+  buildLayout,
+  pupilAim,
+  rayPath,
+  toPath,
+  type GlassBody,
+  type LayoutPoint,
+} from '../lib/layout.ts';
+import type { FirstOrderRays, LayoutTrace } from '../lib/analysis.ts';
+import type { RayTraceResult } from '@isaac/optical-core';
 import { wavelengthStyle } from '../lib/wavelengths.ts';
 
 const WIDTH = 900;
@@ -42,6 +50,7 @@ export function LayoutView({
   defaultSemiDiameter,
   highlightedSurface,
   resetSignal,
+  firstOrder,
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
@@ -51,6 +60,8 @@ export function LayoutView({
   highlightedSurface?: number;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
+  /** The first-order construction to draw over the design, when it is asked for. */
+  firstOrder?: FirstOrderOverlay;
 }) {
   const geometry = useMemo(
     () => buildLayout(system, traces, defaultSemiDiameter),
@@ -169,6 +180,15 @@ export function LayoutView({
           </path>
         );
       })}
+
+      {/*
+        The first-order construction, drawn last so it sits over the design it
+        describes. Two rays and two planes: everything first-order optics has to
+        say about a system is in where these four things are.
+      */}
+      {firstOrder ? (
+        <FirstOrderOverlayLayer overlay={firstOrder} project={project} zoom={view.width / WIDTH} />
+      ) : null}
 
       {/* Stop markers: short bars just outside the clear aperture. */}
       {geometry.profiles
@@ -323,4 +343,179 @@ function usePanZoom(resetSignal: number): {
   }, [view]);
 
   return { view, svg, panning };
+}
+
+/** Everything the first-order overlay draws, gathered by the panel that owns it. */
+export interface FirstOrderOverlay {
+  rays: FirstOrderRays | undefined;
+  entrance: PupilMark | undefined;
+  exit: PupilMark | undefined;
+}
+
+/**
+ * A pupil plane as it is drawn: where it is, and how wide the beam is there.
+ *
+ * The radius is the beam's, not the stop image's, and the two are not always the
+ * same number. `entrancePupil()` images the stop, so it reports how big the stop
+ * *is*; the system's aperture says how much of it the light is allowed to use.
+ * When a design declares a 20 mm entrance pupil on a stop that is 30 mm across,
+ * the light fills 20. Drawing 30 would put the marginal ray in the middle of its
+ * own pupil, which is exactly the thing the overlay is trying to make obvious.
+ */
+export interface PupilMark {
+  z: number;
+  radius: number;
+}
+
+/**
+ * The marginal ray, the chief ray, and the two pupil planes.
+ *
+ * Drawn as construction lines rather than as light: heavier than the ray bundle,
+ * in colors deliberately outside the F/d/C wavelength palette, and each with its
+ * own dash pattern so the four are told apart without relying on hue. The legend
+ * under the layout repeats every one of those cues.
+ *
+ * Nothing here changes the view's bounds. Ticking a checkbox should not rescale
+ * the drawing, and a pupil can be virtual and a long way outside the glass — the
+ * First Order panel gives its position as a number for exactly that case.
+ */
+function FirstOrderOverlayLayer({
+  overlay,
+  project,
+  zoom,
+}: {
+  overlay: FirstOrderOverlay;
+  project: (point: LayoutPoint) => { x: number; y: number };
+  /** Current viewBox scale, so labels keep one size on screen at any zoom. */
+  zoom: number;
+}) {
+  const { rays, entrance, exit } = overlay;
+  return (
+    <g className="first-order">
+      {entrance ? (
+        <PupilPlane mark={entrance} kind="entrance" project={project} zoom={zoom} />
+      ) : null}
+      {exit ? <PupilPlane mark={exit} kind="exit" project={project} zoom={zoom} /> : null}
+
+      {rays && entrance ? (
+        <PupilAim result={rays.marginal} pupilZ={entrance.z} project={project} zoom={zoom} />
+      ) : null}
+
+      {rays
+        ? (
+            [
+              { key: 'marginal', result: rays.marginal, dash: undefined },
+              { key: 'chief', result: rays.chief, dash: '7 4' },
+            ] as const
+          ).map(({ key, result, dash }) => (
+            <path
+              key={key}
+              className={`first-order-ray ${key}`}
+              d={toPath(rayPath(result), project)}
+              fill="none"
+              strokeDasharray={dash}
+              // A construction ray that never reached the image is still worth
+              // drawing — where it stopped is the answer to "why is this
+              // vignetted" — but it must not be mistaken for one that got there.
+              opacity={result.status === 'TERMINATED' ? 1 : 0.45}
+            >
+              <title>
+                {key === 'marginal'
+                  ? 'Marginal ray: from the axial object point through the rim of the pupil. It sets the F/# and where the image lies.'
+                  : `Chief ray: from the ${rays.chiefField} field through the center of the pupil. It sets the image height.`}
+              </title>
+            </path>
+          ))
+        : null}
+    </g>
+  );
+}
+
+/**
+ * A pupil plane: a bar spanning the pupil, with a tick turned out at each end so
+ * it reads as a measurement of the beam rather than as one more surface.
+ */
+function PupilPlane({
+  mark,
+  kind,
+  project,
+  zoom,
+}: {
+  mark: PupilMark;
+  kind: 'entrance' | 'exit';
+  project: (point: LayoutPoint) => { x: number; y: number };
+  zoom: number;
+}) {
+  const entrance = kind === 'entrance';
+  const top = project({ z: mark.z, y: mark.radius });
+  const bottom = project({ z: mark.z, y: -mark.radius });
+  const tick = 6 * zoom;
+
+  return (
+    <g className={`pupil-plane ${kind}`}>
+      <title>
+        {entrance
+          ? `Entrance pupil: the aperture stop as object space sees it, and the plane every ray is aimed at. Diameter ${(2 * mark.radius).toPrecision(4)}.`
+          : `Exit pupil: the aperture stop as image space sees it. The cone converging on the image appears to come from here. Diameter ${(2 * mark.radius).toPrecision(4)}.`}
+      </title>
+      <line x1={top.x} y1={top.y} x2={bottom.x} y2={bottom.y} strokeDasharray="3 3" />
+      {[top, bottom].map((end, index) => (
+        <line
+          key={index}
+          x1={end.x - tick}
+          y1={end.y}
+          x2={end.x + tick}
+          y2={end.y}
+          strokeDasharray="none"
+        />
+      ))}
+      {/* The two pupils are often within a millimetre of each other, so their
+          labels are put at opposite ends of the bar rather than side by side,
+          where they would overlap at any useful zoom. Font size is scaled
+          against the viewBox so a label keeps one size on screen. */}
+      <text
+        x={(entrance ? top.x : bottom.x) + tick + 2 * zoom}
+        y={entrance ? top.y - 4 * zoom : bottom.y + 11 * zoom}
+        fontSize={11 * zoom}
+      >
+        {entrance ? 'EP' : 'XP'}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * The marginal ray produced straight on to the entrance pupil, and a dot where
+ * it gets there. The geometry is {@link pupilAim}; this only draws it.
+ */
+function PupilAim({
+  result,
+  pupilZ,
+  project,
+  zoom,
+}: {
+  result: RayTraceResult;
+  pupilZ: number;
+  project: (point: LayoutPoint) => { x: number; y: number };
+  zoom: number;
+}) {
+  const aim = pupilAim(result, pupilZ);
+  if (aim === undefined) {
+    return null;
+  }
+  const dot = project(aim.atPupil);
+
+  return (
+    <g className="pupil-aim">
+      <title>
+        The marginal ray continued as it arrived, ignoring the refraction: it meets the entrance
+        pupil at the rim. That is the aperture object space sees, and it is what sets the range of
+        angles the system accepts.
+      </title>
+      {aim.produced ? (
+        <path d={toPath([aim.contact, aim.atPupil], project)} fill="none" strokeDasharray="3 3" />
+      ) : null}
+      <circle cx={dot.x} cy={dot.y} r={2.5 * zoom} />
+    </g>
+  );
 }

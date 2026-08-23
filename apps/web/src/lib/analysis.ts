@@ -3,6 +3,7 @@ import {
   entrancePupilRadius,
   exitPupil,
   generateChiefRay,
+  generateMarginalRay,
   generatePupilGrid,
   generateRay,
   generateRayFan,
@@ -54,6 +55,85 @@ export function computeFirstOrder(system: OpticalSystem): Result<FirstOrder> {
 function tryPupil(compute: () => Pupil): Pupil | undefined {
   const result = attempt(compute);
   return result.ok ? result.value : undefined;
+}
+
+/**
+ * The two rays first-order optics is built out of, traced for the layout to draw.
+ *
+ * Which two is not arbitrary, and it is the whole reason this is worth showing.
+ * The **marginal ray** leaves the *axial* object point and grazes the rim of the
+ * pupil: it is the ray that meets the aperture, so it fixes the F/#, the depth of
+ * focus, and where the image lies. The **chief ray** leaves the *outermost* field
+ * point and passes through the *center* of the pupil: it is the ray that meets
+ * the field, so it fixes the image height and the sizes every element has to be.
+ *
+ * Together they bound the beam — every other ray in the system is a combination
+ * of the two — and where each crosses the axis is a pupil or an image. That pair
+ * is the classical textbook figure, and it is why one ray is taken from the axis
+ * and the other from the edge of the field rather than both from every field.
+ */
+export interface FirstOrderRays {
+  /** Axial field, pupil rim. */
+  marginal: RayTraceResult;
+  /** Outermost field, pupil center. */
+  chief: RayTraceResult;
+  /** How the chief ray's field reads, for the legend: `5°` or `12 mm`. */
+  chiefField: string;
+}
+
+/**
+ * Traces the marginal and chief rays at the primary wavelength.
+ *
+ * Only the primary: these are construction lines for the first-order layout, and
+ * first-order optics has no color in it. Drawing one per wavelength would add
+ * three near-identical rays that say nothing the ray fan does not already say.
+ */
+export function computeFirstOrderRays(system: OpticalSystem): Result<FirstOrderRays> {
+  return attempt(() => {
+    const wavelengthNm = system.primaryWavelengthNm;
+    const outer = outermostFieldIndex(system);
+    return {
+      marginal: traceRay(
+        system,
+        generateMarginalRay(system, { field: fieldOption(system, 0), wavelengthNm }),
+      ),
+      chief: traceRay(
+        system,
+        generateChiefRay(system, { field: fieldOption(system, outer), wavelengthNm }),
+      ),
+      chiefField: describeField(system.fields[outer]),
+    };
+  });
+}
+
+/**
+ * The field furthest off axis. Field lists are usually written in order, but
+ * nothing enforces that, so the largest is found rather than assumed last.
+ */
+function outermostFieldIndex(system: OpticalSystem): number {
+  let best = 0;
+  let largest = -Infinity;
+  for (const [index, field] of system.fields.entries()) {
+    const magnitude = Math.abs(field.angleDeg ?? field.objectHeight ?? 0);
+    if (magnitude > largest) {
+      largest = magnitude;
+      best = index;
+    }
+  }
+  return best;
+}
+
+function describeField(field: Field | undefined): string {
+  if (field === undefined) {
+    return 'on axis';
+  }
+  if (field.angleDeg !== undefined) {
+    return `${Number(field.angleDeg.toFixed(4))}°`;
+  }
+  if (field.objectHeight !== undefined) {
+    return `${Number(field.objectHeight.toFixed(4))} height`;
+  }
+  return 'on axis';
 }
 
 export interface LayoutTrace {

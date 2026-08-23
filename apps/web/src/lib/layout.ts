@@ -189,16 +189,11 @@ export function buildLayout(
     });
   }
 
-  const rayPaths = traces.map(({ result, wavelengthIndex }) => {
-    const points: LayoutPoint[] = [{ z: result.inputRay.origin.z, y: result.inputRay.origin.y }];
-    for (const hit of result.intersections) {
-      points.push({ z: hit.point.z, y: hit.point.y });
-    }
-    if (result.status === 'BLOCKED') {
-      points.push({ z: result.finalRay.origin.z, y: result.finalRay.origin.y });
-    }
-    return { points, wavelengthIndex, blocked: result.status !== 'TERMINATED' };
-  });
+  const rayPaths = traces.map(({ result, wavelengthIndex }) => ({
+    points: rayPath(result),
+    wavelengthIndex,
+    blocked: result.status !== 'TERMINATED',
+  }));
 
   const allPoints = [
     ...profiles.flatMap((profile) => profile.points),
@@ -215,6 +210,60 @@ export function buildLayout(
     : { minZ: 0, maxZ: 1, minY: -fallbackHeight, maxY: fallbackHeight };
 
   return { profiles, bodies, rayPaths, bounds };
+}
+
+/**
+ * The polyline a traced ray draws: its launch point, every surface it met, and —
+ * when it was stopped by an aperture — the point it died at, which the
+ * intersection list does not contain.
+ *
+ * Shared with the first-order overlay so an annotation ray is drawn by exactly
+ * the same rule as the bundle it is drawn over.
+ */
+export function rayPath(result: RayTraceResult): LayoutPoint[] {
+  const points: LayoutPoint[] = [{ z: result.inputRay.origin.z, y: result.inputRay.origin.y }];
+  for (const hit of result.intersections) {
+    points.push({ z: hit.point.z, y: hit.point.y });
+  }
+  if (result.status === 'BLOCKED') {
+    points.push({ z: result.finalRay.origin.z, y: result.finalRay.origin.y });
+  }
+  return points;
+}
+
+/**
+ * Where the marginal ray would have gone had the first surface not bent it: the
+ * segment from its first contact with the glass, continued undeviated, to the
+ * entrance pupil plane.
+ *
+ * This is the construction that says what an entrance pupil *is*. The pupil is
+ * usually a virtual image of the stop, lying inside the glass or behind it, so
+ * no real ray ever passes through it — the ray refracts long before. What
+ * defines it is the incoming ray produced straight on: it meets the pupil plane
+ * at the pupil rim, and that is the aperture object space actually sees, which
+ * is what fixes the cone of angles the system will accept.
+ *
+ * Returns `undefined` for a ray that never reached a surface, or one running
+ * parallel to the pupil plane, neither of which has a crossing to draw.
+ */
+export function pupilAim(
+  result: RayTraceResult,
+  pupilZ: number,
+): { contact: LayoutPoint; atPupil: LayoutPoint; produced: boolean } | undefined {
+  const hit = result.intersections[0]?.point;
+  const direction = result.inputRay.direction;
+  if (hit === undefined || direction.z === 0) {
+    return undefined;
+  }
+  const distance = (pupilZ - hit.z) / direction.z;
+  return {
+    contact: { z: hit.z, y: hit.y },
+    atPupil: { z: pupilZ, y: hit.y + distance * direction.y },
+    // False when the pupil lies in front of the glass: the traced ray already
+    // passes through it, so there is nothing to produce and a dashed line would
+    // only be laid over the solid one.
+    produced: distance > 0,
+  };
 }
 
 /** Turns system-space points into an SVG path, using a caller-supplied mapping. */

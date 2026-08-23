@@ -4,11 +4,20 @@
  *   npm run regenerate-renames --workspace @isaac/glass-catalog -- <path to .AGF>
  *
  * SCHOTT's catalog still lists the names it has retired, and gives each one a
- * dispersion fit. Where that fit is identical to a glass already in
- * `src/schott.ts`, the two names are the same glass and the old one is an alias
- * — which is what this script extracts. **Only the name pairs are emitted**; no
- * coefficients are copied out of the AGF, so the generated file carries no
- * manufacturer data, just the mapping between two spellings of one glass.
+ * dispersion fit. Where that fit matches a glass already in `src/schott.ts`, the
+ * old name can be resolved to the current one — which is what this script
+ * extracts. **Only the name pairs are emitted**; no coefficients are copied out
+ * of the AGF, so the generated file carries no manufacturer data, just the
+ * mapping between the two names.
+ *
+ * Two different things end up in that table, and the difference is worth
+ * knowing. About half the pairs carry *bit-identical* coefficients — SCHOTT
+ * publishes one fit under both names, so the alias loses nothing. The rest are
+ * separate fits that agree to `TOLERANCE` across the visible but diverge
+ * outside it, by as much as 4e-3 at the edges of the published range. For those
+ * the alias is exact where Isaac's default wavelengths lie and approximate in
+ * the UV and near IR, and it also hands the retired name the *current* glass's
+ * published range rather than its own.
  *
  * A name is only emitted when two independent signals agree, because the
  * catalog holds genuine near-duplicates — `N-BK7` and `N-BK7HT` have the same
@@ -199,17 +208,20 @@ function renderModule(
 //
 // Source: ${title}
 //
-// Names SCHOTT has retired, each paired with the glass in \`schott.ts\` that
-// carries the same dispersion. The pairing is not a guess from the spelling: it
-// was verified by comparing SCHOTT's published fit for the old name against the
+// Names SCHOTT has retired, each paired with the glass in \`schott.ts\` whose
+// dispersion matches. The pairing is not a guess from the spelling: it was
+// verified by comparing SCHOTT's published fit for the old name against the
 // modern glass, and only pairs agreeing to better than ${TOLERANCE.toExponential(0)} across
 // 450–650 nm are here. Where more than one modern glass is that close — the
 // catalog has real near-duplicates, such as N-BK7 and N-BK7HT — the pair is
 // only kept when SCHOTT's own renaming rule picks the same one.
 //
-// These are therefore *aliases*, not substitutions: the same glass under two
-// names, traced identically. A genuinely different replacement glass does not
-// belong here — see GlassCatalogOptions.allowLegacyNames for those.
+// These are *aliases*, not substitutions: resolving one is exact across the
+// visible, where a substitution guessed from the spelling can be a different
+// glass entirely — see GlassCatalogOptions.allowLegacyNames. But note that only
+// about half the pairs carry bit-identical coefficients; for the rest SCHOTT
+// publishes two fits that agree in the visible and drift by up to 4e-3 at the
+// edges of the published range, so the alias is not exact outside 450–650 nm.
 
 /** ${renames.length} retired SCHOTT names, each with the current name for the same glass. */
 export const SCHOTT_RENAMES: ReadonlyArray<readonly [legacy: string, current: string]> = [

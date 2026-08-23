@@ -11,10 +11,14 @@ export interface GlassLookup {
   substitutedFor?: string;
   /**
    * Set when the requested name is one SCHOTT has retired in favour of another
-   * name for the *same* glass — `BAFN10` for `N-BAF10`. Unlike
-   * {@link substitutedFor} this is not an approximation: the dispersion is the
-   * one the requested name has always had, so the trace is unaffected and only
-   * the reported name differs.
+   * name for the same glass — `BAFN10` for `N-BAF10`. Unlike
+   * {@link substitutedFor} this is not a guess from the spelling: the pairing
+   * was verified against SCHOTT's own published fit for the retired name, and
+   * across the visible the two agree to better than 5e-5. About half the pairs
+   * are bit-identical fits; for the others SCHOTT publishes two fits that agree
+   * in the visible and drift by up to 4e-3 at the far ends of the published
+   * range, so treat this as exact where Isaac's wavelengths lie and approximate
+   * in the UV and near IR.
    */
   renamedFrom?: string;
 }
@@ -110,8 +114,9 @@ export class GlassCatalog {
     }
 
     // A retired name for a glass that is still in the catalog under a current
-    // name. Needs no opt-in: the dispersion was verified identical, so this
-    // resolves the same glass rather than approximating it with another.
+    // name. Needs no opt-in: the dispersion was checked against SCHOTT's own fit
+    // for the retired name, so this resolves the glass the name meant rather
+    // than guessing at one from the spelling.
     const current = this.renames.get(normalizeGlassName(name));
     const renamed = current === undefined ? undefined : this.byNormalizedName.get(current);
     if (renamed) {

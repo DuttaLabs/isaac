@@ -3,17 +3,20 @@
 //
 // Source: SCHOTT June 2025 preferred, inquiry, AR glasses
 //
-// Names SCHOTT has retired, each paired with the glass in `schott.ts` that
-// carries the same dispersion. The pairing is not a guess from the spelling: it
-// was verified by comparing SCHOTT's published fit for the old name against the
+// Names SCHOTT has retired, each paired with the glass in `schott.ts` whose
+// dispersion matches. The pairing is not a guess from the spelling: it was
+// verified by comparing SCHOTT's published fit for the old name against the
 // modern glass, and only pairs agreeing to better than 5e-5 across
 // 450–650 nm are here. Where more than one modern glass is that close — the
 // catalog has real near-duplicates, such as N-BK7 and N-BK7HT — the pair is
 // only kept when SCHOTT's own renaming rule picks the same one.
 //
-// These are therefore *aliases*, not substitutions: the same glass under two
-// names, traced identically. A genuinely different replacement glass does not
-// belong here — see GlassCatalogOptions.allowLegacyNames for those.
+// These are *aliases*, not substitutions: resolving one is exact across the
+// visible, where a substitution guessed from the spelling can be a different
+// glass entirely — see GlassCatalogOptions.allowLegacyNames. But note that only
+// about half the pairs carry bit-identical coefficients; for the rest SCHOTT
+// publishes two fits that agree in the visible and drift by up to 4e-3 at the
+// edges of the published range, so the alias is not exact outside 450–650 nm.
 
 /** 50 retired SCHOTT names, each with the current name for the same glass. */
 export const SCHOTT_RENAMES: ReadonlyArray<readonly [legacy: string, current: string]> = [

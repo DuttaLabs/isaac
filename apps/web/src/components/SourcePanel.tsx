@@ -264,15 +264,16 @@ function ListEditor({
             </button>
           </div>
         ))}
-        <div className="list-actions">
+        <div className={cycle ? 'list-actions with-display' : 'list-actions'}>
           <button className="subtle" onClick={add}>
             + add
           </button>
           {/* Only the fields list offers this, and only once there are two
-              checked to alternate between. */}
+              checked to alternate between. It sits under the Display column,
+              because that column is what it drives. */}
           {cycle ? (
             <button
-              className={cycle.active ? 'subtle cycling' : 'subtle'}
+              className={cycle.active ? 'cycle-fields cycling' : 'cycle-fields'}
               // Never disabled while running: cycling leaves one field checked,
               // so the condition that allows starting is false by the time the
               // button's job is to stop.
@@ -285,7 +286,11 @@ function ListEditor({
               }
               onClick={cycle.onToggle}
             >
-              {cycle.active ? 'Stop cycling' : 'Cycle fields'}
+              {/* Two lines so the button stays narrow enough to sit in the
+                  checkbox column. Its width is fixed in the stylesheet, so it
+                  does not resize as the label changes. */}
+              <span>{cycle.active ? 'Stop' : 'Cycle'}</span>
+              <span>{cycle.active ? 'cycling' : 'fields'}</span>
             </button>
           ) : null}
         </div>

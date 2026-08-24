@@ -4,14 +4,18 @@ import { fieldStyle, FIELD_COLOR_VARIABLES } from '../lib/fields.ts';
 /**
  * Names the field each color in the layout belongs to.
  *
- * Always on screen once more than one field is drawn: the hues are validated
- * apart, but two of the six sit in the band where colorblind separation is only
- * good enough *with* a second cue, and this is that cue. A single field needs no
- * legend — there is nothing to tell it from.
+ * Always on screen, including for a single field. The hues are validated apart,
+ * but two of the six sit in the band where colorblind separation is only good
+ * enough *with* a second cue, and this is that cue.
+ *
+ * It used to hide itself below two fields, on the reasoning that one bundle has
+ * nothing to be told apart from. Cycling broke that: it shows the fields one at
+ * a time on purpose, and the legend is then the only thing on screen naming
+ * which one you are looking at — exactly when it is most wanted, it vanished.
  *
  * Only the fields actually being drawn are listed, but each keeps the color its
  * position in the system gives it, so switching one off with the Display
- * checkboxes never repaints the rest.
+ * checkboxes — or cycling past it — never repaints the rest.
  */
 export function FieldLegend({
   system,
@@ -20,7 +24,7 @@ export function FieldLegend({
   system: OpticalSystem;
   fieldIndices: readonly number[];
 }) {
-  if (fieldIndices.length < 2) {
+  if (fieldIndices.length === 0) {
     return null;
   }
 

@@ -789,7 +789,7 @@ svg.layout.panning {
  * vertically. The `left` itself is set in script, from the editor's measured
  * width — the panes are a fluid grid, so there is no constant to write here.
  */
-/* The row of actions under a list: "+ add", and for the fields "Cycle fields". */
+/* The row of actions under a list: "+ add", and for the fields the cycle button. */
 .list-actions {
   display: flex;
   align-items: center;
@@ -797,13 +797,55 @@ svg.layout.panning {
 }
 
 /*
+ * The fields list puts its cycle button under the Display column, because that
+ * column is what the button drives. Same track sizes as `.list-row.with-display`
+ * so the two line up.
+ */
+.list-actions.with-display {
+  display: grid;
+  /* Same tracks *and* the same gap as `.list-row.with-display`: without the gap
+     the second column starts 6px early and the button sits just off the
+     checkboxes it belongs under. */
+  grid-template-columns: minmax(0, 110px) 52px auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.list-actions.with-display > .subtle {
+  justify-self: start;
+}
+
+/*
+ * Two lines, so the button is narrow enough to sit over a 52px column, and a
+ * fixed width so it does not resize between "Cycle fields" and "Stop cycling" —
+ * a control that changes size when you press it reads as the layout jumping.
+ * The width is set by the longest word either state uses, "cycling".
+ */
+.cycle-fields {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-self: center;
+  width: 58px;
+  padding: 2px 0;
+  line-height: 1.15;
+  font-size: 10px;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.cycle-fields:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+/*
  * While cycling, the button is the only thing on screen that is *doing*
  * something, so it says so rather than relying on the checkboxes flickering —
  * which is the effect, not the control.
  */
-.subtle.cycling {
+.cycle-fields.cycling {
   color: var(--text-primary);
-  border-color: var(--accent, var(--text-secondary));
+  border-color: var(--text-secondary);
 }
 
 .anchored-dialog {

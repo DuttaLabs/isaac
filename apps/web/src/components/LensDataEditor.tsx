@@ -588,6 +588,7 @@ export function LensDataEditor({
           key={system.surfaceAt(transformSurface).id}
           surfaceLabel={String(transformSurface)}
           parameters={system.surfaceAt(transformSurface).coordinateTransform!}
+          anchor={table}
           onCommit={(changes) =>
             apply(updateCoordinateTransform(system, transformSurface, changes))
           }

@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { CoordinateTransform } from '@isaac/optical-core';
 import { formatLength, parseLength } from '../lib/format.ts';
 
 /**
  * The five numbers, in the order the file writes them and the order a designer
  * reads them: where the axis moves to, then how it turns.
+ *
+ * The labels are `Translate` and `Rotate` — what the numbers do to the frame.
+ * The model keeps the file's own words for the fields themselves (`decenterX`,
+ * `tiltXDeg`), because that is what the `.zmx` and the Zemax manual call them
+ * and the reader has to speak their language.
  */
 const FIELDS: readonly {
   key: keyof Omit<CoordinateTransform, 'tiltFirst'>;
@@ -14,31 +19,31 @@ const FIELDS: readonly {
 }[] = [
   {
     key: 'decenterX',
-    label: 'Decenter X',
+    label: 'Translate X',
     unit: 'length',
     hint: 'Shift of the axis along local x.',
   },
   {
     key: 'decenterY',
-    label: 'Decenter Y',
+    label: 'Translate Y',
     unit: 'length',
     hint: 'Shift of the axis along local y.',
   },
   {
     key: 'tiltXDeg',
-    label: 'Tilt about X',
+    label: 'Rotate X',
     unit: 'degrees',
     hint: 'Right-handed rotation about local x. This is the one a fold mirror uses.',
   },
   {
     key: 'tiltYDeg',
-    label: 'Tilt about Y',
+    label: 'Rotate Y',
     unit: 'degrees',
     hint: 'Right-handed rotation about local y.',
   },
   {
     key: 'tiltZDeg',
-    label: 'Tilt about Z',
+    label: 'Rotate Z',
     unit: 'degrees',
     hint: 'Right-handed rotation about the axis itself — a roll, which a rotationally symmetric surface does not notice.',
   },
@@ -55,16 +60,22 @@ const FIELDS: readonly {
  *
  * Editing is live: each committed field produces a new system exactly as a table
  * cell does, so the layout follows along behind the open dialog and an undo
- * steps back through the numbers one at a time.
+ * steps back through the numbers one at a time. That is the whole point of
+ * `anchor`: a modal centres itself in the viewport, which would sit the dialog
+ * squarely over the layout — the one panel you open it to watch. Centring it on
+ * the editor instead leaves the layout clear.
  */
 export function CoordinateTransformDialog({
   surfaceLabel,
   parameters,
+  anchor,
   onCommit,
   onClose,
 }: {
   surfaceLabel: string;
   parameters: CoordinateTransform;
+  /** Element to centre on — the editor panel, so the layout stays visible. */
+  anchor: RefObject<HTMLElement | null>;
   onCommit: (changes: Partial<CoordinateTransform>) => void;
   onClose: () => void;
 }) {
@@ -79,10 +90,31 @@ export function CoordinateTransformDialog({
     }
   }, []);
 
+  // Measured rather than computed from a breakpoint, because the two panes are
+  // a fluid grid and the editor's width follows the window. Re-measured on
+  // resize so an open dialog does not end up stranded over the layout.
+  useEffect(() => {
+    const place = (): void => {
+      const element = dialog.current;
+      const target = anchor.current;
+      if (element === null || target === null) {
+        return;
+      }
+      const panel = target.getBoundingClientRect();
+      const centre = panel.left + panel.width / 2;
+      // Clamped so a narrow window cannot push the dialog off the left edge.
+      element.style.left = `${Math.max(8, centre - element.offsetWidth / 2)}px`;
+    };
+
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [anchor]);
+
   return (
     <dialog
       ref={dialog}
-      className="asphere-dialog"
+      className="asphere-dialog anchored-dialog"
       aria-label={`Coordinate transform of surface ${surfaceLabel}`}
       onClose={onClose}
       onClick={(event) => {
@@ -124,21 +156,17 @@ export function CoordinateTransformDialog({
       </table>
 
       {/* The order flag is not a sixth quantity — it changes what the other five
-          mean — so it gets a sentence rather than a row in the same table. */}
+          mean — so it sits outside the table rather than as a row in it. */}
       <p className="hint">
         <label>
           <input
             type="checkbox"
             checked={parameters.tiltFirst}
-            aria-label={`Tilt before decentering on surface ${surfaceLabel}`}
+            aria-label={`Rotate before translating on surface ${surfaceLabel}`}
             onChange={(event) => onCommit({ tiltFirst: event.target.checked })}
           />{' '}
-          Tilt first, then decenter
+          Rotate first, then translate
         </label>
-        <br />
-        {parameters.tiltFirst
-          ? 'Tilts about z, then the new y, then the new x; the decenters follow, along the axes as turned. This order is what lets one transform undo another.'
-          : 'Decenters first, then tilts about x, then the new y, then the new z. The usual order, and what a file writes as 0.'}
       </p>
 
       <footer>
@@ -222,11 +250,13 @@ function BreakValueCell({
 }
 
 /**
- * The lens-table cell that opens the dialog: a summary of the transform, so the
- * table still says at a glance which surfaces move the axis and how far.
+ * The lens-table cell that opens the dialog: the transform's own numbers, so the
+ * table says at a glance which surfaces move the axis and by how much.
  *
- * A transform with nothing set is drawn as flat rather than as zeros, because that
- * is a real and common state — the surface is added first and aimed afterwards.
+ * Written out in full — zeros included — rather than summarized. The five
+ * numbers are the whole content of the surface, they fit in the span the four
+ * shape columns leave behind, and a reader comparing two transform rows wants
+ * them in the same places both times.
  */
 export function CoordinateTransformSummaryButton({
   parameters,
@@ -237,30 +267,20 @@ export function CoordinateTransformSummaryButton({
   surfaceLabel: string;
   onOpen: () => void;
 }) {
-  const tilts = [parameters.tiltXDeg, parameters.tiltYDeg, parameters.tiltZDeg];
-  const decenters = [parameters.decenterX, parameters.decenterY];
-  const tilted = tilts.some((value) => value !== 0);
-  const decentered = decenters.some((value) => value !== 0);
-
-  const parts: string[] = [];
-  if (tilted) {
-    const axes = ['X', 'Y', 'Z'].filter((_, index) => tilts[index] !== 0);
-    const only =
-      axes.length === 1 ? `${formatLength(tilts.find((v) => v !== 0)!)}°` : `${axes.length} tilts`;
-    parts.push(axes.length === 1 ? `${axes[0]} ${only}` : only);
-  }
-  if (decentered) {
-    parts.push('decentred');
-  }
+  const { decenterX, decenterY, tiltXDeg, tiltYDeg, tiltZDeg } = parameters;
+  // `formatLength` already prints 0 as "0" and drops trailing zeros, so the
+  // numbers read the way they were typed.
+  const translate = [decenterX, decenterY].map((value) => formatLength(value)).join(', ');
+  const rotate = [tiltXDeg, tiltYDeg, tiltZDeg].map((value) => formatLength(value)).join(', ');
 
   return (
     <button
       className="asphere-summary"
       onClick={onOpen}
       aria-label={`Edit the coordinate transform of surface ${surfaceLabel}`}
-      title="Decenter and tilt of this coordinate transform"
+      title="Translation and rotation of this coordinate transform"
     >
-      {parts.length === 0 ? 'flat' : parts.join(', ')}
+      {`Translate (${translate}), Rotate (${rotate})`}
     </button>
   );
 }

@@ -242,6 +242,28 @@ export function LensDataEditor({
         }}
       >
         <table>
+          {/* Explicit widths, with `table-layout: fixed` in the stylesheet, so a
+              column's width never depends on what is in it. Without this the
+              browser sizes columns from their contents — including header text —
+              and the four shape columns collapsing to one span on a coordinate
+              transform row would hand their slack to the other columns, shifting
+              the whole table sideways as the cursor moved between rows. It also
+              stops the table jumping when a value simply gets longer. */}
+          <colgroup>
+            <col className="col-surface" />
+            <col className="col-type" />
+            <col className="col-label" />
+            <col className="col-radius" />
+            <col className="col-conic" />
+            <col className="col-asphere" />
+            <col className="col-focal" />
+            <col className="col-thickness" />
+            <col className="col-material" />
+            <col className="col-model" />
+            <col className="col-semidia" />
+            <col className="col-stop" />
+            <col className="col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>Surface</th>

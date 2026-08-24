@@ -527,7 +527,65 @@ input.text-input {
      scrolls horizontally only if the pane is somehow narrower than this. Conic
      and Asphere are two of those columns — the eight coefficients themselves
      stay out of the table precisely so this number does not have to grow. */
-  min-width: 1120px;
+  min-width: 1268px;
+  /*
+   * Fixed, so a column's width comes from the colgroup below and never from
+   * what happens to be in it. Auto layout measures contents — header text
+   * included — which meant the four shape columns collapsing to a single span
+   * on a coordinate transform row released their width to the neighbours, and
+   * the whole table shifted sideways as the cursor moved between rows. It also
+   * kept the table twitching whenever a value grew a digit.
+   */
+  table-layout: fixed;
+}
+
+/*
+ * Column widths. Each is sized to its widest ordinary value plus the cell
+ * padding, not to its header: headers are short and the values are what has to
+ * fit. `Surface type` is the widest because COORDINATE_TRANSFORM is a long name
+ * in a select, and `Model glass` because it holds a compound "nd / Vd" value.
+ */
+.col-surface {
+  width: 56px;
+}
+.col-type {
+  /* Wide enough for COORDINATE_TRANSFORM, the longest type name, to read in
+     full. This column says what a row *is*, so a truncated value here costs
+     more than the horizontal space does — the table already scrolls. */
+  width: 184px;
+}
+.col-label {
+  width: 112px;
+}
+.col-radius {
+  width: 96px;
+}
+.col-conic {
+  width: 76px;
+}
+.col-asphere {
+  width: 128px;
+}
+.col-focal {
+  width: 96px;
+}
+.col-thickness {
+  width: 96px;
+}
+.col-material {
+  width: 100px;
+}
+.col-model {
+  width: 140px;
+}
+.col-semidia {
+  width: 88px;
+}
+.col-stop {
+  width: 52px;
+}
+.col-actions {
+  width: 44px;
 }
 
 /* A compound value — a model glass is "nd / Vd", optionally with ΔPg,F — so it

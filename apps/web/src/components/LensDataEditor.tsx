@@ -19,7 +19,7 @@ import {
   setMirror,
   setStop,
   setSurfaceType,
-  updateCoordinateBreak,
+  updateCoordinateTransform,
   updateSurface,
   type EditableSurfaceType,
 } from '../lib/edits.ts';
@@ -27,7 +27,10 @@ import { quickFocus } from '../lib/focus.ts';
 import { formatLength, formatMicrons } from '../lib/format.ts';
 import { chain, type Result } from '../lib/result.ts';
 import { AsphericCoefficientsDialog, AsphericSummaryButton } from './AsphericCoefficients.tsx';
-import { CoordinateBreakDialog, CoordinateBreakSummaryButton } from './CoordinateBreakEditor.tsx';
+import {
+  CoordinateTransformDialog,
+  CoordinateTransformSummaryButton,
+} from './CoordinateTransformEditor.tsx';
 import { ErrorNote, Panel } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
@@ -56,10 +59,19 @@ export function LensDataEditor({
   const [status, setStatus] = useState<string | undefined>(undefined);
   /** Surface whose aspheric coefficients are open in the modal, if any. */
   const [asphereSurface, setAsphereSurface] = useState<number | undefined>(undefined);
-  const [breakSurface, setBreakSurface] = useState<number | undefined>(undefined);
+  /** Surface whose coordinate transform is open in the modal, if any. */
+  const [transformSurface, setTransformSurface] = useState<number | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
   const [pointerInside, setPointerInside] = useState(false);
+
+  // The row the cursor is on, by hover or by keyboard focus — both set
+  // `highlightedSurface`. Guarded against an index left over from a system that
+  // has since lost that surface.
+  const headerIsTransform =
+    highlightedSurface !== undefined &&
+    highlightedSurface < system.surfaces.length &&
+    system.surfaceAt(highlightedSurface).type === 'COORDINATE_TRANSFORM';
 
   const apply = (result: Result<OpticalSystem>): void => {
     if (result.ok) {
@@ -235,10 +247,22 @@ export function LensDataEditor({
               <th>Surface</th>
               <th>Surface Type</th>
               <th className="text-column">Label</th>
-              <th>Radius</th>
-              <th>Conic</th>
-              <th>Asphere</th>
-              <th>Focal length</th>
+              {/* A header names a whole column, so it can only speak for one row
+                  while the cursor is on that row. On a coordinate transform the
+                  four shape columns hold nothing, and saying "Radius" over an
+                  empty span is worse than saying what is actually there. */}
+              {headerIsTransform ? (
+                <th colSpan={SHAPE_COLUMNS} className="transform-header">
+                  Coordinate Transform
+                </th>
+              ) : (
+                <>
+                  <th>Radius</th>
+                  <th>Conic</th>
+                  <th>Asphere</th>
+                  <th>Focal length</th>
+                </>
+              )}
               <th>Thickness</th>
               <th>Material</th>
               <th>Model glass</th>
@@ -252,7 +276,7 @@ export function LensDataEditor({
               const isObject = surface.type === 'OBJECT';
               const isImage = surface.type === 'IMAGE';
               const isParaxial = surface.type === 'PARAXIAL';
-              const isBreak = surface.type === 'COORDINATE_BREAK';
+              const isTransform = surface.type === 'COORDINATE_TRANSFORM';
               const isFixed = isObject || isImage;
               const modelParameters = modelGlassText(surface.material);
               // Zemax names the ends of the system and the stop rather than
@@ -310,84 +334,93 @@ export function LensDataEditor({
                     />
                   </td>
 
-                  {/* Radius and focal length are the two ways a surface can carry
-                      power, and no surface has both; the inapplicable one is blank. */}
-                  <td>
-                    {isParaxial ? (
-                      <EmptyCell reason="A paraxial surface is a plane; its power is its focal length." />
-                    ) : isBreak ? (
-                      <EmptyCell reason="A coordinate break has no shape; it moves the axis and bends nothing." />
-                    ) : (
-                      <NumericCell
-                        value={surface.radius}
-                        ariaLabel={`Radius of surface ${label}`}
-                        title="Radius of curvature. 0 or blank means flat."
-                        disabled={isFixed}
-                        onCommit={(next) =>
-                          apply(
-                            updateSurface(system, index, {
-                              radius: normalizeRadius(next),
-                            }),
-                          )
-                        }
-                      />
-                    )}
-                  </td>
+                  {/* A coordinate transform has none of the four things these
+                      columns hold — no radius, no conic, no polynomial, no focal
+                      length — so on its row they become one field carrying the
+                      thing it does have. The header follows suit while the cursor
+                      is on the row, which is the only time a shared header can
+                      honestly name one row's contents. */}
+                  {isTransform ? (
+                    <td colSpan={SHAPE_COLUMNS} className="transform-cell">
+                      {surface.coordinateTransform !== undefined ? (
+                        <CoordinateTransformSummaryButton
+                          parameters={surface.coordinateTransform}
+                          surfaceLabel={label}
+                          onOpen={() => setTransformSurface(index)}
+                        />
+                      ) : null}
+                    </td>
+                  ) : (
+                    <>
+                      {/* Radius and focal length are the two ways a surface can
+                          carry power, and no surface has both; the inapplicable
+                          one is blank. */}
+                      <td>
+                        {isParaxial ? (
+                          <EmptyCell reason="A paraxial surface is a plane; its power is its focal length." />
+                        ) : (
+                          <NumericCell
+                            value={surface.radius}
+                            ariaLabel={`Radius of surface ${label}`}
+                            title="Radius of curvature. 0 or blank means flat."
+                            disabled={isFixed}
+                            onCommit={(next) =>
+                              apply(
+                                updateSurface(system, index, {
+                                  radius: normalizeRadius(next),
+                                }),
+                              )
+                            }
+                          />
+                        )}
+                      </td>
 
-                  {/* Conic sits beside the radius because the two together are
-                      the surface's shape: the radius is where it starts, the
-                      conic is how it departs from a sphere. */}
-                  <td>
-                    {isParaxial ? (
-                      <EmptyCell reason="A paraxial surface is a plane; it has no conic constant." />
-                    ) : isBreak ? (
-                      <EmptyCell reason="A coordinate break has no shape, so no conic constant." />
-                    ) : (
-                      <NumericCell
-                        value={surface.conic}
-                        ariaLabel={`Conic constant of surface ${label}`}
-                        title="Conic constant k. 0 sphere, −1 paraboloid, below −1 hyperboloid, between −1 and 0 ellipsoid."
-                        onCommit={(next) => apply(updateSurface(system, index, { conic: next }))}
-                      />
-                    )}
-                  </td>
+                      {/* Conic sits beside the radius because the two together
+                          are the surface's shape: the radius is where it starts,
+                          the conic is how it departs from a sphere. */}
+                      <td>
+                        {isParaxial ? (
+                          <EmptyCell reason="A paraxial surface is a plane; it has no conic constant." />
+                        ) : (
+                          <NumericCell
+                            value={surface.conic}
+                            ariaLabel={`Conic constant of surface ${label}`}
+                            title="Conic constant k. 0 sphere, −1 paraboloid, below −1 hyperboloid, between −1 and 0 ellipsoid."
+                            onCommit={(next) =>
+                              apply(updateSurface(system, index, { conic: next }))
+                            }
+                          />
+                        )}
+                      </td>
 
-                  {/* One column, two meanings — the same arrangement Zemax's
-                      parameter columns have, and for the same reason: what the
-                      numbers are depends on the surface type, and giving each
-                      type its own columns would leave most of them empty. */}
-                  <td>
-                    {surface.type === 'EVEN_ASPHERE' ? (
-                      <AsphericSummaryButton
-                        coefficients={surface.asphericCoefficients}
-                        surfaceLabel={label}
-                        onOpen={() => setAsphereSurface(index)}
-                      />
-                    ) : isBreak && surface.coordinateBreak !== undefined ? (
-                      <CoordinateBreakSummaryButton
-                        parameters={surface.coordinateBreak}
-                        surfaceLabel={label}
-                        onOpen={() => setBreakSurface(index)}
-                      />
-                    ) : (
-                      <EmptyCell reason="Set the surface type to EVEN_ASPHERE or COORDINATE_BREAK to give it parameters." />
-                    )}
-                  </td>
+                      <td>
+                        {surface.type === 'EVEN_ASPHERE' ? (
+                          <AsphericSummaryButton
+                            coefficients={surface.asphericCoefficients}
+                            surfaceLabel={label}
+                            onOpen={() => setAsphereSurface(index)}
+                          />
+                        ) : (
+                          <EmptyCell reason="Set the surface type to EVEN_ASPHERE to give it aspheric coefficients." />
+                        )}
+                      </td>
 
-                  <td>
-                    {isParaxial ? (
-                      <NumericCell
-                        value={surface.focalLength ?? 0}
-                        ariaLabel={`Focal length of surface ${label}`}
-                        title="Focal length of the ideal thin lens. Negative diverges."
-                        onCommit={(next) =>
-                          apply(updateSurface(system, index, { focalLength: next }))
-                        }
-                      />
-                    ) : (
-                      <EmptyCell reason="Only a paraxial surface has a focal length." />
-                    )}
-                  </td>
+                      <td>
+                        {isParaxial ? (
+                          <NumericCell
+                            value={surface.focalLength ?? 0}
+                            ariaLabel={`Focal length of surface ${label}`}
+                            title="Focal length of the ideal thin lens. Negative diverges."
+                            onCommit={(next) =>
+                              apply(updateSurface(system, index, { focalLength: next }))
+                            }
+                          />
+                        ) : (
+                          <EmptyCell reason="Only a paraxial surface has a focal length." />
+                        )}
+                      </td>
+                    </>
+                  )}
 
                   <td>
                     <NumericCell
@@ -400,13 +433,13 @@ export function LensDataEditor({
                   </td>
 
                   <td>
-                    {/* Zemax writes "-" here for a break, because a break cannot
+                    {/* Zemax writes "-" here for a transform, because a transform cannot
                         be a boundary between two media: it carries whatever the
                         surface before it did, and the model refuses anything
                         else. Showing a blank editable cell would invite an edit
                         that could only be rejected. */}
-                    {isBreak ? (
-                      <EmptyCell reason="A coordinate break carries the medium before it; it cannot be a boundary between two media." />
+                    {isTransform ? (
+                      <EmptyCell reason="A coordinate transform carries the medium before it; it cannot be a boundary between two media." />
                     ) : (
                       <MaterialCell
                         material={surface.material}
@@ -446,8 +479,8 @@ export function LensDataEditor({
                   </td>
 
                   <td>
-                    {isBreak ? (
-                      <EmptyCell reason="A coordinate break meets no ray, so it has no clear aperture." />
+                    {isTransform ? (
+                      <EmptyCell reason="A coordinate transform meets no ray, so it has no clear aperture." />
                     ) : (
                       <NumericCell
                         value={surface.semiDiameter}
@@ -527,26 +560,35 @@ export function LensDataEditor({
         />
       ) : null}
 
-      {breakSurface !== undefined &&
-      system.surfaceAt(breakSurface).coordinateBreak !== undefined ? (
-        <CoordinateBreakDialog
-          key={system.surfaceAt(breakSurface).id}
-          surfaceLabel={String(breakSurface)}
-          parameters={system.surfaceAt(breakSurface).coordinateBreak!}
-          onCommit={(changes) => apply(updateCoordinateBreak(system, breakSurface, changes))}
-          onClose={() => setBreakSurface(undefined)}
+      {transformSurface !== undefined &&
+      system.surfaceAt(transformSurface).coordinateTransform !== undefined ? (
+        <CoordinateTransformDialog
+          key={system.surfaceAt(transformSurface).id}
+          surfaceLabel={String(transformSurface)}
+          parameters={system.surfaceAt(transformSurface).coordinateTransform!}
+          onCommit={(changes) =>
+            apply(updateCoordinateTransform(system, transformSurface, changes))
+          }
+          onClose={() => setTransformSurface(undefined)}
         />
       ) : null}
     </Panel>
   );
 }
 
+/**
+ * The four columns that describe a surface's shape and power: radius, conic,
+ * parameters, focal length. A coordinate transform has none of them, so on its
+ * row they are spanned by the one field it does have.
+ */
+const SHAPE_COLUMNS = 4;
+
 /** The types a user may pick between, in the order they appear in the dropdown. */
 const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = [
   'STANDARD',
   'EVEN_ASPHERE',
   'PARAXIAL',
-  'COORDINATE_BREAK',
+  'COORDINATE_TRANSFORM',
 ];
 
 /**

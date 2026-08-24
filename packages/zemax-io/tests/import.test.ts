@@ -417,10 +417,10 @@ test('UNIT METER is meters, which is how the corpus spells it', () => {
 
 /**
  * The fold-mirror idiom as OpticStudio's own samples write it, taken from
- * `Archive/sc_newtonian3.zmx`: a primary, then a pair of −45° breaks around the
+ * `Archive/sc_newtonian3.zmx`: a primary, then a pair of −45° transforms around the
  * diagonal. Note `DISZ -700` after the primary and `DISZ 100` after the second
  * break — the thickness turns negative in mirror space and positive again after
- * the second reflection, exactly as it does without any breaks at all.
+ * the second reflection, exactly as it does without any transforms at all.
  */
 const NEWTONIAN = `MODE SEQ
 NAME NEWTONIAN
@@ -479,12 +479,12 @@ SURF 6
   DIAM 60
 `;
 
-test('a coordinate break reads its decenters, tilts and order flag', () => {
+test('a coordinate transform reads its decenters, tilts and order flag', () => {
   const { system } = importZmx(NEWTONIAN, { resolveMaterial });
 
   const first = system.surfaceAt(3);
-  assert.equal(first.type, 'COORDINATE_BREAK');
-  assert.deepEqual(first.coordinateBreak, {
+  assert.equal(first.type, 'COORDINATE_TRANSFORM');
+  assert.deepEqual(first.coordinateTransform, {
     decenterX: 0,
     decenterY: 0,
     tiltXDeg: -45,
@@ -515,7 +515,7 @@ test('an imported fold puts the image beside the tube, not beyond it', () => {
   assert.equal(system.axialPositionAt(6), 200);
 });
 
-test('a coordinate break is refused where it could not mean anything', () => {
+test('a coordinate transform is refused where it could not mean anything', () => {
   // PARM 7 has no meaning on a COORDBRK; the six columns carry all of it.
   assert.throws(
     () =>

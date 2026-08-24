@@ -27,8 +27,8 @@ export function surfacePower(surface: Surface, indexBefore: number, indexAfter: 
   if (surface.type === 'PARAXIAL') {
     return 1 / surface.focalLength!;
   }
-  if (surface.type === 'COORDINATE_BREAK') {
-    // A coordinate break has no shape and no glass boundary, so it has no power.
+  if (surface.type === 'COORDINATE_TRANSFORM') {
+    // A coordinate transform has no shape and no glass boundary, so it has no power.
     // Its thickness still separates the surfaces around it, which the recurrence
     // picks up from the transfer step — the axis has been re-pointed, but the
     // distance measured along it is the same, which is why a folded system has

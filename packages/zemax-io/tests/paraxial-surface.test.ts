@@ -108,7 +108,7 @@ test('a paraxial surface immersed in glass is refused, since the convention is u
 });
 
 test('other surface types are still refused, and say so by name', () => {
-  // TOROIDAL, not COORDBRK: coordinate breaks are modelled now, and the point
+  // TOROIDAL, not COORDBRK: coordinate transforms are modelled now, and the point
   // of this test is that an unmodelled shape is named rather than approximated
   // as the sphere it is not.
   assert.throws(

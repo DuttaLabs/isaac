@@ -128,10 +128,10 @@ export function buildLayout(
   // Surface 0 is the object, which sits at −∞ for a distant object; never drawn.
   for (let index = 1; index < system.surfaces.length; index += 1) {
     const surface = system.surfaceAt(index);
-    // A coordinate break has no shape and no aperture: there is nothing to draw,
+    // A coordinate transform has no shape and no aperture: there is nothing to draw,
     // and drawing it would put a full-height plane across the fold. Its effect
     // is already in where the following surfaces sit.
-    if (surface.type === 'COORDINATE_BREAK') {
+    if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
     }
     const pose = system.poseAt(index);
@@ -163,7 +163,7 @@ export function buildLayout(
   const bodies: GlassBody[] = [];
   for (let index = 1; index < system.surfaces.length - 1; index += 1) {
     const surface = system.surfaceAt(index);
-    if (surface.type === 'COORDINATE_BREAK') {
+    if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
     }
     const material = surface.material;
@@ -171,7 +171,7 @@ export function buildLayout(
       continue;
     }
     const front = profiles.find((profile) => profile.surfaceIndex === index);
-    // The rear surface is the next one that is actually drawn: a break between
+    // The rear surface is the next one that is actually drawn: a transform between
     // the two faces of an element contributes no profile to close the body on.
     const back = profiles.find((profile) => profile.surfaceIndex > index);
     if (!front || !back) {

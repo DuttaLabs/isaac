@@ -41,7 +41,7 @@ export type {
   ModelGlassOptions,
 } from './model/material.ts';
 export { Surface, ASPHERIC_SURFACE_TYPES, STOP_CAPABLE_SURFACE_TYPES } from './model/surface.ts';
-export type { SurfaceConfig, SurfaceType, CoordinateBreak } from './model/surface.ts';
+export type { SurfaceConfig, SurfaceType, CoordinateTransform } from './model/surface.ts';
 export { OpticalSystem } from './model/optical-system.ts';
 export type {
   OpticalSystemConfig,

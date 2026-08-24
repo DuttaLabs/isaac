@@ -5,9 +5,9 @@ import { Vector3 } from './vector3.ts';
  * A rigid transform — a rotation followed by a translation — mapping a
  * surface's *local* frame into global coordinates.
  *
- * Until coordinate breaks existed, every surface's frame differed from the
+ * Until coordinate transforms existed, every surface's frame differed from the
  * global one by a translation along z alone, so a single number said everything
- * about where a surface sat. A coordinate break re-points the axis, so the
+ * about where a surface sat. A coordinate transform re-points the axis, so the
  * general case is needed: `rotation` holds the local axes as columns, and
  * `origin` is where the local origin lands.
  *

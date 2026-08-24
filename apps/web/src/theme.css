@@ -717,6 +717,21 @@ svg.layout.panning {
   color: var(--text-primary);
 }
 
+/*
+ * A coordinate transform has no radius, conic, polynomial or focal length, so on
+ * its row those four columns become one field. Both the header and the cell are
+ * left-aligned, against the right-aligned numeric columns around them: the label
+ * has to begin where the field begins, and the field is a name rather than a
+ * quantity, so there is no decimal point to line anything up on.
+ */
+.transform-header {
+  text-align: left;
+}
+
+.transform-cell {
+  text-align: left;
+}
+
 .asphere-dialog {
   background: var(--surface-1);
   color: var(--text-primary);

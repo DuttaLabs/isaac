@@ -63,16 +63,16 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
   for (let index = 1; index < system.surfaces.length; index += 1) {
     const surface = system.surfaceAt(index);
 
-    // A coordinate break is not a surface: it meets no ray and bends nothing.
+    // A coordinate transform is not a surface: it meets no ray and bends nothing.
     // Its whole effect is on where the *following* surfaces sit, and the system
     // has already folded that into their poses, so the ray simply carries on.
-    if (surface.type === 'COORDINATE_BREAK') {
+    if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
     }
 
     // Move into the surface's local frame — vertex at the origin, axis along
     // +z. For a centered system this is the axial shift it always was; after a
-    // coordinate break it is a rotation as well.
+    // coordinate transform it is a rotation as well.
     const pose = system.poseAt(index);
     const localOrigin = pose.toLocal(ray.origin);
     const localDirection = pose.toLocalDirection(ray.direction);
@@ -164,16 +164,16 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
 /**
  * The medium the ray has just crossed to reach surface `index`.
  *
- * Normally the surface before, but a coordinate break carries no glass — it
+ * Normally the surface before, but a coordinate transform carries no glass — it
  * cannot be a boundary between two media, which is why Zemax shows "-" in its
  * glass column — so the search walks back past any number of them to the last
- * real surface. `OpticalSystem` also refuses a break whose material disagrees
+ * real surface. `OpticalSystem` also refuses a transform whose material disagrees
  * with that one, so the two never differ; this simply does not depend on it.
  */
 function mediumBefore(system: OpticalSystem, index: number): Material {
   for (let i = index - 1; i > 0; i -= 1) {
     const surface = system.surfaceAt(i);
-    if (surface.type !== 'COORDINATE_BREAK') {
+    if (surface.type !== 'COORDINATE_TRANSFORM') {
       return surface.material;
     }
   }

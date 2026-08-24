@@ -77,7 +77,7 @@ compromise balanced across the field rather than the axial best focus.
 
 47 of LensLibrary's 77 files were left out because Isaac cannot yet model them:
 even aspheres and conics (21 files), ideal `PARAXIAL` surfaces and coordinate
-breaks (13, mostly the spectrometer designs), and glasses outside the SCHOTT
+transforms (13, mostly the spectrometer designs), and glasses outside the SCHOTT
 catalog such as CAF2, OHARA `S-` types and fused silica (11). Re-run the
 triage after adding any of those and this directory can grow.
 

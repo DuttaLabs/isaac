@@ -113,7 +113,7 @@ function lathe(points: Vector2[], segments: number, pose?: Transform3): LatheGeo
   geometry.rotateX(Math.PI / 2);
   if (pose !== undefined) {
     // Everything is revolved about the surface's *own* axis and then carried
-    // into place, so a coordinate break tilts the element rather than shearing
+    // into place, so a coordinate transform tilts the element rather than shearing
     // it. Baked into the vertices because the scene is built outside React and
     // handed over as plain geometry, with no node to hang a transform on.
     geometry.applyMatrix4(toMatrix4(pose));
@@ -166,13 +166,13 @@ export function buildOpticalScene(
 
   // Surface 0 is the object, which may sit at −∞; never drawn.
   for (let index = 1; index < system.surfaces.length - 1; index += 1) {
-    if (!isGlass(index) || system.surfaceAt(index).type === 'COORDINATE_BREAK') {
+    if (!isGlass(index) || system.surfaceAt(index).type === 'COORDINATE_TRANSFORM') {
       continue;
     }
-    // A coordinate break between the two faces would mean they no longer share
+    // A coordinate transform between the two faces would mean they no longer share
     // an axis, and a single revolved solid cannot express that. The two surfaces
     // are drawn separately instead of being welded into a shape neither has.
-    if (system.surfaceAt(index + 1).type === 'COORDINATE_BREAK') {
+    if (system.surfaceAt(index + 1).type === 'COORDINATE_TRANSFORM') {
       continue;
     }
     const frontRadius = radiusOf(index);
@@ -208,8 +208,8 @@ export function buildOpticalScene(
       continue;
     }
     const surface = system.surfaceAt(index);
-    // A coordinate break has no shape and no aperture — nothing to revolve.
-    if (surface.type === 'COORDINATE_BREAK') {
+    // A coordinate transform has no shape and no aperture — nothing to revolve.
+    if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
     }
     surfaces.push({

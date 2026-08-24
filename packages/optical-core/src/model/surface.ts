@@ -22,13 +22,13 @@ import {
  * a lens group not yet designed, so it is a modeling element rather than a
  * manufacturable surface.
  *
- * `COORDINATE_BREAK` is not a surface at all: it carries no glass and no shape,
+ * `COORDINATE_TRANSFORM` is not a surface at all: it carries no glass and no shape,
  * meets no ray, and exists only to re-point the axis for everything after it.
  * It is how a fold mirror, a tilted element or a decentered group is expressed.
  * TOROIDAL and other Zemax-compatible types are planned but intentionally absent.
  */
 export type SurfaceType =
-  'OBJECT' | 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL' | 'COORDINATE_BREAK' | 'IMAGE';
+  'OBJECT' | 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL' | 'COORDINATE_TRANSFORM' | 'IMAGE';
 
 /** The types that may carry aspheric polynomial coefficients. */
 export const ASPHERIC_SURFACE_TYPES: readonly SurfaceType[] = ['EVEN_ASPHERE'];
@@ -45,7 +45,7 @@ export const STOP_CAPABLE_SURFACE_TYPES: readonly SurfaceType[] = [
 ];
 
 /**
- * The decenter and tilt a {@link SurfaceType} of `COORDINATE_BREAK` applies to
+ * The decenter and tilt a {@link SurfaceType} of `COORDINATE_TRANSFORM` applies to
  * everything downstream of it. Angles are in **degrees**, right-handed about
  * the positive axes, and relative to the frame the previous surface left behind
  * — the convention Zemax defines and every `.zmx` file is written in.
@@ -55,10 +55,10 @@ export const STOP_CAPABLE_SURFACE_TYPES: readonly SurfaceType[] = [
  * common case) decenters in x and y, then tilts about local x, then about the
  * *new* y, then about the *new* z. True reverses both halves: tilts about z,
  * then new y, then new x, and only then decenters — which is what lets one
- * break exactly undo another, by negating all five numbers and flipping this
+ * transform exactly undo another, by negating all five numbers and flipping this
  * flag. The thickness is applied last either way, along the axis as re-pointed.
  */
-export interface CoordinateBreak {
+export interface CoordinateTransform {
   /** Decenter along local x, in system units. */
   decenterX: number;
   /** Decenter along local y, in system units. */
@@ -105,11 +105,11 @@ export interface SurfaceConfig {
    */
   focalLength?: number;
   /**
-   * The decenter and tilt applied by a `COORDINATE_BREAK` surface. Required on
+   * The decenter and tilt applied by a `COORDINATE_TRANSFORM` surface. Required on
    * one, and rejected on every other type — a tilt has no meaning on a surface
    * that also has a shape, which is the one thing this type does not have.
    */
-  coordinateBreak?: CoordinateBreak;
+  coordinateTransform?: CoordinateTransform;
   /** Medium immediately after this surface (toward +Z). Defaults to AIR. */
   material?: Material;
   /**
@@ -143,8 +143,8 @@ export class Surface {
   public readonly semiDiameter: number;
   /** Ideal-lens focal length; defined only on a `PARAXIAL` surface. */
   public readonly focalLength: number | undefined;
-  /** Decenter and tilt; defined only on a `COORDINATE_BREAK` surface. */
-  public readonly coordinateBreak: CoordinateBreak | undefined;
+  /** Decenter and tilt; defined only on a `COORDINATE_TRANSFORM` surface. */
+  public readonly coordinateTransform: CoordinateTransform | undefined;
   /** Medium immediately after the surface (toward +Z). */
   public readonly material: Material;
   public readonly reflective: boolean;
@@ -208,42 +208,44 @@ export class Surface {
       throw new RangeError('focalLength is only meaningful on a PARAXIAL surface.');
     }
 
-    // A coordinate break has no shape, no glass boundary and no aperture: it is
+    // A coordinate transform has no shape, no glass boundary and no aperture: it is
     // a change of frame wearing a surface's clothes. Anything that would give it
     // optical behavior is refused rather than ignored, because a tilted surface
     // that also refracts is a different feature (Zemax's surface tilt/decenter)
     // and silently accepting one here would trace as neither.
-    if (config.type === 'COORDINATE_BREAK') {
-      if (config.coordinateBreak === undefined) {
-        throw new TypeError('A COORDINATE_BREAK surface requires its decenters and tilts.');
+    if (config.type === 'COORDINATE_TRANSFORM') {
+      if (config.coordinateTransform === undefined) {
+        throw new TypeError('A COORDINATE_TRANSFORM surface requires its decenters and tilts.');
       }
-      for (const [key, value] of Object.entries(config.coordinateBreak)) {
+      for (const [key, value] of Object.entries(config.coordinateTransform)) {
         if (typeof value === 'number' && !Number.isFinite(value)) {
-          throw new RangeError(`COORDINATE_BREAK ${key} must be a finite number.`);
+          throw new RangeError(`COORDINATE_TRANSFORM ${key} must be a finite number.`);
         }
       }
       if (Number.isFinite(radius)) {
-        throw new RangeError('A COORDINATE_BREAK has no shape, so it cannot have a radius.');
+        throw new RangeError('A COORDINATE_TRANSFORM has no shape, so it cannot have a radius.');
       }
       if (conic !== 0) {
         throw new RangeError(
-          'A COORDINATE_BREAK has no shape, so it cannot have a conic constant.',
+          'A COORDINATE_TRANSFORM has no shape, so it cannot have a conic constant.',
         );
       }
       if (config.reflective) {
-        // The manual is explicit: coordinate breaks can never be mirrors. A fold
-        // is built from a break, a mirror, and a break — three surfaces.
+        // The Zemax manual is explicit that this surface can never be a mirror.
+        // A fold is three surfaces: a transform, a mirror, and a transform back.
         throw new RangeError(
-          'A COORDINATE_BREAK cannot be a mirror; put the mirror on its own surface.',
+          'A COORDINATE_TRANSFORM cannot be a mirror; put the mirror on its own surface.',
         );
       }
       if (config.semiDiameter !== undefined && Number.isFinite(config.semiDiameter)) {
         throw new RangeError(
-          'A COORDINATE_BREAK meets no ray, so it cannot have a clear aperture.',
+          'A COORDINATE_TRANSFORM meets no ray, so it cannot have a clear aperture.',
         );
       }
-    } else if (config.coordinateBreak !== undefined) {
-      throw new RangeError('coordinateBreak is only meaningful on a COORDINATE_BREAK surface.');
+    } else if (config.coordinateTransform !== undefined) {
+      throw new RangeError(
+        'coordinateTransform is only meaningful on a COORDINATE_TRANSFORM surface.',
+      );
     }
 
     // Coefficients are what distinguishes an EVEN_ASPHERE from a STANDARD
@@ -262,7 +264,7 @@ export class Surface {
     this.conic = conic;
     this.asphericCoefficients = asphericCoefficients;
     this.focalLength = config.focalLength;
-    this.coordinateBreak = config.coordinateBreak;
+    this.coordinateTransform = config.coordinateTransform;
     this.thickness = config.thickness;
     this.semiDiameter = semiDiameter;
     this.material = config.material ?? AIR;
@@ -292,7 +294,7 @@ export class Surface {
       thickness: changes.thickness ?? this.thickness,
       semiDiameter: changes.semiDiameter ?? this.semiDiameter,
       focalLength: changes.focalLength ?? this.focalLength,
-      coordinateBreak: changes.coordinateBreak ?? this.coordinateBreak,
+      coordinateTransform: changes.coordinateTransform ?? this.coordinateTransform,
       material: changes.material ?? this.material,
       reflective: changes.reflective ?? this.reflective,
       isStop: changes.isStop ?? this.isStop,
@@ -335,14 +337,14 @@ export class Surface {
 
   /**
    * The change of frame this surface makes for everything after it. Identity
-   * for every surface except a coordinate break, which is the only thing in the
+   * for every surface except a coordinate transform, which is the only thing in the
    * model that can move the axis.
    *
    * Built here rather than in `OpticalSystem` so the rule lives with the type
    * that owns it, and the axial walk stays a plain composition.
    */
   public get frameChange(): Transform3 {
-    const parameters = this.coordinateBreak;
+    const parameters = this.coordinateTransform;
     if (parameters === undefined) {
       return Transform3.identity();
     }
@@ -356,7 +358,7 @@ export class Surface {
     // Each tilt is about the axes the previous tilt left, so they compose
     // innermost-last: x then new-y then new-z reads as Rx·Ry·Rz. Reversing the
     // flag reverses both the tilt order and which side the decenter sits on,
-    // which is exactly what makes one break the inverse of another.
+    // which is exactly what makes one transform the inverse of another.
     return tiltFirst
       ? z.compose(y).compose(x).compose(decenter)
       : decenter.compose(x).compose(y).compose(z);

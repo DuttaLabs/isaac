@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { OpticalSystem, Surface, type CoordinateBreak } from '@isaac/optical-core';
+import { OpticalSystem, Surface, type CoordinateTransform } from '@isaac/optical-core';
 import { buildLayout } from '../src/lib/layout.ts';
-import { setSurfaceType, updateCoordinateBreak } from '../src/lib/edits.ts';
+import { setSurfaceType, updateCoordinateTransform } from '../src/lib/edits.ts';
 
-function look(changes: Partial<CoordinateBreak>): CoordinateBreak {
+function look(changes: Partial<CoordinateTransform>): CoordinateTransform {
   return {
     decenterX: 0,
     decenterY: 0,
@@ -16,7 +16,7 @@ function look(changes: Partial<CoordinateBreak>): CoordinateBreak {
   };
 }
 
-/** A fold: dummy, mirror, break, mirror, break, image — the Newtonian shape. */
+/** A fold: dummy, mirror, transform, mirror, transform, image — the Newtonian shape. */
 function folded(): OpticalSystem {
   return new OpticalSystem({
     surfaces: [
@@ -31,10 +31,10 @@ function folded(): OpticalSystem {
         reflective: true,
       }),
       new Surface({
-        id: 'cb1',
-        type: 'COORDINATE_BREAK',
+        id: 'ct1',
+        type: 'COORDINATE_TRANSFORM',
         thickness: 0,
-        coordinateBreak: look({ tiltXDeg: -45 }),
+        coordinateTransform: look({ tiltXDeg: -45 }),
       }),
       new Surface({
         id: 'diag',
@@ -44,20 +44,20 @@ function folded(): OpticalSystem {
         reflective: true,
       }),
       new Surface({
-        id: 'cb2',
-        type: 'COORDINATE_BREAK',
+        id: 'ct2',
+        type: 'COORDINATE_TRANSFORM',
         thickness: 100,
-        coordinateBreak: look({ tiltXDeg: -45 }),
+        coordinateTransform: look({ tiltXDeg: -45 }),
       }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 60 }),
     ],
   });
 }
 
-test('the layout draws no profile for a coordinate break', () => {
+test('the layout draws no profile for a coordinate transform', () => {
   const geometry = buildLayout(folded(), [], 10);
   const drawn = geometry.profiles.map((profile) => profile.surfaceIndex);
-  // A break has no shape and no aperture. Drawing one would put a full-height
+  // A transform has no shape and no aperture. Drawing one would put a full-height
   // plane across the fold, which is the one place it would be most misleading.
   assert.deepEqual(drawn, [1, 2, 4, 6]);
 });
@@ -81,7 +81,7 @@ test('a tilted surface is drawn tilted, in the meridional plane', () => {
   assert.ok(centre.y > 90, `image drawn at y ${centre.y}, expected out near 100`);
 });
 
-test('making a surface a coordinate break drops what it cannot carry', () => {
+test('making a surface a coordinate transform drops what it cannot carry', () => {
   const system = new OpticalSystem({
     surfaces: [
       new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
@@ -91,20 +91,20 @@ test('making a surface a coordinate break drops what it cannot carry', () => {
     ],
   });
 
-  const converted = setSurfaceType(system, 2, 'COORDINATE_BREAK');
+  const converted = setSurfaceType(system, 2, 'COORDINATE_TRANSFORM');
   assert.ok(converted.ok, converted.ok ? '' : converted.error);
   const surface = converted.value.surfaceAt(2);
-  assert.equal(surface.type, 'COORDINATE_BREAK');
-  // The shape and aperture are gone — the model refuses them — and the break
+  assert.equal(surface.type, 'COORDINATE_TRANSFORM');
+  // The shape and aperture are gone — the model refuses them — and the transform
   // starts flat, to be aimed afterwards.
   assert.equal(surface.radius, Infinity);
   assert.equal(surface.semiDiameter, Infinity);
-  assert.deepEqual(surface.coordinateBreak, look({}));
+  assert.deepEqual(surface.coordinateTransform, look({}));
   // Its thickness and its place in the list survive.
   assert.equal(surface.thickness, 20);
 
-  const tilted = updateCoordinateBreak(converted.value, 2, { tiltXDeg: 30 });
+  const tilted = updateCoordinateTransform(converted.value, 2, { tiltXDeg: 30 });
   assert.ok(tilted.ok, tilted.ok ? '' : tilted.error);
-  assert.equal(tilted.value.surfaceAt(2).coordinateBreak?.tiltXDeg, 30);
+  assert.equal(tilted.value.surfaceAt(2).coordinateTransform?.tiltXDeg, 30);
   assert.equal(tilted.value.isCentered, false);
 });

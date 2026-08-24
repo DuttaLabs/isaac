@@ -80,7 +80,7 @@ permission.
 
 **High priority:**
 
-- Coordinate breaks (tilts and decenters)
+- Coordinate transforms (tilts and decenters)
 - Optimization (merit functions, variables, damped least squares)
 - MTF
 - PSF

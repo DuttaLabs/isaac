@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CoordinateBreak } from '@isaac/optical-core';
+import type { CoordinateTransform } from '@isaac/optical-core';
 import { formatLength, parseLength } from '../lib/format.ts';
 
 /**
@@ -7,7 +7,7 @@ import { formatLength, parseLength } from '../lib/format.ts';
  * reads them: where the axis moves to, then how it turns.
  */
 const FIELDS: readonly {
-  key: keyof Omit<CoordinateBreak, 'tiltFirst'>;
+  key: keyof Omit<CoordinateTransform, 'tiltFirst'>;
   label: string;
   unit: 'length' | 'degrees';
   hint: string;
@@ -45,27 +45,27 @@ const FIELDS: readonly {
 ];
 
 /**
- * The decenter and tilt of one coordinate break, in a modal rather than in the
+ * The decenter and tilt of one coordinate transform, in a modal rather than in the
  * lens table.
  *
  * Six more columns would push radius, thickness and glass off the side of the
- * screen, and they would be empty on every surface that is not a break — which
- * is nearly all of them. So the table keeps one cell summarizing the break, the
+ * screen, and they would be empty on every surface that is not a transform — which
+ * is nearly all of them. So the table keeps one cell summarizing the transform, the
  * same arrangement the aspheric coefficients use, and for the same reason.
  *
  * Editing is live: each committed field produces a new system exactly as a table
  * cell does, so the layout follows along behind the open dialog and an undo
  * steps back through the numbers one at a time.
  */
-export function CoordinateBreakDialog({
+export function CoordinateTransformDialog({
   surfaceLabel,
   parameters,
   onCommit,
   onClose,
 }: {
   surfaceLabel: string;
-  parameters: CoordinateBreak;
-  onCommit: (changes: Partial<CoordinateBreak>) => void;
+  parameters: CoordinateTransform;
+  onCommit: (changes: Partial<CoordinateTransform>) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -83,7 +83,7 @@ export function CoordinateBreakDialog({
     <dialog
       ref={dialog}
       className="asphere-dialog"
-      aria-label={`Coordinate break of surface ${surfaceLabel}`}
+      aria-label={`Coordinate transform of surface ${surfaceLabel}`}
       onClose={onClose}
       onClick={(event) => {
         if (event.target === dialog.current) {
@@ -92,15 +92,15 @@ export function CoordinateBreakDialog({
       }}
     >
       <header>
-        <h2>Coordinate break · surface {surfaceLabel}</h2>
+        <h2>Coordinate transform · surface {surfaceLabel}</h2>
         <button className="subtle" aria-label="Close" onClick={() => dialog.current?.close()}>
           ×
         </button>
       </header>
 
       <p className="hint">
-        Re-points the axis for every surface after this one. The break itself has no shape and meets
-        no ray; its thickness moves along the axis <em>as re-pointed</em>.
+        Re-points the axis for every surface after this one. The surface itself has no shape and
+        meets no ray; its thickness moves along the axis <em>as re-pointed</em>.
       </p>
 
       <table className="asphere-terms">
@@ -137,7 +137,7 @@ export function CoordinateBreakDialog({
         </label>
         <br />
         {parameters.tiltFirst
-          ? 'Tilts about z, then the new y, then the new x; the decenters follow, along the axes as turned. This order is what lets one break undo another.'
+          ? 'Tilts about z, then the new y, then the new x; the decenters follow, along the axes as turned. This order is what lets one transform undo another.'
           : 'Decenters first, then tilts about x, then the new y, then the new z. The usual order, and what a file writes as 0.'}
       </p>
 
@@ -162,7 +162,7 @@ export function CoordinateBreakDialog({
   );
 }
 
-/** One value of a break. Lengths and angles both read as plain decimals here. */
+/** One value of a transform. Lengths and angles both read as plain decimals here. */
 function BreakValueCell({
   value,
   ariaLabel,
@@ -222,18 +222,18 @@ function BreakValueCell({
 }
 
 /**
- * The lens-table cell that opens the dialog: a summary of the break, so the
+ * The lens-table cell that opens the dialog: a summary of the transform, so the
  * table still says at a glance which surfaces move the axis and how far.
  *
- * A break with nothing set is drawn as flat rather than as zeros, because that
+ * A transform with nothing set is drawn as flat rather than as zeros, because that
  * is a real and common state — the surface is added first and aimed afterwards.
  */
-export function CoordinateBreakSummaryButton({
+export function CoordinateTransformSummaryButton({
   parameters,
   surfaceLabel,
   onOpen,
 }: {
-  parameters: CoordinateBreak;
+  parameters: CoordinateTransform;
   surfaceLabel: string;
   onOpen: () => void;
 }) {
@@ -257,8 +257,8 @@ export function CoordinateBreakSummaryButton({
     <button
       className="asphere-summary"
       onClick={onOpen}
-      aria-label={`Edit the coordinate break of surface ${surfaceLabel}`}
-      title="Decenter and tilt of this coordinate break"
+      aria-label={`Edit the coordinate transform of surface ${surfaceLabel}`}
+      title="Decenter and tilt of this coordinate transform"
     >
       {parts.length === 0 ? 'flat' : parts.join(', ')}
     </button>

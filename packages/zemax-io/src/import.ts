@@ -10,7 +10,7 @@ import {
   type ApertureType,
   type Field,
   type LinearUnit,
-  type CoordinateBreak,
+  type CoordinateTransform,
   type Material,
   type SurfaceType,
 } from '@isaac/optical-core';
@@ -260,7 +260,11 @@ function toSurface(
   }
   const isParaxial = surfaceType === 'PARAXIAL';
   const isEvenAsphere = surfaceType === 'EVENASPH';
-  const isCoordinateBreak = surfaceType === 'COORDBRK';
+  // Zemax spells this `COORDBRK` and calls it a **coordinate break**. The model
+  // calls the same thing a COORDINATE_TRANSFORM — what it actually does, and the
+  // name 3-D graphics gives it. This is where the two vocabularies meet, so the
+  // file's word survives here and nowhere else.
+  const isCoordinateTransform = surfaceType === 'COORDBRK';
 
   const conic = numericValue(firstValue(records, 'CONI')) ?? 0;
   if (!Number.isFinite(conic)) {
@@ -285,8 +289,8 @@ function toSurface(
         ? 'PARAXIAL'
         : isEvenAsphere
           ? 'EVEN_ASPHERE'
-          : isCoordinateBreak
-            ? 'COORDINATE_BREAK'
+          : isCoordinateTransform
+            ? 'COORDINATE_TRANSFORM'
             : 'STANDARD';
 
   // An aspheric object or image surface is not refused — a curved detector is a
@@ -309,10 +313,10 @@ function toSurface(
   // The manual is explicit that the object surface can never be a coordinate
   // break; an image one is the same contradiction at the other end, since the
   // system has to end somewhere a ray can land.
-  if (isCoordinateBreak && (isObject || isImage)) {
+  if (isCoordinateTransform && (isObject || isImage)) {
     throw new ZmxImportError(
       `Surface ${number} is TYPE COORDBRK but is the ${isObject ? 'object' : 'image'} surface; ` +
-        'a coordinate break is a change of frame, not a place a ray can land.',
+        'a coordinate transform is a change of frame, not a place a ray can land.',
     );
   }
 
@@ -338,15 +342,15 @@ function toSurface(
     isStop = false;
   }
 
-  if (type === 'COORDINATE_BREAK') {
-    // No radius, no conic, no aperture: a break has no shape to carry them, and
+  if (type === 'COORDINATE_TRANSFORM') {
+    // No radius, no conic, no aperture: a transform has no shape to carry them, and
     // the model refuses them. Files write `CURV 0` and `DIAM 0` here anyway.
     // The medium is filled in by `adoptMirrorMedia`, which carries the previous
-    // surface's material forward — a break cannot be a boundary between media.
+    // surface's material forward — a transform cannot be a boundary between media.
     return new Surface({
       id: `surf-${number}`,
       type,
-      coordinateBreak: readCoordinateBreak(records, number),
+      coordinateTransform: readCoordinateTransform(records, number),
       thickness,
       isStop,
       comment: readComment(records),
@@ -406,11 +410,11 @@ function adoptMirrorMedia(surfaces: readonly Surface[]): Surface[] {
   const resolved = [...surfaces];
   for (let index = 1; index < resolved.length; index += 1) {
     const surface = resolved[index]!;
-    // A coordinate break is in the same position as a mirror and for the same
+    // A coordinate transform is in the same position as a mirror and for the same
     // reason: it names no glass, because it cannot be a boundary between two
     // media. Zemax shows "-" in its glass column to say so. Both carry the
     // medium of the surface before them, and the model refuses anything else.
-    if (surface.reflective || surface.type === 'COORDINATE_BREAK') {
+    if (surface.reflective || surface.type === 'COORDINATE_TRANSFORM') {
       resolved[index] = surface.with({ material: resolved[index - 1]!.material });
     }
   }
@@ -430,10 +434,10 @@ function adoptMirrorMedia(surfaces: readonly Surface[]): Surface[] {
  * the whole meaning, and one that is not among the six is not something to guess
  * at. That is the same rule the PARAXIAL and EVENASPH readers follow.
  */
-function readCoordinateBreak(
+function readCoordinateTransform(
   records: readonly ZmxRecord[],
   surfaceNumber: number,
-): CoordinateBreak {
+): CoordinateTransform {
   const values = new Map<number, number>();
   for (const record of findRecords(records, 'PARM')) {
     const column = numericValue(record.values[0]);

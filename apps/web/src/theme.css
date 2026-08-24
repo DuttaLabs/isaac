@@ -789,6 +789,23 @@ svg.layout.panning {
  * vertically. The `left` itself is set in script, from the editor's measured
  * width — the panes are a fluid grid, so there is no constant to write here.
  */
+/* The row of actions under a list: "+ add", and for the fields "Cycle fields". */
+.list-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/*
+ * While cycling, the button is the only thing on screen that is *doing*
+ * something, so it says so rather than relying on the checkboxes flickering —
+ * which is the effect, not the control.
+ */
+.subtle.cycling {
+  color: var(--text-primary);
+  border-color: var(--accent, var(--text-secondary));
+}
+
 .anchored-dialog {
   right: auto;
   margin-left: 0;

@@ -20,6 +20,8 @@ export function SourcePanel({
   system,
   onChange,
   fieldVisibility,
+  cyclingFields,
+  onToggleFieldCycling,
   onFieldVisibilityChange,
 }: {
   system: OpticalSystem;
@@ -31,6 +33,9 @@ export function SourcePanel({
    * into a lens file.
    */
   fieldVisibility: readonly boolean[];
+  /** True while the layout is showing the checked fields one at a time. */
+  cyclingFields: boolean;
+  onToggleFieldCycling: () => void;
   onFieldVisibilityChange: (next: boolean[]) => void;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
@@ -117,6 +122,16 @@ export function SourcePanel({
         values={system.fields.map((field) => field.angleDeg ?? field.objectHeight ?? 0)}
         visible={system.fields.map((_, index) => fieldVisibility[index] ?? true)}
         onVisibleChange={onFieldVisibilityChange}
+        cycle={{
+          active: cyclingFields,
+          onToggle: onToggleFieldCycling,
+          // Two is the fewest that can take turns; with one there is nothing to
+          // tell apart, which is the only thing cycling is for. This gates
+          // *starting* only — cycling itself leaves one field checked, so a
+          // button disabled on the live count would switch on and then refuse
+          // to switch off.
+          canStart: system.fields.filter((_, index) => fieldVisibility[index] ?? true).length >= 2,
+        }}
         onChange={(values) =>
           apply(
             attempt(() =>
@@ -171,6 +186,7 @@ function ListEditor({
   onPrimaryChange,
   visible,
   onVisibleChange,
+  cycle,
 }: {
   label: string;
   values: number[];
@@ -179,6 +195,8 @@ function ListEditor({
   onPrimaryChange?: (index: number) => void;
   visible?: boolean[];
   onVisibleChange?: (next: boolean[]) => void;
+  /** Shows the checked rows one at a time; only the fields list offers it. */
+  cycle?: { active: boolean; onToggle: () => void; canStart: boolean };
 }) {
   const showDisplay = visible !== undefined && onVisibleChange !== undefined;
   const rowClass = showDisplay ? 'list-row with-display' : 'list-row';
@@ -246,9 +264,31 @@ function ListEditor({
             </button>
           </div>
         ))}
-        <button className="subtle" onClick={add}>
-          + add
-        </button>
+        <div className="list-actions">
+          <button className="subtle" onClick={add}>
+            + add
+          </button>
+          {/* Only the fields list offers this, and only once there are two
+              checked to alternate between. */}
+          {cycle ? (
+            <button
+              className={cycle.active ? 'subtle cycling' : 'subtle'}
+              // Never disabled while running: cycling leaves one field checked,
+              // so the condition that allows starting is false by the time the
+              // button's job is to stop.
+              disabled={!cycle.active && !cycle.canStart}
+              aria-pressed={cycle.active}
+              title={
+                cycle.active || cycle.canStart
+                  ? 'Show the checked fields one at a time, so a bundle can be told from its neighbours. Click again to stop and put the selection back.'
+                  : 'Check at least two fields to cycle between them.'
+              }
+              onClick={cycle.onToggle}
+            >
+              {cycle.active ? 'Stop cycling' : 'Cycle fields'}
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

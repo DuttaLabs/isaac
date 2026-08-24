@@ -51,6 +51,12 @@ interface Notice {
   ignoredTokens?: readonly string[];
 }
 
+/**
+ * How long each field is left up while cycling. Slow enough to look at, quick
+ * enough that a six-field design comes round in under five seconds.
+ */
+const FIELD_CYCLE_MS = 750;
+
 export function App() {
   const [history, setHistory] = useState(() => ({ stack: [defaultSystem()], index: 0 }));
   const [theme, setTheme] = useState<Theme>('light');
@@ -63,6 +69,13 @@ export function App() {
    * past it must not land on the undo stack or be written into a lens file.
    */
   const [fieldVisibility, setFieldVisibility] = useState<boolean[]>([]);
+  /**
+   * The selection to put back when field cycling stops, and the flag that it is
+   * running. Cycling drives `fieldVisibility` itself so the checkboxes show
+   * which field is up, which means the user's own selection has to be held
+   * somewhere — losing it to a visual aid would be a poor trade.
+   */
+  const [cycleBase, setCycleBase] = useState<boolean[] | undefined>(undefined);
   const [allWavelengths, setAllWavelengths] = useState(false);
   const [view, setView] = useState<'2d' | '3d'>('2d');
   /** Bumped by the reset button; both views watch it and nothing else does. */
@@ -110,6 +123,64 @@ export function App() {
   // undo, or the reset button brings its own field list, and anything the flags
   // do not cover is drawn. Removing a field keeps the flags in step at the row
   // that knows which one went; this only has to be safe, not clever.
+  const fieldCount = system.fields.length;
+
+  /**
+   * Shows one visible field at a time, in turn, so a reader can tell which
+   * bundle is which when several cross. Only the fields that were checked when
+   * cycling started take part — it is a way of looking at a chosen set, not a
+   * way of choosing one.
+   */
+  useEffect(() => {
+    if (cycleBase === undefined) {
+      return;
+    }
+    // A design changing underfoot — a file loaded, an undo, a field added —
+    // invalidates the saved selection, so cycling stops rather than restoring
+    // flags that no longer line up with the fields.
+    if (cycleBase.length !== fieldCount) {
+      setCycleBase(undefined);
+      return;
+    }
+    const taking = cycleBase.flatMap((shown, index) => (shown ? [index] : []));
+    if (taking.length < 2) {
+      setCycleBase(undefined);
+      return;
+    }
+
+    let step = 0;
+    const show = (): void => {
+      const current = taking[step % taking.length]!;
+      setFieldVisibility(cycleBase.map((_, index) => index === current));
+    };
+    show();
+    const timer = setInterval(() => {
+      step += 1;
+      show();
+    }, FIELD_CYCLE_MS);
+    return () => clearInterval(timer);
+  }, [cycleBase, fieldCount]);
+
+  /** Starts cycling from the current selection, or stops and puts it back. */
+  const toggleFieldCycling = (): void => {
+    if (cycleBase !== undefined) {
+      setFieldVisibility(cycleBase);
+      setCycleBase(undefined);
+      return;
+    }
+    setCycleBase(system.fields.map((_, index) => fieldVisibility[index] ?? true));
+  };
+
+  /**
+   * A visibility change the user made. It ends cycling without restoring the
+   * saved selection: they are looking at the flags cycling left and have just
+   * edited those, so those are the ones they mean.
+   */
+  const changeFieldVisibility = (next: boolean[]): void => {
+    setCycleBase(undefined);
+    setFieldVisibility(next);
+  };
+
   const visibleFieldIndices = useMemo(
     () => allFieldIndices(system).filter((index) => fieldVisibility[index] ?? true),
     [system, fieldVisibility],
@@ -172,6 +243,7 @@ export function App() {
       // A file brings its own field list, so flags set against the previous
       // design mean nothing against this one. Everything starts visible.
       setFieldVisibility([]);
+      setCycleBase(undefined);
       const { system: loaded, warnings, ignoredTokens } = result;
       setNotice({
         kind: 'info',
@@ -236,6 +308,7 @@ export function App() {
           onClick={() => {
             pushSystem(defaultSystem());
             setFieldVisibility([]);
+            setCycleBase(undefined);
             setNotice(undefined);
           }}
         >
@@ -292,7 +365,9 @@ export function App() {
               system={system}
               onChange={pushSystem}
               fieldVisibility={fieldVisibility}
-              onFieldVisibilityChange={setFieldVisibility}
+              onFieldVisibilityChange={changeFieldVisibility}
+              cyclingFields={cycleBase !== undefined}
+              onToggleFieldCycling={toggleFieldCycling}
             />
           </ErrorBoundary>
           <ErrorBoundary label="Optical system">

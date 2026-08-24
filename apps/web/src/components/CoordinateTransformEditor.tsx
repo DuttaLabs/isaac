@@ -107,8 +107,11 @@ export function CoordinateTransformDialog({
     };
 
     place();
-    window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
+    // The window the dialog is in, which is the second one when the editor has
+    // been sent there — and it is that window's resize the placement follows.
+    const view = dialog.current?.ownerDocument.defaultView ?? window;
+    view.addEventListener('resize', place);
+    return () => view.removeEventListener('resize', place);
   }, [anchor]);
 
   return (

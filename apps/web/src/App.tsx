@@ -17,7 +17,16 @@ import { GLASS_CATALOG } from './lib/materials.ts';
 import { formatMicrons } from './lib/format.ts';
 import { describeError, type Result } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import { ErrorNote, Panel } from './components/Panel.tsx';
+import { ErrorNote, Panel, type PanelDetach } from './components/Panel.tsx';
+import { PANELS, Placed, type PanelId, type Placement } from './components/Placed.tsx';
+import { SecondaryWindow } from './components/SecondaryWindow.tsx';
+import {
+  moveToOtherScreen,
+  openSecondaryWindow,
+  screenPlacementState,
+  type ScreenPlacement,
+  type SecondaryWindowHandle,
+} from './lib/secondary-window.ts';
 import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
 import { FullScreenButton } from './components/FullScreenButton.tsx';
 import { LayoutView, type FirstOrderOverlay } from './components/LayoutView.tsx';
@@ -81,6 +90,21 @@ export function App() {
   /** Bumped by the reset button; both views watch it and nothing else does. */
   const [viewReset, setViewReset] = useState(0);
   const [notice, setNotice] = useState<Notice | undefined>();
+  /**
+   * The second window, and which panels have been sent to it. Both are view
+   * settings and live here rather than on `OpticalSystem`, for the same reason
+   * the field checkboxes do: where a panel is shown is not part of the design,
+   * and moving one must not land on the undo stack.
+   */
+  const [secondary, setSecondary] = useState<SecondaryWindowHandle | undefined>();
+  const [detached, setDetached] = useState<Partial<Record<PanelId, boolean>>>({});
+  /**
+   * Whether the browser will place a window on a chosen display. Asked once, up
+   * front, because the answer decides whether opening the window can move it
+   * too: only a granted permission works without a live user gesture, and the
+   * gesture that opens the window is spent doing exactly that.
+   */
+  const [displayAccess, setDisplayAccess] = useState<ScreenPlacement>('unsupported');
   // Which surface the pointer or the keyboard is currently on in the table. The
   // editor and the layout are siblings, so the link between them lives here.
   const [highlightedSurface, setHighlightedSurface] = useState<number | undefined>(undefined);
@@ -94,6 +118,81 @@ export function App() {
       const stack = [...current.stack.slice(0, current.index + 1), next].slice(-HISTORY_LIMIT);
       return { stack, index: stack.length - 1 };
     });
+  }, []);
+
+  /**
+   * Takes the panels back and forgets the window. Called both when the user
+   * closes it from the app bar and when they close the window itself, so it
+   * does not close anything — by the second route it has already gone.
+   */
+  const forgetSecondary = useCallback(() => {
+    setSecondary(undefined);
+    setDetached({});
+  }, []);
+
+  /**
+   * Opens the second window, reporting a blocked pop-up rather than leaving a
+   * button that appears to do nothing. Returns the handle so the click that
+   * asked for it can go on to use it: the state set here is not readable until
+   * the next render.
+   */
+  const openSecondary = (): SecondaryWindowHandle | undefined => {
+    try {
+      const handle = openSecondaryWindow(`Isaac — ${system.name}`);
+      setSecondary(handle);
+      // Only when it has already been allowed. Asking here cannot work: the
+      // prompt needs a live user gesture and `window.open` has just spent it.
+      if (displayAccess === 'granted') {
+        void moveToOtherScreen(handle.window).catch((error: unknown) =>
+          setNotice({ kind: 'error', text: describeError(error) }),
+        );
+      }
+      return handle;
+    } catch (error) {
+      setNotice({ kind: 'error', text: describeError(error) });
+      return undefined;
+    }
+  };
+
+  /** Asks for the display permission on its own click, then moves the window. */
+  const moveSecondaryAcross = (): void => {
+    if (secondary === undefined) {
+      return;
+    }
+    moveToOtherScreen(secondary.window).then(
+      () => setDisplayAccess('granted'),
+      (error: unknown) => {
+        void screenPlacementState().then(setDisplayAccess);
+        setNotice({ kind: 'error', text: describeError(error) });
+      },
+    );
+  };
+
+  /** Sends a panel to the second window, opening one if there is not one yet. */
+  const toggleDetached = (id: PanelId): void => {
+    if (detached[id] === true) {
+      setDetached(({ [id]: _gone, ...rest }) => rest);
+      return;
+    }
+    if ((secondary === undefined || secondary.window.closed) && openSecondary() === undefined) {
+      return; // blocked, and the notice says so — leave the panel where it is
+    }
+    setDetached((current) => ({ ...current, [id]: true }));
+  };
+
+  const placement: Placement = {
+    detached,
+    container: secondary?.container,
+    onReturn: toggleDetached,
+  };
+
+  const detachOf = (id: PanelId): PanelDetach => ({
+    detached: detached[id] === true,
+    onToggle: () => toggleDetached(id),
+  });
+
+  useEffect(() => {
+    void screenPlacementState().then(setDisplayAccess);
   }, []);
 
   useEffect(() => {
@@ -322,6 +421,39 @@ export function App() {
         >
           Theme: {theme}
         </button>
+        {secondary && (displayAccess === 'prompt' || displayAccess === 'granted') ? (
+          <button
+            onClick={moveSecondaryAcross}
+            title={
+              displayAccess === 'granted'
+                ? 'Move the second window to the other display'
+                : 'Ask Chrome where your displays are, then move the second window to the other one'
+            }
+          >
+            Move to other display
+          </button>
+        ) : null}
+        <button
+          onClick={() => {
+            if (secondary) {
+              secondary.window.close();
+              forgetSecondary();
+            } else {
+              openSecondary();
+            }
+          }}
+          aria-pressed={secondary !== undefined}
+          title={
+            secondary
+              ? 'Close the second window and bring every panel back'
+              : 'Open a window to drag onto another display, then send panels to it with ↗'
+          }
+        >
+          <span className="label-swap">
+            <span className={secondary ? 'label-hidden' : undefined}>Second window</span>
+            <span className={secondary ? undefined : 'label-hidden'}>Close 2nd window</span>
+          </span>
+        </button>
         <FullScreenButton onError={(text) => setNotice({ kind: 'error', text })} />
       </header>
 
@@ -360,223 +492,261 @@ export function App() {
 
       <div className="workspace">
         <div className="column">
-          <ErrorBoundary label="Source object">
-            <SourcePanel
-              system={system}
-              onChange={pushSystem}
-              fieldVisibility={fieldVisibility}
-              onFieldVisibilityChange={changeFieldVisibility}
-              cyclingFields={cycleBase !== undefined}
-              onToggleFieldCycling={toggleFieldCycling}
-            />
-          </ErrorBoundary>
-          <ErrorBoundary label="Optical system">
-            <LensDataEditor
-              system={system}
-              onChange={pushSystem}
-              onHighlight={setHighlightedSurface}
-              highlightedSurface={highlightedSurface}
-            />
-          </ErrorBoundary>
-          <ErrorBoundary label="First order">
-            <FirstOrderPanel system={system} firstOrder={firstOrder} />
-          </ErrorBoundary>
+          <Placed id="source" placement={placement}>
+            <ErrorBoundary label="Source object">
+              <SourcePanel
+                system={system}
+                onChange={pushSystem}
+                fieldVisibility={fieldVisibility}
+                onFieldVisibilityChange={changeFieldVisibility}
+                cyclingFields={cycleBase !== undefined}
+                onToggleFieldCycling={toggleFieldCycling}
+                detach={detachOf('source')}
+              />
+            </ErrorBoundary>
+          </Placed>
+          <Placed id="system" placement={placement}>
+            <ErrorBoundary label="Optical system">
+              <LensDataEditor
+                system={system}
+                onChange={pushSystem}
+                onHighlight={setHighlightedSurface}
+                highlightedSurface={highlightedSurface}
+                detach={detachOf('system')}
+              />
+            </ErrorBoundary>
+          </Placed>
+          <Placed id="firstOrder" placement={placement}>
+            <ErrorBoundary label="First order">
+              <FirstOrderPanel
+                system={system}
+                firstOrder={firstOrder}
+                detach={detachOf('firstOrder')}
+              />
+            </ErrorBoundary>
+          </Placed>
         </div>
 
         <div className="column">
-          <Panel
-            title="Layout"
-            flush
-            actions={
-              <>
-                <label className="inline hint">
-                  rays
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    step={2}
-                    value={raysPerFan}
-                    style={{ width: 56 }}
-                    onChange={(event) =>
-                      setRaysPerFan(Math.max(1, Math.min(31, Number(event.target.value) || 1)))
-                    }
-                  />
-                </label>
-                <label className="inline hint">
-                  <input
-                    type="checkbox"
-                    checked={allWavelengths}
-                    onChange={(event) => setAllWavelengths(event.target.checked)}
-                  />
-                  all wavelengths
-                </label>
-                {/* Only offered on the cross-section: these are construction
+          <Placed id="layout" placement={placement}>
+            <Panel
+              title="Layout"
+              flush
+              detach={detachOf('layout')}
+              actions={
+                <>
+                  <label className="inline hint">
+                    rays
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      step={2}
+                      value={raysPerFan}
+                      style={{ width: 56 }}
+                      onChange={(event) =>
+                        setRaysPerFan(Math.max(1, Math.min(31, Number(event.target.value) || 1)))
+                      }
+                    />
+                  </label>
+                  <label className="inline hint">
+                    <input
+                      type="checkbox"
+                      checked={allWavelengths}
+                      onChange={(event) => setAllWavelengths(event.target.checked)}
+                    />
+                    all wavelengths
+                  </label>
+                  {/* Only offered on the cross-section: these are construction
                     lines through the meridional plane, and the 3-D view does not
                     draw them, so the control would otherwise promise something
                     that does not happen. */}
-                {view === '2d' ? (
-                  <label
-                    className="inline hint"
-                    title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showFirstOrder}
-                      onChange={(event) => setShowFirstOrder(event.target.checked)}
-                    />
-                    first-order rays
-                  </label>
-                ) : null}
-                <button
-                  title={
-                    view === '2d'
-                      ? 'Show the system as a solid, free to orbit'
-                      : 'Back to the meridional cross-section'
-                  }
-                  aria-pressed={view === '3d'}
-                  onClick={() => setView(view === '2d' ? '3d' : '2d')}
-                >
-                  <span className="label-swap">
-                    <span className={view === '2d' ? undefined : 'label-hidden'}>3D</span>
-                    <span className={view === '2d' ? 'label-hidden' : undefined}>2D</span>
-                  </span>
-                </button>
-                <button
-                  title={
-                    view === '2d'
-                      ? 'Fit the drawing to the panel again'
-                      : 'Put the camera back where it started'
-                  }
-                  onClick={() => setViewReset((count) => count + 1)}
-                >
-                  Reset view
-                </button>
-              </>
-            }
-          >
-            <ErrorBoundary label="Layout">
-              {layout.ok ? (
-                <>
                   {view === '2d' ? (
-                    <LayoutView
-                      system={system}
-                      traces={layout.value}
-                      defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
-                      highlightedSurface={highlightedSurface}
-                      resetSignal={viewReset}
-                      firstOrder={firstOrderOverlay}
-                    />
-                  ) : volume?.ok ? (
-                    <Suspense
-                      fallback={
-                        <p className="hint" style={{ padding: 12 }}>
-                          Loading the 3D view…
-                        </p>
-                      }
+                    <label
+                      className="inline hint"
+                      title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
                     >
-                      <Layout3DView
+                      <input
+                        type="checkbox"
+                        checked={showFirstOrder}
+                        onChange={(event) => setShowFirstOrder(event.target.checked)}
+                      />
+                      first-order rays
+                    </label>
+                  ) : null}
+                  <button
+                    title={
+                      view === '2d'
+                        ? 'Show the system as a solid, free to orbit'
+                        : 'Back to the meridional cross-section'
+                    }
+                    aria-pressed={view === '3d'}
+                    onClick={() => setView(view === '2d' ? '3d' : '2d')}
+                  >
+                    <span className="label-swap">
+                      <span className={view === '2d' ? undefined : 'label-hidden'}>3D</span>
+                      <span className={view === '2d' ? 'label-hidden' : undefined}>2D</span>
+                    </span>
+                  </button>
+                  <button
+                    title={
+                      view === '2d'
+                        ? 'Fit the drawing to the panel again'
+                        : 'Put the camera back where it started'
+                    }
+                    onClick={() => setViewReset((count) => count + 1)}
+                  >
+                    Reset view
+                  </button>
+                </>
+              }
+            >
+              <ErrorBoundary label="Layout">
+                {layout.ok ? (
+                  <>
+                    {view === '2d' ? (
+                      <LayoutView
                         system={system}
-                        traces={volume.value}
+                        traces={layout.value}
                         defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                         highlightedSurface={highlightedSurface}
                         resetSignal={viewReset}
+                        firstOrder={firstOrderOverlay}
                       />
-                    </Suspense>
-                  ) : (
-                    <div style={{ padding: 12 }}>
-                      <ErrorNote
-                        message={volume?.ok === false ? volume.error : 'No rays to draw.'}
-                      />
-                    </div>
-                  )}
-                  <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
-                  {/* Dash-only, and 2-D only. Color belongs to the field now, so
+                    ) : volume?.ok ? (
+                      <Suspense
+                        fallback={
+                          <p className="hint" style={{ padding: 12 }}>
+                            Loading the 3D view…
+                          </p>
+                        }
+                      >
+                        <Layout3DView
+                          system={system}
+                          traces={volume.value}
+                          defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
+                          highlightedSurface={highlightedSurface}
+                          resetSignal={viewReset}
+                        />
+                      </Suspense>
+                    ) : (
+                      <div style={{ padding: 12 }}>
+                        <ErrorNote
+                          message={volume?.ok === false ? volume.error : 'No rays to draw.'}
+                        />
+                      </div>
+                    )}
+                    <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
+                    {/* Dash-only, and 2-D only. Color belongs to the field now, so
                       a colored wavelength swatch would name a mapping that is not
                       on screen — and a line material has no dash to offer, so in
                       3-D the wavelengths are drawn but not distinguished. */}
-                  {allWavelengths && view === '2d' ? (
-                    <WavelengthLegend system={system} pattern />
-                  ) : null}
-                  {firstOrderOverlay ? (
-                    <FirstOrderLegend
-                      rays={firstOrderOverlay.rays}
-                      entrance={firstOrderOverlay.entrance}
-                      exit={firstOrderOverlay.exit}
-                      principal={firstOrderOverlay.principal}
-                      units={system.units}
-                    />
-                  ) : null}
-                  {showFirstOrder && view === '2d' && firstOrderRays?.ok === false ? (
-                    <p className="hint" style={{ padding: '0 12px 10px' }}>
-                      No first-order rays: {firstOrderRays.error}
-                    </p>
-                  ) : null}
-                  <p className="hint view-hint">
-                    {view === '2d'
-                      ? 'Wheel zooms · drag pans'
-                      : 'Wheel zooms · drag pans · wheel-drag orbits'}
-                  </p>
-                </>
-              ) : (
-                <div style={{ padding: 12 }}>
-                  <ErrorNote message={layout.error} />
-                </div>
-              )}
-            </ErrorBoundary>
-          </Panel>
-
-          <Panel
-            title="Analysis"
-            flush
-            actions={
-              <label className="inline hint">
-                field
-                <select
-                  value={activeField}
-                  onChange={(event) => setFieldIndex(Number(event.target.value))}
-                  disabled={system.fields.length === 0}
-                >
-                  {(system.fields.length > 0 ? system.fields : [null]).map((_, index) => (
-                    <option value={index} key={index}>
-                      {fieldLabel(index)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            }
-          >
-            <ErrorBoundary label="Analysis">
-              <div className="plot-grid" style={{ padding: 12 }}>
-                <div>
-                  <h3 className="stat-label">Ray fan — tangential</h3>
-                  {fan.ok ? (
-                    <RayFanPlot data={fan.value} title={`Ray fan at ${fieldLabel(activeField)}`} />
-                  ) : (
-                    <ErrorNote message={fan.error} />
-                  )}
-                </div>
-                <div>
-                  <h3 className="stat-label">Spot diagram</h3>
-                  {spot.ok ? (
-                    <>
-                      <SpotDiagram data={spot.value} title={`Spot at ${fieldLabel(activeField)}`} />
-                      <p className="hint" style={{ margin: '4px 0 0' }}>
-                        RMS radius {formatMicrons(spot.value.rmsRadius)} · max{' '}
-                        {formatMicrons(spot.value.maxRadius)} · {spot.value.traced} rays
-                        {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ''}
+                    {allWavelengths && view === '2d' ? (
+                      <WavelengthLegend system={system} pattern />
+                    ) : null}
+                    {firstOrderOverlay ? (
+                      <FirstOrderLegend
+                        rays={firstOrderOverlay.rays}
+                        entrance={firstOrderOverlay.entrance}
+                        exit={firstOrderOverlay.exit}
+                        principal={firstOrderOverlay.principal}
+                        units={system.units}
+                      />
+                    ) : null}
+                    {showFirstOrder && view === '2d' && firstOrderRays?.ok === false ? (
+                      <p className="hint" style={{ padding: '0 12px 10px' }}>
+                        No first-order rays: {firstOrderRays.error}
                       </p>
-                    </>
-                  ) : (
-                    <ErrorNote message={spot.error} />
-                  )}
+                    ) : null}
+                    <p className="hint view-hint">
+                      {view === '2d'
+                        ? 'Wheel zooms · drag pans'
+                        : 'Wheel zooms · drag pans · wheel-drag orbits'}
+                    </p>
+                  </>
+                ) : (
+                  <div style={{ padding: 12 }}>
+                    <ErrorNote message={layout.error} />
+                  </div>
+                )}
+              </ErrorBoundary>
+            </Panel>
+          </Placed>
+
+          <Placed id="analysis" placement={placement}>
+            <Panel
+              title="Analysis"
+              flush
+              detach={detachOf('analysis')}
+              actions={
+                <label className="inline hint">
+                  field
+                  <select
+                    value={activeField}
+                    onChange={(event) => setFieldIndex(Number(event.target.value))}
+                    disabled={system.fields.length === 0}
+                  >
+                    {(system.fields.length > 0 ? system.fields : [null]).map((_, index) => (
+                      <option value={index} key={index}>
+                        {fieldLabel(index)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              }
+            >
+              <ErrorBoundary label="Analysis">
+                <div className="plot-grid" style={{ padding: 12 }}>
+                  <div>
+                    <h3 className="stat-label">Ray fan — tangential</h3>
+                    {fan.ok ? (
+                      <RayFanPlot
+                        data={fan.value}
+                        title={`Ray fan at ${fieldLabel(activeField)}`}
+                      />
+                    ) : (
+                      <ErrorNote message={fan.error} />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="stat-label">Spot diagram</h3>
+                    {spot.ok ? (
+                      <>
+                        <SpotDiagram
+                          data={spot.value}
+                          title={`Spot at ${fieldLabel(activeField)}`}
+                        />
+                        <p className="hint" style={{ margin: '4px 0 0' }}>
+                          RMS radius {formatMicrons(spot.value.rmsRadius)} · max{' '}
+                          {formatMicrons(spot.value.maxRadius)} · {spot.value.traced} rays
+                          {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ''}
+                        </p>
+                      </>
+                    ) : (
+                      <ErrorNote message={spot.error} />
+                    )}
+                  </div>
                 </div>
-              </div>
-              <WavelengthLegend system={system} />
-            </ErrorBoundary>
-          </Panel>
+                <WavelengthLegend system={system} />
+              </ErrorBoundary>
+            </Panel>
+          </Placed>
         </div>
       </div>
+
+      {secondary ? (
+        <SecondaryWindow
+          handle={secondary}
+          title={`Isaac — ${system.name}`}
+          onClose={forgetSecondary}
+        >
+          {PANELS.every((id) => detached[id] !== true) ? (
+            <p className="hint secondary-empty">
+              Send panels here with the ↗ button in each panel's header.
+            </p>
+          ) : null}
+        </SecondaryWindow>
+      ) : null}
     </div>
   );
 }

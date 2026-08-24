@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Canvas, extend, useFrame, useThree, type ThreeElement } from '@react-three/fiber';
 import { Box3, DoubleSide, MOUSE, Sphere, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -56,6 +56,63 @@ const MOUSE_BUTTONS = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.ROTA
  * this file is the mount and the controls. Colors are resolved from the same
  * theme tokens the SVG views use, so the two layouts cannot drift apart.
  */
+/** What `document.defaultView` hands back: a window with its globals, `ResizeObserver` among them. */
+type DomWindow = Window & typeof globalThis;
+
+/** The pixel ratios the canvas is drawn at, clamped as R3F's own `[min, max]` would. */
+const MIN_PIXEL_RATIO = 1;
+const MAX_PIXEL_RATIO = 2;
+
+/**
+ * The window this element is in, which is not `window` once the Layout panel has
+ * been sent to the second one.
+ *
+ * Resolved from the mounted element rather than passed in, so nothing above has
+ * to know where the panel is being drawn. It is only knowable after the first
+ * render, which is why the canvas waits for it: two of the things R3F needs are
+ * properties of a *window*, and starting it against the wrong one and correcting
+ * it afterwards would throw away a WebGL context for nothing.
+ */
+function useOwnWindow(element: RefObject<HTMLElement | null>): DomWindow | undefined {
+  const [view, setView] = useState<DomWindow>();
+  useEffect(() => {
+    setView(element.current?.ownerDocument.defaultView ?? undefined);
+  }, [element]);
+  return view;
+}
+
+/**
+ * The device pixel ratio of a window, kept current as that window moves between
+ * displays.
+ *
+ * R3F's `dpr={[min, max]}` clamps the *global* `devicePixelRatio`, so a panel in
+ * the second window would be drawn at the first monitor's pixel density — and a
+ * Retina laptop driving an ordinary external display would render the scene at
+ * twice the resolution it needs. There is no event for a change of ratio, but a
+ * `(resolution: Ndppx)` query stops matching the moment the ratio leaves N, so
+ * each change is caught by asking again about the new value.
+ */
+function usePixelRatio(view: DomWindow | undefined): number {
+  const [ratio, setRatio] = useState(() => window.devicePixelRatio);
+
+  useEffect(() => {
+    if (view === undefined) {
+      return;
+    }
+    let query: MediaQueryList | undefined;
+    const sync = (): void => {
+      setRatio(view.devicePixelRatio);
+      query?.removeEventListener('change', sync);
+      query = view.matchMedia(`(resolution: ${view.devicePixelRatio}dppx)`);
+      query.addEventListener('change', sync);
+    };
+    sync();
+    return () => query?.removeEventListener('change', sync);
+  }, [view]);
+
+  return Math.min(MAX_PIXEL_RATIO, Math.max(MIN_PIXEL_RATIO, ratio));
+}
+
 export function Layout3DView({
   system,
   traces,
@@ -72,6 +129,20 @@ export function Layout3DView({
   resetSignal: number;
 }) {
   const colors = useThemeColors();
+  const mount = useRef<HTMLDivElement>(null);
+  const view = useOwnWindow(mount);
+  const pixelRatio = usePixelRatio(view);
+
+  /**
+   * R3F measures the canvas with a `ResizeObserver` taken from the global
+   * `window`, and an observer belongs to the document of the realm that made it:
+   * one built here never reports on an element in the second window, so the
+   * canvas would sit at its untouched 300 × 150 default while its container was
+   * a thousand pixels wide. `resize.polyfill` is the documented way to hand
+   * `useMeasure` a different constructor, and in the main window this is the
+   * very same one it would have used.
+   */
+  const resize = useMemo(() => (view ? { polyfill: view.ResizeObserver } : undefined), [view]);
 
   const scene = useMemo(
     () => buildOpticalScene(system, traces, { defaultSemiDiameter }),
@@ -84,94 +155,98 @@ export function Layout3DView({
   const framing = useMemo(() => frameFor(scene), [scene]);
 
   return (
-    <div className="layout-3d">
-      <Canvas
-        dpr={[1, 2]}
-        camera={{
-          fov: FIELD_OF_VIEW,
-          near: framing.near,
-          far: framing.far,
-          position: framing.position,
-        }}
-        // A middle click starts autoscroll in some browsers, which fights the
-        // orbit gesture; the canvas has no use for a context menu either.
-        onPointerDown={(event) => {
-          if (event.button === 1) {
-            event.preventDefault();
-          }
-        }}
-        onContextMenu={(event) => event.preventDefault()}
-      >
-        <color attach="background" args={[colors.background]} />
-        <ambientLight intensity={1.1} />
-        <directionalLight position={[1, 1.4, -1]} intensity={1.6} />
-        <directionalLight position={[-1, -0.6, 0.8]} intensity={0.5} />
+    <div className="layout-3d" ref={mount}>
+      {/* Held back one render until the window is known — see `useOwnWindow`. */}
+      {view ? (
+        <Canvas
+          resize={resize}
+          dpr={pixelRatio}
+          camera={{
+            fov: FIELD_OF_VIEW,
+            near: framing.near,
+            far: framing.far,
+            position: framing.position,
+          }}
+          // A middle click starts autoscroll in some browsers, which fights the
+          // orbit gesture; the canvas has no use for a context menu either.
+          onPointerDown={(event) => {
+            if (event.button === 1) {
+              event.preventDefault();
+            }
+          }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <color attach="background" args={[colors.background]} />
+          <ambientLight intensity={1.1} />
+          <directionalLight position={[1, 1.4, -1]} intensity={1.6} />
+          <directionalLight position={[-1, -0.6, 0.8]} intensity={0.5} />
 
-        <Controls target={framing.target} home={framing.position} resetSignal={resetSignal} />
+          <Controls target={framing.target} home={framing.position} resetSignal={resetSignal} />
 
-        <AxisLine from={framing.axisFrom} to={framing.axisTo} color={colors.axis} />
+          <AxisLine from={framing.axisFrom} to={framing.axisTo} color={colors.axis} />
 
-        {scene.elements.map((element) => (
-          <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
-            <meshStandardMaterial
-              color={element.crossed ? colors.faulty : colors.glass}
-              transparent
-              opacity={element.crossed ? 0.55 : 0.42}
-              roughness={0.12}
-              metalness={0}
-              // A lens is looked through, so its far wall has to still be there
-              // when the camera goes round behind it.
-              side={DoubleSide}
-              depthWrite={false}
-            />
-          </mesh>
-        ))}
+          {scene.elements.map((element) => (
+            <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
+              <meshStandardMaterial
+                color={element.crossed ? colors.faulty : colors.glass}
+                transparent
+                opacity={element.crossed ? 0.55 : 0.42}
+                roughness={0.12}
+                metalness={0}
+                // A lens is looked through, so its far wall has to still be there
+                // when the camera goes round behind it.
+                side={DoubleSide}
+                depthWrite={false}
+              />
+            </mesh>
+          ))}
 
-        {scene.surfaces.map((shell) => (
-          <mesh key={`surface-${shell.surfaceIndex}`} geometry={shell.geometry}>
-            {/* A mirror is shaded as what it is: opaque and metallic, so it
+          {scene.surfaces.map((shell) => (
+            <mesh key={`surface-${shell.surfaceIndex}`} geometry={shell.geometry}>
+              {/* A mirror is shaded as what it is: opaque and metallic, so it
                 reads as the end of the light path rather than as another pane
                 the rays happen to cross. */}
-            <meshStandardMaterial
-              color={
-                shell.surfaceIndex === highlightedSurface
-                  ? colors.highlight
-                  : shell.isMirror
-                    ? colors.mirror
-                    : shell.isStop
-                      ? colors.stop
-                      : colors.surface
-              }
-              transparent={!shell.isMirror}
-              opacity={shell.isMirror ? 1 : shell.isImage ? 0.5 : 0.66}
-              roughness={shell.isMirror ? 0.25 : 0.55}
-              // Held well below 1: there is no environment map in this scene, so
-              // a fully metallic surface has nothing to reflect and renders
-              // black. A quarter of the way is enough to read as polished while
-              // the lights still pick out the curvature.
-              metalness={shell.isMirror ? 0.25 : 0}
-              side={DoubleSide}
-            />
-          </mesh>
-        ))}
-
-        {scene.rays.map((bundle, index) => {
-          // Color by field, as the 2-D view does. There is no dash pattern in a
-          // line material to carry the wavelength as well, so in three
-          // dimensions the field is the only series shown — which is the one a
-          // reader is separating in a spatial picture anyway.
-          const style = fieldStyle(system.fields[bundle.fieldIndex], bundle.fieldIndex);
-          return (
-            <lineSegments key={`rays-${index}`} geometry={bundle.geometry}>
-              <lineBasicMaterial
-                color={colors.fields[style.colorVariable] ?? colors.surface}
-                transparent
-                opacity={bundle.blocked ? 0.16 : 0.7}
+              <meshStandardMaterial
+                color={
+                  shell.surfaceIndex === highlightedSurface
+                    ? colors.highlight
+                    : shell.isMirror
+                      ? colors.mirror
+                      : shell.isStop
+                        ? colors.stop
+                        : colors.surface
+                }
+                transparent={!shell.isMirror}
+                opacity={shell.isMirror ? 1 : shell.isImage ? 0.5 : 0.66}
+                roughness={shell.isMirror ? 0.25 : 0.55}
+                // Held well below 1: there is no environment map in this scene, so
+                // a fully metallic surface has nothing to reflect and renders
+                // black. A quarter of the way is enough to read as polished while
+                // the lights still pick out the curvature.
+                metalness={shell.isMirror ? 0.25 : 0}
+                side={DoubleSide}
               />
-            </lineSegments>
-          );
-        })}
-      </Canvas>
+            </mesh>
+          ))}
+
+          {scene.rays.map((bundle, index) => {
+            // Color by field, as the 2-D view does. There is no dash pattern in a
+            // line material to carry the wavelength as well, so in three
+            // dimensions the field is the only series shown — which is the one a
+            // reader is separating in a spatial picture anyway.
+            const style = fieldStyle(system.fields[bundle.fieldIndex], bundle.fieldIndex);
+            return (
+              <lineSegments key={`rays-${index}`} geometry={bundle.geometry}>
+                <lineBasicMaterial
+                  color={colors.fields[style.colorVariable] ?? colors.surface}
+                  transparent
+                  opacity={bundle.blocked ? 0.16 : 0.7}
+                />
+              </lineSegments>
+            );
+          })}
+        </Canvas>
+      ) : null}
     </div>
   );
 }

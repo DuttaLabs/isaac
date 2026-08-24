@@ -1030,3 +1030,74 @@ input.coefficient {
   font-family: var(--mono);
   font-weight: 600;
 }
+
+/* ---------- Second window ---------- */
+
+/*
+   The body of the second window. One column, because the window is the user's
+   to size: a two-pane grid like the main workspace would fight whatever width
+   they drag it to, and a single stack fills anything from a narrow strip beside
+   the editor to a whole second display.
+*/
+.secondary-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  min-height: 100vh;
+  background: var(--surface-0);
+  color: var(--text-primary);
+}
+
+.secondary-empty {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+}
+
+/* The panel's own border is the visible edge; the slot exists to hold the order. */
+.secondary-slot {
+  min-width: 0;
+}
+
+/*
+   Sends a panel across, or fetches it back. Sized to one glyph so the header
+   does not shift when it is pressed, and quiet until the pointer is on it: it
+   sits on every panel, and five arrows competing with the controls beside them
+   would read as part of each panel rather than as the same button repeated.
+*/
+.panel-detach {
+  padding: 1px 6px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.panel-detach:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.panel-detach[aria-pressed='true'] {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/*
+   What is left where a panel was. Deliberately slight — it is a signpost, not a
+   panel — but a full row rather than a sliver, so the eye finds it where the
+   panel used to be.
+*/
+.panel-stub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-style: dashed;
+}
+
+.panel-stub .hint {
+  margin-right: auto;
+}

@@ -31,7 +31,7 @@ import {
   CoordinateTransformDialog,
   CoordinateTransformSummaryButton,
 } from './CoordinateTransformEditor.tsx';
-import { ErrorNote, Panel } from './Panel.tsx';
+import { ErrorNote, Panel, type PanelDetach } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
 
@@ -47,6 +47,7 @@ export function LensDataEditor({
   onChange,
   onHighlight,
   highlightedSurface,
+  detach,
 }: {
   system: OpticalSystem;
   onChange: (system: OpticalSystem) => void;
@@ -54,6 +55,7 @@ export function LensDataEditor({
   onHighlight: (surfaceIndex: number | undefined) => void;
   /** The surface currently pointed out, which the arrow keys step through. */
   highlightedSurface: number | undefined;
+  detach?: PanelDetach;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string | undefined>(undefined);
@@ -177,20 +179,23 @@ export function LensDataEditor({
     if (!pointerInside) {
       return;
     }
+    // The table's own document, not the app's: a panel in the second window is
+    // in a document of its own, and keys pressed there never reach the opener.
+    const owner = table.current?.ownerDocument ?? document;
     const onKeyDown = (event: KeyboardEvent) => {
       const delta = arrowKey(event.key);
       if (delta === undefined) {
         return;
       }
-      const active = document.activeElement;
-      if (active !== null && active !== document.body) {
+      const active = owner.activeElement;
+      if (active !== null && active !== owner.body) {
         return;
       }
       event.preventDefault();
       step(delta);
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    owner.addEventListener('keydown', onKeyDown);
+    return () => owner.removeEventListener('keydown', onKeyDown);
     // `step` is re-made every render; it is only correct to keep a listener
     // holding one while the values it closes over are unchanged.
   }, [pointerInside, highlightedSurface, system.surfaces.length, onHighlight]);
@@ -199,6 +204,7 @@ export function LensDataEditor({
     <Panel
       title="Optical system"
       flush
+      detach={detach}
       actions={
         <>
           <button

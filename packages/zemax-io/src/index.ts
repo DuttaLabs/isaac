@@ -12,6 +12,10 @@ export type { ZmxDocument, ZmxRecord, ZmxSurfaceBlock } from './document.ts';
 // Encoding
 export { decodeZmx, detectEncoding } from './decode.ts';
 
+// Writing the model back out
+export { exportZmx, systemToZmxDocument, formatZmxDocument, ZmxExportError } from './export.ts';
+export type { ZmxExportOptions, ZmxExportResult } from './export.ts';
+
 // Mapping onto the optical-core model
 export {
   importZmx,

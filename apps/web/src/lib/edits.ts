@@ -35,6 +35,31 @@ export function updateSurface(
   return attempt(() => system.withSurfaceAt(index, system.surfaceAt(index).with(changes)));
 }
 
+/**
+ * Renames the lens: the `NAME` record a .zmx carries, which describes the design
+ * ("A SIMPLE DOUBLET USING A CROWN AND A FLINT.") and is not the name of the
+ * file it lives in — that is view state and never touches the model.
+ *
+ * Whitespace is collapsed because the record is whitespace-delimited: a name is
+ * read back by splitting on runs of it and re-joining with single spaces, so
+ * "A  B" would come back "A B" and a newline would end the record and turn the
+ * rest of the name into a garbage token. Normalizing here means what is typed is
+ * what survives a save, rather than something close to it.
+ *
+ * An empty name is refused rather than stored. Every file carries the record, and
+ * a blank one reads back as "Untitled system" — the name would appear to survive
+ * the save and quietly not.
+ */
+export function renameSystem(system: OpticalSystem, name: string): Result<OpticalSystem> {
+  return attempt(() => {
+    const cleaned = name.replace(/\s+/g, ' ').trim();
+    if (cleaned === '') {
+      throw new RangeError('A lens needs a name — it is written into the file as its NAME record.');
+    }
+    return system.with({ name: cleaned });
+  });
+}
+
 /** Focal length a surface starts with when it is first made paraxial. */
 export const DEFAULT_PARAXIAL_FOCAL_LENGTH = 100;
 

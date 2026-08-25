@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AIR, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
-import { setMirror, setSurfaceType, updateSurface } from '../src/lib/edits.ts';
+import { renameSystem, setMirror, setSurfaceType, updateSurface } from '../src/lib/edits.ts';
 
 function singlet(front: Surface): OpticalSystem {
   return new OpticalSystem({
@@ -122,4 +122,41 @@ test('the ends of the system and an ideal lens cannot be mirrors', () => {
   const refused = setMirror(paraxial.value, 1, true);
   assert.equal(refused.ok, false);
   assert.match(refused.ok ? '' : refused.error, /ideal lens/);
+});
+
+test('renaming the lens sets the NAME the file is written with', () => {
+  const renamed = renameSystem(singlet(spherical), 'Cooke triplet');
+  assert.ok(renamed.ok, renamed.ok ? '' : renamed.error);
+  assert.equal(renamed.value.name, 'Cooke triplet');
+});
+
+test('a lens name is normalized to what will survive a save', () => {
+  // The NAME record is whitespace-delimited: it is read back by splitting on
+  // runs of whitespace and re-joining with single spaces, and a newline would
+  // end the record outright. So the name is collapsed on the way in rather than
+  // stored as something a save would silently change.
+  const renamed = renameSystem(singlet(spherical), '  Double\n\tGauss   28°  ');
+  assert.ok(renamed.ok, renamed.ok ? '' : renamed.error);
+  assert.equal(renamed.value.name, 'Double Gauss 28°');
+});
+
+test('a lens cannot be renamed to nothing', () => {
+  for (const blank of ['', '   ', '\n\t']) {
+    const renamed = renameSystem(singlet(spherical), blank);
+    assert.equal(renamed.ok, false, JSON.stringify(blank));
+    assert.match(renamed.ok ? '' : renamed.error, /NAME record/);
+  }
+});
+
+test('renaming touches the name and nothing else', () => {
+  const before = singlet(spherical);
+  const after = renameSystem(before, 'Renamed');
+  assert.ok(after.ok);
+  assert.deepStrictEqual(
+    after.value.surfaces.map((surface) => surface.id),
+    before.surfaces.map((surface) => surface.id),
+  );
+  assert.deepStrictEqual(after.value.aperture, before.aperture);
+  assert.deepStrictEqual([...after.value.fields], [...before.fields]);
+  assert.equal(before.name, 'singlet'); // the original is untouched
 });

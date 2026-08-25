@@ -128,6 +128,58 @@ The format has **no *current* public specification** (dropped from the Zemax hel
 
 A resolver may answer under a *different name* than the file used. `importZmx` cannot know why — `resolveMaterial` hands back a material, not a provenance — so it compares the returned `material.name` with the file's name (ignoring case and `-`/`_`/space, which are only spelling) and reports the difference once per glass in `warnings` and per surface as `ZmxGlassReference.resolvedAs`, **without claiming what kind of difference it is**. With `glass-catalog` wired in this now never fires for a SCHOTT name: the catalog holds the manufacturer's retired names too, so a file naming `BK7` traces `BK7`.
 
+**Writing.** `exportZmx(system, options)` (`src/export.ts`) is the reader run backwards, in the same
+two stages: `systemToZmxDocument` maps the model onto records, `formatZmxDocument` renders records to
+text. **What it writes is what Isaac models.** A file that came *in* carried thirty-odd record types
+the reader does not interpret, and none of them are on `OpticalSystem` to write back — so exporting an
+imported file reproduces the same *lens*, not the same *file*. Re-emitting an original's untouched
+records is a real feature and a different one; the UI says so on every save rather than letting an
+export pass for a copy.
+
+Verified against **Chapter 29's keyword table and its "minimum ZMX file"**, and against the record
+forms and orderings the 471 sample files actually use. Where the two disagree the corpus wins,
+because the manual predates the format's later additions: it spells fields `XFLD`/`YFLD` and
+wavelengths `WAVL`, and **no file in the corpus writes either** — they are `XFLN`/`YFLN` and `WAVM`,
+which is also what this package reads. Chapter 29 is where `GLAS name code pu nd vd …` was confirmed
+column for column (code 0 fixed, 1 model), and `DIAM val solvecode pusurf` likewise.
+
+The guarantee is pinned by **round-tripping the whole corpus**: all 196 sample files Isaac can read,
+written out and read back, give an identical system — every surface, glass, field, wavelength and
+aperture. That check lives outside the repo (the corpus is gitignored); `tests/export.test.ts` pins
+the same property on the fixture and on hand-built systems covering mirrors, transforms, aspheres,
+paraxial surfaces, model glasses and all four aperture types.
+
+Three decisions worth keeping:
+
+- **No `VERS` record.** All 471 files open with one and the manual defines it as "the version number
+  of ZEMAX that created the file" — which Isaac is not, and inventing a build number is exactly the
+  plausible-looking lie this project refuses elsewhere. The manual's own minimum file carries no VERS
+  either. Provenance goes in `NOTE`, where it is true. **This is the first thing to try if
+  OpticStudio ever refuses a written file** — round-tripping through Isaac's own reader is verified,
+  round-tripping through OpticStudio is not.
+- **Boilerplate is written at its no-op value.** `GFAC`, `RAIM`, `SDMA`, `ROPD`, `PICB`, `POLS`,
+  `GLRS`, `ENVD`, the vignetting rows: records every file carries and this reader ignores. Omitting
+  them is defensible, but a reader expecting them would fill in defaults that are not knowable from
+  here; writing the value that means "nothing unusual" is the one choice that cannot surprise. They
+  are the same no-op values `warnHeaderSettings` checks for on the way in.
+- **`exportZmx` returns `{ text, warnings }`**, mirroring `importZmx` — the writer reports what the
+  file cannot hold exactly for the same reason the reader does. It fires on one thing today: a model
+  glass with a **partial-dispersion deviation**. ΔPg,F *is* written, into the `pd` column the manual
+  documents, because dropping a real number silently is worse than writing one this package will not
+  read back — the reader leaves that column alone on purpose. So another program gets the glass the
+  designer specified, reopening it here puts the glass back on the normal line, and the asymmetry is
+  said out loud instead of hidden.
+- **`GCAT` is the caller's to name.** A material carries its name but not the catalog it came from,
+  and `zemax-io` must not grow a glass database to find out — so the catalogs are a `glassCatalogs`
+  option. `apps/web` derives them from `GLASS_CATALOG_NAMES`, itself derived from the records rather
+  than listed, so a file can never name a library the app does not resolve against.
+
+Two things are refused rather than approximated: a system **mixing angle fields with object-height
+fields** (a file has one field type for the whole system, and a silent choice would read half the
+fields back in the wrong unit), and a **field count padded up from zero** — a system arrives with no
+fields when the reader could not express the file's, and writing one on-axis field to fill the gap
+would turn "Isaac does not know this system's fields" into "this system is on-axis".
+
 ### `glass-catalog`
 
 `src/schott.ts` and `src/ohara.ts` are **generated** — never hand-edit them. `npm run regenerate --workspace @isaac/glass-catalog` rebuilds both from the makers' own Zemax-format catalogs in `SupportingMaterial/` (gitignored) via `scripts/build-catalogs.ts`. Adding a manufacturer is a row in that script's `CATALOGS` table plus an export in `index.ts`; the reader is not vendor-specific, because the format is not.
@@ -187,6 +239,36 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   So in 3-D the glyph is not a special case anyone wrote: orbit until an axis is within ~12° of the view direction (`EDGE_ON`) and it becomes ⊙ or ⊗ on its own, which is exactly when an arrow would have stopped meaning anything. The other two are then within 12° of the screen plane, so the picture never degenerates into three stubs.
 
   In 2-D the gizmo is pinned to the corner of the *visible* area, computed from the `viewBox` because that is what panning moves, and scaled by the zoom — a legend that grows when you zoom in has stopped being one. In 3-D it is an SVG laid over the canvas rather than geometry inside it: it is a legend, so it belongs in the same medium as the 2-D one, and ⊙/⊗ is a 2-D symbol that would have to be faked in three dimensions. It is fed by a `useFrame` inside the canvas that publishes through a **ref to the gizmo's own setState**, not up through props — a setter called on the parent would re-render the whole scene on every frame of an orbit, and what actually changed is nine SVG elements. It takes no pointer events: the corner of the canvas is as good a place to start an orbit as any other, and a small dead patch there would be a puzzle.
+
+- **The lens name is editable in the app bar**, because it is written into the file and has to be
+  settable somewhere — and the app bar is where it was already shown, so the thing you see is the
+  thing you edit. It reuses `TextCell` (draft on focus, commit on blur or Enter, Escape restores), so
+  a rename lands on the undo stack once rather than once per keystroke. `renameSystem` **collapses
+  whitespace**: the `NAME` record is whitespace-delimited and one line long, so `A  B` would come back
+  `A B` and a newline would end the record and turn the rest of the name into stray tokens.
+  Normalizing on the way in means what you type is what survives a save. An empty name is **refused**
+  — every file carries the record, and a blank one reads back as "Untitled system", so the name would
+  appear to survive the save and quietly not. The writer sanitizes the same way for `NAME` and `COMM`
+  independently, since `exportZmx` can be handed any system and must not emit a broken file.
+
+- **The app bar names two different things, and they are different on purpose.** `system.name` is
+  the file's own `NAME` record — a *description* ("A SIMPLE DOUBLET USING A CROWN AND A FLINT.") —
+  while the filename is where the design is stored. A file gets renamed without the lens being
+  renamed, and usually is, so both are shown: the filename in mono and the lens name muted beside it.
+  The filename is **view state in `App`, never on `OpticalSystem`**, for the same reason the field
+  checkboxes are: where a lens lives is not a fact about the lens, and it must not land on the undo
+  stack or be written into the file. Opening sets it, saving sets it to whatever the picker returns
+  (which is how *Save As* renames), and New and Reset clear it — neither came from a file. The next
+  save then suggests the name it already has, so saving twice never quietly proposes a second file.
+
+- **Saving is a real file dialog where the browser has one.** `lib/save-file.ts` uses
+  `showSaveFilePicker`, so the user names the file and picks the folder; where it is missing the only
+  route is an `<a download>` click into the download folder with no say in either, so the result says
+  *which* happened and the notice does too — "saved" and "sent to your downloads" are different
+  enough that nobody should have to guess. **Cancelling is not failing**: the picker rejects with an
+  `AbortError` when the dialog is closed, and reporting that would put a red notice in front of
+  someone who simply changed their mind. The write itself is outside that catch, because a failure to
+  write *is* a failure and swallowing it would report a save that did not happen.
 
 - **The layout has a 2D and a 3D view**, toggled in the Layout panel. Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture vocabulary deliberately. Each has a reset button, driven by a `resetSignal` counter the views watch. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with the zoom.
 - **`Layout3DView` is lazy-loaded.** Three.js and React Three Fiber are ~900 kB of the bundle, and a session that never opens the 3D view should never fetch them. Keep it behind `lazy()`.

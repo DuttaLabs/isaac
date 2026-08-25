@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
-import { importZmx } from '@isaac/zemax-io';
+import { exportZmx, importZmx } from '@isaac/zemax-io';
 import {
   computeFirstOrder,
   computeFirstOrderRays,
@@ -12,8 +12,11 @@ import {
   type FirstOrder,
   type FirstOrderRays,
 } from './lib/analysis.ts';
-import { defaultSystem } from './lib/default-system.ts';
-import { GLASS_CATALOG } from './lib/materials.ts';
+import { defaultSystem, emptySystem } from './lib/default-system.ts';
+import { renameSystem } from './lib/edits.ts';
+import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
+import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
+import { TextCell } from './components/TextCell.tsx';
 import { formatMicrons } from './lib/format.ts';
 import { describeError, type Result } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -78,7 +81,19 @@ function gridAcrossPupil(raysPerFan: number): number {
 
 export function App() {
   const [history, setHistory] = useState(() => ({ stack: [defaultSystem()], index: 0 }));
-  const [theme, setTheme] = useState<Theme>('light');
+  const [theme, setTheme] = useState<Theme>('dark');
+  /**
+   * The file this design lives in, once it has one — the name from the Open
+   * dialog or the one typed into Save. A view setting, not part of the design:
+   * where a lens is stored is not a fact about the lens, and it must never land
+   * on the undo stack or be written into the file's own `NAME` record.
+   *
+   * It is a different thing from `system.name`, which is that `NAME` record: a
+   * description ("A SIMPLE DOUBLET USING A CROWN AND A FLINT."), not a filename.
+   * The app bar shows both because a file can be renamed without the lens being
+   * renamed, and usually is.
+   */
+  const [fileName, setFileName] = useState<string | undefined>(undefined);
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [showFirstOrder, setShowFirstOrder] = useState(false);
@@ -135,6 +150,26 @@ export function App() {
       return { stack, index: stack.length - 1 };
     });
   }, []);
+
+  /**
+   * Puts a whole design on screen — the New button's blank one, the Reset
+   * button's doublet — and clears the view state that only made sense against
+   * the old one: the per-field Display flags no longer line up with a different
+   * field list, a cycle running through them has nothing left to cycle, and a
+   * notice about the last file is not about this design. The system itself goes
+   * through the undo stack like any other edit, so starting over is undoable.
+   */
+  const startFrom = useCallback(
+    (next: OpticalSystem) => {
+      pushSystem(next);
+      setFieldVisibility([]);
+      setCycleBase(undefined);
+      setNotice(undefined);
+      // Neither the blank system nor the sample doublet came from a file.
+      setFileName(undefined);
+    },
+    [pushSystem],
+  );
 
   /**
    * Takes the panels back and forgets the window. Called both when the user
@@ -377,6 +412,7 @@ export function App() {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
       pushSystem(result.system);
+      setFileName(file.name);
       setFieldIndex(0);
       // A file brings its own field list, so flags set against the previous
       // design mean nothing against this one. Everything starts visible.
@@ -396,6 +432,62 @@ export function App() {
     }
   };
 
+  /**
+   * Writes the design out as .zmx. What is written is what Isaac models — a file
+   * that came *in* carried records this reader does not interpret, and they are
+   * not on `OpticalSystem` to write back — so the notice says so rather than
+   * letting an export pass for a copy of the original file.
+   */
+  const saveFile = async (): Promise<void> => {
+    try {
+      const { text, warnings } = exportZmx(system, { glassCatalogs: GLASS_CATALOG_NAMES });
+      const outcome = await saveTextToFile(text, {
+        // The name it already has, so saving twice does not quietly propose a
+        // different file the second time. Only a design with no file yet falls
+        // back to a name derived from the lens.
+        suggestedName: fileName ?? suggestedFileName(system.name, '.zmx'),
+        description: 'Zemax lens file',
+        accept: { 'text/plain': ['.zmx'] },
+      });
+      if (outcome.kind === 'canceled') {
+        return; // the user closed the dialog; nothing happened and nothing is wrong
+      }
+      // Whatever the user typed in the dialog is now the file this design lives
+      // in — including a Save As under a new name, which is how a file gets
+      // renamed and why the picker's answer is taken rather than the suggestion.
+      setFileName(outcome.name);
+      setNotice({
+        kind: 'info',
+        text:
+          outcome.kind === 'saved'
+            ? `Saved ${outcome.name} — ${system.surfaces.length} surfaces.`
+            : `This browser has no save dialog, so ${outcome.name} went to your downloads.`,
+        warnings: [
+          'The file holds what Isaac models. Anything it does not read — notes, tolerancing, multi-configuration — is not written back.',
+          ...warnings,
+        ],
+      });
+    } catch (error) {
+      setNotice({ kind: 'error', text: `Could not save: ${describeError(error)}` });
+    }
+  };
+
+  /**
+   * Renames the lens. This is the `NAME` record written into the file, not the
+   * file's own name — the two sit side by side in the app bar because they are
+   * different things and a rename of one is not a rename of the other.
+   */
+  const renameLens = (next: string): void => {
+    const renamed = renameSystem(system, next);
+    if (renamed.ok) {
+      pushSystem(renamed.value);
+    } else {
+      // The field snaps back to the stored name on its own, so the notice only
+      // has to say why.
+      setNotice({ kind: 'error', text: renamed.error });
+    }
+  };
+
   const fieldLabel = (index: number): string => {
     const field = system.fields[index];
     if (!field) {
@@ -410,9 +502,24 @@ export function App() {
     <div className="app">
       <header className="app-bar">
         <h1 className="app-title">Isaac</h1>
-        <span className="app-subtitle">{system.name}</span>
+        {fileName === undefined ? null : <span className="app-file">{fileName}</span>}
+        <span className="app-lens-name">
+          <TextCell
+            value={system.name}
+            ariaLabel="Lens name"
+            title="The lens's own name, written into the file as its NAME record. Not the filename."
+            onCommit={renameLens}
+          />
+        </span>
 
         <div className="app-bar-spacer" />
+
+        <button onClick={() => startFrom(emptySystem())} title="Start an empty system">
+          New
+        </button>
+        <button onClick={() => void saveFile()} title="Save this system as a .zmx file">
+          Save
+        </button>
 
         <label className="inline">
           <span className="hint">Open .zmx</span>
@@ -442,14 +549,7 @@ export function App() {
         >
           Redo
         </button>
-        <button
-          onClick={() => {
-            pushSystem(defaultSystem());
-            setFieldVisibility([]);
-            setCycleBase(undefined);
-            setNotice(undefined);
-          }}
-        >
+        <button onClick={() => startFrom(defaultSystem())} title="Go back to the sample doublet">
           Reset
         </button>
         <button

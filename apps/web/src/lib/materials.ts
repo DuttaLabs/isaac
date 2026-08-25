@@ -29,6 +29,18 @@ import { attempt, type Result } from './result.ts';
  */
 export const GLASS_CATALOG = ALL_GLASSES;
 
+/**
+ * The glass libraries a reader has to search to resolve the names this app
+ * writes — the `GCAT` record of a saved file. Derived from the catalog rather
+ * than listed by hand, so adding a manufacturer needs no second edit here, and
+ * so the file can never name a library the app does not actually resolve
+ * against. `zemax-io` takes this as an option precisely because it must not
+ * know about glass catalogs itself.
+ */
+export const GLASS_CATALOG_NAMES: readonly string[] = [
+  ...new Set(GLASS_CATALOG.records().map((record) => record.manufacturer.toUpperCase())),
+].sort();
+
 /** What the Material column shows, and what you type there, for a model glass. */
 export const MODEL_MATERIAL_LABEL = 'MODEL';
 

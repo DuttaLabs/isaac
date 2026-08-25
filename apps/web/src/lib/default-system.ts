@@ -51,6 +51,53 @@ export function defaultSystem(): OpticalSystem {
   });
 }
 
+/**
+ * The blank page the New button starts from: OBJECT, one flat surface, IMAGE.
+ *
+ * Not literally empty, though the model would allow that — a design needs a
+ * first surface and a stop before it is anything at all, and putting them in
+ * saves the two steps every new system would otherwise begin with. The surface
+ * is a plane in air, so it is a place to put a radius and a glass rather than a
+ * lens anyone has to undo, and it carries the stop because with nothing in front
+ * of it the entrance pupil *is* the stop, sitting at z = 0 where it is easiest to
+ * reason about.
+ *
+ * The rest is what a designer sets first and changes rarely: millimeters, the
+ * F/d/C lines with d primary, and one axial field. The 20 mm entrance pupil and
+ * the 10 mm semi-diameter are the same aperture said twice on purpose — the beam
+ * fills the stop exactly, so no ray starts out vignetted, and the pupil is a real
+ * one the moment a curvature is typed. `ENTRANCE_PUPIL_DIAMETER` rather than
+ * `FLOAT_BY_STOP` because a float would resize the beam every time the stop's
+ * semi-diameter was edited, which is surprising on a system still being built.
+ *
+ * A plane in air has no power, so First Order opens on an honest afocal
+ * summary — power 0, an infinite focal length, and the entrance pupil sitting on
+ * the stop — rather than on the error a system with no surface at all produces.
+ * Real numbers appear as soon as a radius or a glass is typed.
+ */
+export function emptySystem(): OpticalSystem {
+  return new OpticalSystem({
+    name: 'New system',
+    units: 'mm',
+    wavelengthsNm: [486.1327, 587.5618, 656.2725],
+    primaryWavelengthIndex: 1,
+    fields: [{ angleDeg: 0 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 10,
+        semiDiameter: 10,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+}
+
 let nextId = 0;
 
 /** A unique id for a surface added in the editor. */

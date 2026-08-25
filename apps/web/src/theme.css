@@ -202,6 +202,42 @@ body {
   margin: 0;
 }
 
+/*
+ * The file the design is in, and the lens's own name — two different facts, so
+ * they are two different weights rather than one run-on line. The filename is
+ * the stronger of the two: it is what the user will look for on disk.
+ */
+.app-file {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/*
+ * The lens name is an input, not a label: it is written into the file, so it has
+ * to be settable somewhere, and the app bar is where it is already shown. It
+ * wears no border until hovered or focused — an app bar full of boxes reads as a
+ * form, and this is a title.
+ */
+.app-lens-name .text-input {
+  color: var(--text-muted);
+  font-size: 12px;
+  background: transparent;
+  border-color: transparent;
+  width: 22ch;
+  padding-block: 2px;
+}
+
+.app-lens-name .text-input:hover:not(:focus) {
+  border-color: var(--border);
+}
+
+.app-lens-name .text-input:focus {
+  color: var(--text-primary);
+  background: var(--surface-0);
+  border-color: var(--border-strong);
+}
+
 .app-subtitle {
   color: var(--text-muted);
   font-size: 12px;

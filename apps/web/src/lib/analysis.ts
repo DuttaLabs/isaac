@@ -173,7 +173,15 @@ export interface LayoutTrace {
   fieldIndex: number;
 }
 
-/** Traces a fan per field for the layout drawing. */
+/**
+ * Traces a fan per field for the layout drawing.
+ *
+ * `fanAxis` is which way the fan is spread across the pupil, and it has to match
+ * the plane the drawing is in: a fan spread in y lies in the y–z plane, so seen
+ * in the x–z plane every one of its rays lies flat along the axis and the
+ * picture is a lens with a single line through it. Defaults to y, the
+ * meridional fan, which is what a layout has always drawn.
+ */
 export function computeLayoutTraces(
   system: OpticalSystem,
   options: {
@@ -181,6 +189,8 @@ export function computeLayoutTraces(
     wavelengthIndices: readonly number[];
     /** Fields to draw. Omitted means all of them. */
     fieldIndices?: readonly number[];
+    /** The pupil axis the fan is spread along. */
+    fanAxis?: 'x' | 'y';
   },
 ): Result<LayoutTrace[]> {
   return attempt(() => {
@@ -196,6 +206,7 @@ export function computeLayoutTraces(
           field: fieldOption(system, fieldIndex),
           wavelengthNm,
           count: options.raysPerFan,
+          axis: options.fanAxis ?? 'y',
         });
         for (const result of traceRays(system, rays)) {
           traces.push({ result, wavelengthIndex, fieldIndex });

@@ -12,6 +12,8 @@ import type { FirstOrderRays, LayoutTrace } from '../lib/analysis.ts';
 import type { RayTraceResult } from '@isaac/optical-core';
 import { wavelengthStyle } from '../lib/wavelengths.ts';
 import { fieldStyle } from '../lib/fields.ts';
+import { VIEW_PLANES, viewPlaneAxes, type ViewPlane } from '../lib/view-plane.ts';
+import { AxisTriad } from './AxisTriad.tsx';
 
 const WIDTH = 900;
 const HEIGHT = 340;
@@ -22,6 +24,11 @@ const MAX_ZOOM_IN = 200;
 const MAX_ZOOM_OUT = 8;
 /** Wheel delta to scale factor. Small enough that a trackpad flick is not a leap. */
 const WHEEL_SENSITIVITY = 0.0015;
+
+/** The orientation gizmo's origin, in from the top-right corner of the view. */
+const TRIAD_INSET = 46;
+/** Half-length of the crosshairs standing in for an axis seen end-on. */
+const AXIS_CROSS = 14;
 
 interface ViewBox {
   x: number;
@@ -42,12 +49,19 @@ function crossedMessage(body: GlassBody, units: string): string {
 }
 
 /**
- * Meridional cross-section: the y–z plane a lens designer reads. Scaling is
+ * A 2-D cross-section of the system, in whichever plane is asked for. Scaling is
  * uniform in both axes, so shapes are true rather than stretched to fill.
+ *
+ * Nothing here knows which plane it is drawing. The geometry arrives already
+ * projected, as points with a horizontal and a vertical coordinate, and the two
+ * things that genuinely differ between the views — whether the optical axis lies
+ * in the picture, and whether a surface has a section or only a rim — are read
+ * off the plane rather than branched on by name.
  */
 export function LayoutView({
   system,
   traces,
+  plane,
   defaultSemiDiameter,
   highlightedSurface,
   resetSignal,
@@ -55,6 +69,8 @@ export function LayoutView({
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
+  /** Which plane to draw. Defaults to the meridional one a layout has always meant. */
+  plane?: ViewPlane;
   defaultSemiDiameter: number;
   /** Surface the user is on in the lens table, picked out so the row and the
    *  picture can be read together. */
@@ -64,27 +80,34 @@ export function LayoutView({
   /** The first-order construction to draw over the design, when it is asked for. */
   firstOrder?: FirstOrderOverlay;
 }) {
+  const drawn = plane ?? VIEW_PLANES.YZ;
   const geometry = useMemo(
-    () => buildLayout(system, traces, defaultSemiDiameter),
-    [system, traces, defaultSemiDiameter],
+    () => buildLayout(system, traces, defaultSemiDiameter, drawn),
+    [system, traces, defaultSemiDiameter, drawn],
   );
 
   const { view, svg, panning } = usePanZoom(resetSignal);
 
   const multipleWavelengths = new Set(traces.map((trace) => trace.wavelengthIndex)).size > 1;
 
-  const { minZ, maxZ, minY, maxY } = geometry.bounds;
-  const spanZ = Math.max(maxZ - minZ, 1e-6);
-  const spanY = Math.max(maxY - minY, 1e-6);
-  const scale = Math.min((WIDTH - 2 * PADDING) / spanZ, (HEIGHT - 2 * PADDING) / spanY);
+  const { minH, maxH, minV, maxV } = geometry.bounds;
+  const spanH = Math.max(maxH - minH, 1e-6);
+  const spanV = Math.max(maxV - minV, 1e-6);
+  const scale = Math.min((WIDTH - 2 * PADDING) / spanH, (HEIGHT - 2 * PADDING) / spanV);
 
-  const centerY = (minY + maxY) / 2;
+  // Centered both ways. A cross-section fills the width and cannot tell the
+  // difference, but the end-on view is as tall as it is wide, and anchoring it
+  // to the left edge would leave it against the frame with the rest of the panel
+  // empty.
+  const centerH = (minH + maxH) / 2;
+  const centerV = (minV + maxV) / 2;
   const project = (point: LayoutPoint): { x: number; y: number } => ({
-    x: PADDING + (point.z - minZ) * scale,
-    y: HEIGHT / 2 - (point.y - centerY) * scale,
+    x: WIDTH / 2 + (point.h - centerH) * scale,
+    y: HEIGHT / 2 - (point.v - centerV) * scale,
   });
 
-  const axisY = project({ z: 0, y: 0 }).y;
+  const origin = project({ h: 0, v: 0 });
+  const zoom = view.width / WIDTH;
 
   return (
     <svg
@@ -92,16 +115,26 @@ export function LayoutView({
       className={panning ? 'layout panning' : 'layout'}
       viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
       role="img"
-      aria-label={`Layout of ${system.name}, ${system.surfaces.length} surfaces`}
+      aria-label={`Layout of ${system.name} in the ${drawn.label} plane, ${system.surfaces.length} surfaces`}
     >
-      <line
-        className="axis-line"
-        x1={PADDING}
-        y1={axisY}
-        x2={WIDTH - PADDING}
-        y2={axisY}
-        strokeDasharray="4 4"
-      />
+      {drawn.axial ? (
+        <line
+          className="axis-line"
+          x1={PADDING}
+          y1={origin.y}
+          x2={WIDTH - PADDING}
+          y2={origin.y}
+          strokeDasharray="4 4"
+        />
+      ) : (
+        // Seen end-on the optical axis is a point, not a line. Crosshairs mark
+        // where it comes through; drawing it as a line would put an axis in the
+        // picture that is not lying in this plane at all.
+        <g className="axis-line" strokeDasharray="4 4">
+          <line x1={origin.x - AXIS_CROSS} y1={origin.y} x2={origin.x + AXIS_CROSS} y2={origin.y} />
+          <line x1={origin.x} y1={origin.y - AXIS_CROSS} x2={origin.x} y2={origin.y + AXIS_CROSS} />
+        </g>
+      )}
 
       {geometry.bodies.map((body, index) => (
         <path
@@ -193,13 +226,27 @@ export function LayoutView({
         say about a system is in where these four things are.
       */}
       {firstOrder ? (
-        <FirstOrderOverlayLayer overlay={firstOrder} project={project} zoom={view.width / WIDTH} />
+        <FirstOrderOverlayLayer overlay={firstOrder} project={project} zoom={zoom} />
       ) : null}
 
-      {/* Stop markers: short bars just outside the clear aperture. */}
+      {/* Stop markers: short bars just outside the clear aperture — or, end-on,
+          the rim itself, because a closed outline has no two ends to hang a bar
+          off and the stop *is* the rim there. */}
       {geometry.profiles
         .filter((profile) => profile.isStop)
         .map((profile) => {
+          if (profile.closed) {
+            return (
+              <path
+                key={`stop-${profile.surfaceIndex}`}
+                d={toPath(profile.points, project, true)}
+                fill="none"
+                stroke="var(--stop-mark)"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+              />
+            );
+          }
           const top = profile.points[profile.points.length - 1]!;
           const bottom = profile.points[0]!;
           return [top, bottom].map((point, side) => {
@@ -218,6 +265,21 @@ export function LayoutView({
             );
           });
         })}
+
+      {/*
+        The orientation gizmo, drawn over everything and pinned to the corner of
+        whatever part of the drawing is on screen: the view is panned by moving
+        the viewBox, so a fixed corner is one computed from it. Scaled by the
+        zoom for the same reason the overlay's labels are — it is a legend, and a
+        legend that grows when you zoom in has stopped being one.
+      */}
+      <AxisTriad
+        axes={viewPlaneAxes(drawn)}
+        label={`${drawn.label} plane. ${drawn.description}`}
+        x={view.x + view.width - TRIAD_INSET * zoom}
+        y={view.y + TRIAD_INSET * zoom}
+        scale={zoom}
+      />
     </svg>
   );
 }
@@ -463,8 +525,10 @@ function PupilPlane({
   zoom: number;
 }) {
   const entrance = kind === 'entrance';
-  const top = project({ z: mark.z, y: mark.radius });
-  const bottom = project({ z: mark.z, y: -mark.radius });
+  // Axial planes only: `h` is the axis and `v` a height off it, which is what
+  // the overlay's caller guarantees by offering it in the meridional view alone.
+  const top = project({ h: mark.z, v: mark.radius });
+  const bottom = project({ h: mark.z, v: -mark.radius });
   const tick = 6 * zoom;
 
   return (
@@ -570,8 +634,8 @@ function PrincipalPlaneMarks({
         if (!Number.isFinite(z)) {
           return null;
         }
-        const top = project({ z, y: planes.radius });
-        const bottom = project({ z, y: -planes.radius });
+        const top = project({ h: z, v: planes.radius });
+        const bottom = project({ h: z, v: -planes.radius });
         return (
           <g key={key}>
             <title>

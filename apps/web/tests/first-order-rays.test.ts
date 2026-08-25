@@ -139,14 +139,14 @@ test('the marginal ray produced undeviated lands on the pupil rim', () => {
   const aim = pupilAim(result.value.marginal, pupil.z);
   assert.ok(aim);
   assert.ok(
-    Math.abs(aim.atPupil.y - entrancePupilRadius(system)) < 1e-9,
-    `produced ray reaches the pupil at ${aim.atPupil.y}, rim is ${entrancePupilRadius(system)}`,
+    Math.abs(aim.atPupil.v - entrancePupilRadius(system)) < 1e-9,
+    `produced ray reaches the pupil at ${aim.atPupil.v}, rim is ${entrancePupilRadius(system)}`,
   );
 
   // This system's stop is behind the glass, so the pupil is virtual and inside
   // it: there really is something to produce, and the segment runs forwards.
   assert.equal(aim.produced, true);
-  assert.ok(pupil.z > aim.contact.z);
+  assert.ok(pupil.z > aim.contact.h);
 });
 
 test('nothing is produced when the pupil sits in front of the glass', () => {
@@ -165,7 +165,7 @@ test('nothing is produced when the pupil sits in front of the glass', () => {
   assert.ok(aim);
   assert.equal(aim.produced, false);
   // The crossing is still the pupil rim, which is what the dot marks.
-  assert.ok(Math.abs(aim.atPupil.y - entrancePupilRadius(system)) < 1e-9);
+  assert.ok(Math.abs(aim.atPupil.v - entrancePupilRadius(system)) < 1e-9);
 });
 
 test('a ray that never reaches a surface has no pupil construction to draw', () => {

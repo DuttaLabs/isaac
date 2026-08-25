@@ -20,6 +20,7 @@ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { ErrorNote, Panel, type PanelDetach } from './components/Panel.tsx';
 import { PANELS, Placed, type PanelId, type Placement } from './components/Placed.tsx';
 import { SecondaryWindow } from './components/SecondaryWindow.tsx';
+import { VIEW_PLANES, VIEW_PLANE_IDS, type ViewPlaneId } from './lib/view-plane.ts';
 import {
   moveToOtherScreen,
   openSecondaryWindow,
@@ -66,6 +67,15 @@ interface Notice {
  */
 const FIELD_CYCLE_MS = 750;
 
+/**
+ * Grid density from the rays-per-fan control, so one number drives both: a grid
+ * of n across the pupil is the same sampling as a fan of n. Floored so a
+ * three-ray fan still fills a picture, capped because a grid is n² rays.
+ */
+function gridAcrossPupil(raysPerFan: number): number {
+  return Math.max(3, Math.min(raysPerFan, 15));
+}
+
 export function App() {
   const [history, setHistory] = useState(() => ({ stack: [defaultSystem()], index: 0 }));
   const [theme, setTheme] = useState<Theme>('light');
@@ -87,6 +97,12 @@ export function App() {
   const [cycleBase, setCycleBase] = useState<boolean[] | undefined>(undefined);
   const [allWavelengths, setAllWavelengths] = useState(false);
   const [view, setView] = useState<'2d' | '3d'>('2d');
+  /**
+   * Which plane the 2-D view is drawn in. A view setting like the rest of them:
+   * turning a design round to look at it from the side is not an edit, so it
+   * never reaches `OpticalSystem` or the undo stack.
+   */
+  const [planeId, setPlaneId] = useState<ViewPlaneId>('YZ');
   /** Bumped by the reset button; both views watch it and nothing else does. */
   const [viewReset, setViewReset] = useState(0);
   const [notice, setNotice] = useState<Notice | undefined>();
@@ -285,14 +301,37 @@ export function App() {
     [system, fieldVisibility],
   );
 
+  const plane = VIEW_PLANES[planeId];
+  /**
+   * Whether the first-order construction can be drawn. The marginal and chief
+   * rays are defined through the fields, and the fields are y heights and y
+   * angles, so both rays lie in the y–z plane: anywhere else they are a line on
+   * the axis or a single point, which would be an overlay that draws something
+   * and says nothing.
+   */
+  const meridional = planeId === 'YZ';
+
+  // The rays the 2-D view draws, spread so that they lie in the plane it is
+  // drawing. A fan is a flat sheet, and seen edge-on it is a line: the sagittal
+  // view needs its fan spread in x or it draws a lens with one ray through it,
+  // and end-on no fan works at all, so there the picture is filled with the same
+  // pupil grid the 3-D view uses — which is what an end-on view wants anyway,
+  // being a footprint.
   const layout = useMemo(
     () =>
-      computeLayoutTraces(system, {
-        raysPerFan,
-        wavelengthIndices,
-        fieldIndices: visibleFieldIndices,
-      }),
-    [system, raysPerFan, wavelengthIndices, visibleFieldIndices],
+      view === '2d' && plane.fanAxis === undefined
+        ? computeVolumeTraces(system, {
+            gridCount: gridAcrossPupil(raysPerFan),
+            wavelengthIndices,
+            fieldIndices: visibleFieldIndices,
+          })
+        : computeLayoutTraces(system, {
+            raysPerFan,
+            fanAxis: plane.fanAxis ?? 'y',
+            wavelengthIndices,
+            fieldIndices: visibleFieldIndices,
+          }),
+    [view, plane, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
   );
 
   // The first-order construction: the two rays it is built from, plus the two
@@ -302,16 +341,16 @@ export function App() {
   // ray bundle beside it.
   const firstOrderRays = useMemo(
     () =>
-      showFirstOrder && visibleFieldIndices.length > 0
+      showFirstOrder && meridional && visibleFieldIndices.length > 0
         ? computeFirstOrderRays(system, visibleFieldIndices)
         : undefined,
-    [showFirstOrder, system, visibleFieldIndices],
+    [showFirstOrder, meridional, system, visibleFieldIndices],
   );
   // With every field switched off there is nothing for a construction ray to
   // belong to, so the overlay goes with them rather than quietly falling back to
   // a field that is not being drawn.
   const firstOrderOverlay =
-    showFirstOrder && view === '2d' && visibleFieldIndices.length > 0
+    showFirstOrder && view === '2d' && meridional && visibleFieldIndices.length > 0
       ? buildFirstOrderOverlay(firstOrder, firstOrderRays)
       : undefined;
 
@@ -323,7 +362,7 @@ export function App() {
     () =>
       view === '3d'
         ? computeVolumeTraces(system, {
-            gridCount: Math.max(3, Math.min(raysPerFan, 15)),
+            gridCount: gridAcrossPupil(raysPerFan),
             fieldIndices: visibleFieldIndices,
             wavelengthIndices,
           })
@@ -557,11 +596,11 @@ export function App() {
                     />
                     all wavelengths
                   </label>
-                  {/* Only offered on the cross-section: these are construction
-                    lines through the meridional plane, and the 3-D view does not
-                    draw them, so the control would otherwise promise something
-                    that does not happen. */}
-                  {view === '2d' ? (
+                  {/* Only offered on the meridional cross-section: these are
+                    construction lines through that one plane, and neither the
+                    3-D view nor the other two planes draw them, so the control
+                    would otherwise promise something that does not happen. */}
+                  {view === '2d' && meridional ? (
                     <label
                       className="inline hint"
                       title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
@@ -588,6 +627,24 @@ export function App() {
                       <span className={view === '2d' ? 'label-hidden' : undefined}>2D</span>
                     </span>
                   </button>
+                  {/* 2-D only: the 3-D view is free to orbit, so naming one
+                    plane for it would be a setting with nothing to set. */}
+                  {view === '2d' ? (
+                    <label className="inline hint" title={plane.description}>
+                      plane
+                      <select
+                        value={planeId}
+                        aria-label="Layout plane"
+                        onChange={(event) => setPlaneId(event.target.value as ViewPlaneId)}
+                      >
+                        {VIEW_PLANE_IDS.map((id) => (
+                          <option key={id} value={id}>
+                            {VIEW_PLANES[id].label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <button
                     title={
                       view === '2d'
@@ -608,6 +665,7 @@ export function App() {
                       <LayoutView
                         system={system}
                         traces={layout.value}
+                        plane={plane}
                         defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                         highlightedSurface={highlightedSurface}
                         resetSignal={viewReset}
@@ -653,7 +711,10 @@ export function App() {
                         units={system.units}
                       />
                     ) : null}
-                    {showFirstOrder && view === '2d' && firstOrderRays?.ok === false ? (
+                    {showFirstOrder &&
+                    view === '2d' &&
+                    meridional &&
+                    firstOrderRays?.ok === false ? (
                       <p className="hint" style={{ padding: '0 12px 10px' }}>
                         No first-order rays: {firstOrderRays.error}
                       </p>

@@ -71,14 +71,14 @@ test('a tilted surface is drawn tilted, in the meridional plane', () => {
   // fold in exactly the plane the 2-D view draws, which is why it can show it.
   const first = diagonal.points[0]!;
   const last = diagonal.points[diagonal.points.length - 1]!;
-  const run = last.z - first.z;
-  const rise = last.y - first.y;
+  const run = last.h - first.h;
+  const rise = last.v - first.v;
   assert.ok(Math.abs(Math.abs(run / rise) - 1) < 1e-9, `slope ${run / rise}, expected ±1`);
 
   // The image plane has left the axis entirely.
   const image = geometry.profiles.find((profile) => profile.surfaceIndex === 6)!;
   const centre = image.points[Math.floor(image.points.length / 2)]!;
-  assert.ok(centre.y > 90, `image drawn at y ${centre.y}, expected out near 100`);
+  assert.ok(centre.v > 90, `image drawn at v ${centre.v}, expected out near 100`);
 });
 
 test('making a surface a coordinate transform drops what it cannot carry', () => {

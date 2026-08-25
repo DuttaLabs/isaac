@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Canvas, extend, useFrame, useThree, type ThreeElement } from '@react-three/fiber';
-import { Box3, DoubleSide, MOUSE, Sphere, Vector3 } from 'three';
+import { Box3, DoubleSide, MOUSE, Quaternion, Sphere, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { buildOpticalScene, type OpticalScene } from '@isaac/three-optics';
 import type { LayoutTrace } from '../lib/analysis.ts';
 import { fieldStyle } from '../lib/fields.ts';
 import { useThemeColors } from '../lib/theme-colors.ts';
+import { AxisTriad } from './AxisTriad.tsx';
+import { cameraAxes } from '../lib/camera-axes.ts';
+import type { ProjectedAxis } from '../lib/view-plane.ts';
 
 // Three's own controls rather than a wrapper library: the app needs one class
 // from them, and the mouse mapping below is the whole of the configuration.
@@ -48,6 +51,92 @@ const FIT_MARGIN = 1.12;
  * same gesture means the same thing in both views.
  */
 const MOUSE_BUTTONS = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.ROTATE } as const;
+
+/** The orientation gizmo's own little SVG, big enough to hold it and no more. */
+const TRIAD_BOX = 84;
+
+/**
+ * How far the camera has to turn before the gizmo is redrawn, in radians —
+ * about a fifteenth of a degree. Publishing every frame would re-render the
+ * gizmo while the camera sits still as well as while it orbits, and below this
+ * the arrows do not move by a whole pixel.
+ */
+const ORIENTATION_EPSILON = 0.0012;
+
+/** The setter the gizmo hands the scene, so only the gizmo re-renders. */
+type PublishAxes = RefObject<((axes: ProjectedAxis[]) => void) | undefined>;
+
+/**
+ * Reads the camera every frame and hands the gizmo its axes.
+ *
+ * It lives inside the canvas because that is the only place the camera exists,
+ * and it publishes through a ref rather than up through props: a state setter
+ * called on this component's parent would re-render the whole scene on every
+ * frame of an orbit, and the thing that actually changed is nine SVG elements.
+ */
+function CameraOrientation({ publish }: { publish: PublishAxes }) {
+  const camera = useThree((state) => state.camera);
+  const last = useRef(new Quaternion());
+  const published = useRef(false);
+
+  useFrame(() => {
+    const send = publish.current;
+    // The gizmo mounts after this does, so nothing is recorded as sent until it
+    // has actually gone somewhere — otherwise the first frame would be dropped
+    // and the gizmo would stay empty until the user moved the camera.
+    if (send === undefined) {
+      return;
+    }
+    if (published.current && last.current.angleTo(camera.quaternion) < ORIENTATION_EPSILON) {
+      return;
+    }
+    last.current.copy(camera.quaternion);
+    published.current = true;
+    send(cameraAxes(camera.quaternion));
+  });
+
+  return null;
+}
+
+/**
+ * The gizmo itself, an SVG laid over the canvas rather than geometry inside it:
+ * it is a legend, so it belongs in the same medium as the 2-D view's — and the
+ * ⊗/⊙ convention for an axis pointing through the screen is a 2-D symbol that
+ * would have to be faked in three dimensions.
+ *
+ * It takes no pointer events. The corner of the canvas is as good a place to
+ * start an orbit as any other, and a small dead patch there would be a puzzle.
+ */
+function OrientationGizmo({ register }: { register: PublishAxes }) {
+  const [axes, setAxes] = useState<ProjectedAxis[] | undefined>(undefined);
+
+  useEffect(() => {
+    register.current = setAxes;
+    return () => {
+      register.current = undefined;
+    };
+  }, [register]);
+
+  if (axes === undefined) {
+    return null;
+  }
+  return (
+    <svg
+      className="layout-3d-triad"
+      width={TRIAD_BOX}
+      height={TRIAD_BOX}
+      viewBox={`0 0 ${TRIAD_BOX} ${TRIAD_BOX}`}
+      aria-hidden="true"
+    >
+      <AxisTriad
+        axes={axes}
+        label="Orientation: the world axes as the camera sees them."
+        x={TRIAD_BOX / 2}
+        y={TRIAD_BOX / 2}
+      />
+    </svg>
+  );
+}
 
 /**
  * The system as a solid, seen from wherever the user puts the camera.
@@ -132,6 +221,7 @@ export function Layout3DView({
   const mount = useRef<HTMLDivElement>(null);
   const view = useOwnWindow(mount);
   const pixelRatio = usePixelRatio(view);
+  const publishAxes: PublishAxes = useRef(undefined);
 
   /**
    * R3F measures the canvas with a `ResizeObserver` taken from the global
@@ -182,6 +272,7 @@ export function Layout3DView({
           <directionalLight position={[-1, -0.6, 0.8]} intensity={0.5} />
 
           <Controls target={framing.target} home={framing.position} resetSignal={resetSignal} />
+          <CameraOrientation publish={publishAxes} />
 
           <AxisLine from={framing.axisFrom} to={framing.axisTo} color={colors.axis} />
 
@@ -247,6 +338,7 @@ export function Layout3DView({
           })}
         </Canvas>
       ) : null}
+      <OrientationGizmo register={publishAxes} />
     </div>
   );
 }

@@ -6,12 +6,9 @@ import {
   type RayTraceResult,
   type SurfaceShape,
 } from '@isaac/optical-core';
+import { projectToPlane, VIEW_PLANES, type LayoutPoint, type ViewPlane } from './view-plane.ts';
 
-/** A point in system coordinates: z along the axis, y transverse. */
-export interface LayoutPoint {
-  z: number;
-  y: number;
-}
+export type { LayoutPoint } from './view-plane.ts';
 
 export interface SurfaceProfile {
   surfaceIndex: number;
@@ -20,6 +17,12 @@ export interface SurfaceProfile {
   isImage: boolean;
   /** A mirror: drawn as metal rather than as one more glass surface. */
   isMirror: boolean;
+  /**
+   * A closed outline rather than an open curve — the rim, drawn end-on, where a
+   * surface has no cross-section. It has no two ends, so nothing that reads
+   * `points[0]` and `points[n - 1]` as the two rims applies to it.
+   */
+  closed: boolean;
 }
 
 export interface GlassBody {
@@ -46,6 +49,8 @@ export interface GlassBody {
 }
 
 export interface LayoutGeometry {
+  /** The plane this geometry was projected into; it is not readable without it. */
+  view: ViewPlane;
   profiles: SurfaceProfile[];
   bodies: GlassBody[];
   rayPaths: {
@@ -55,10 +60,12 @@ export interface LayoutGeometry {
     fieldIndex: number;
     blocked: boolean;
   }[];
-  bounds: { minZ: number; maxZ: number; minY: number; maxY: number };
+  bounds: { minH: number; maxH: number; minV: number; maxV: number };
 }
 
 const PROFILE_SAMPLES = 33;
+/** Points around a rim drawn end-on. Enough that a circle reads as one. */
+const RIM_SAMPLES = 64;
 
 /**
  * Axial sag at transverse height `y`, from the engine's own definition of the
@@ -90,6 +97,10 @@ export function sag(shape: SurfaceShape, y: number): number {
  * it round. The gap has to be measured along the light, not along the axis:
  * behind a mirror the next surface is at *smaller* z by design, and reading that
  * as negative thickness would condemn every reflecting system as impossible.
+ *
+ * The answer is a fact about the element and not about the view, so it is the
+ * same number in every plane — an element that cannot be made does not become
+ * makeable by turning it a quarter turn.
  */
 function leastAxialGap(
   frontShape: SurfaceShape,
@@ -109,14 +120,50 @@ function leastAxialGap(
 }
 
 /**
- * Builds everything the meridional layout draws: surface profiles, filled glass
- * bodies between them, and ray polylines. Surfaces with no aperture fall back to
- * `defaultSemiDiameter` so an unbounded surface still has something to draw.
+ * The surface's outline in its own frame, before the pose carries it into place.
+ *
+ * In a plane containing the axis this is the cross-section a lens designer
+ * reads: the sag swept along whichever transverse axis is drawn upright, which
+ * is y in the meridional view and x in the sagittal one. The two are the same
+ * curve on a rotationally symmetric surface, and they are drawn from the same
+ * sag for exactly that reason — the difference between the views is where the
+ * *system* has put the surface, not what the surface is.
+ *
+ * End-on there is no section to draw. What bounds a surface seen down the axis
+ * is its rim, so that is the circle traced — at the rim's own sag, so a tilted
+ * surface's rim projects to the ellipse it really is rather than to a circle.
+ */
+function outlineInLocalFrame(shape: SurfaceShape, semiDiameter: number, view: ViewPlane): Point3[] {
+  if (!view.axial) {
+    const rimSag = sag(shape, semiDiameter);
+    return Array.from({ length: RIM_SAMPLES + 1 }, (_, sample) => {
+      const angle = (2 * Math.PI * sample) / RIM_SAMPLES;
+      return new Point3(semiDiameter * Math.cos(angle), semiDiameter * Math.sin(angle), rimSag);
+    });
+  }
+
+  const upright = view.vertical;
+  return Array.from({ length: PROFILE_SAMPLES }, (_, sample) => {
+    const height = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
+    const depth = sag(shape, height);
+    return upright === 'y' ? new Point3(0, height, depth) : new Point3(height, 0, depth);
+  });
+}
+
+/**
+ * Builds everything a 2-D layout draws in one plane: surface outlines, filled
+ * glass bodies between them, and ray polylines. Surfaces with no aperture fall
+ * back to `defaultSemiDiameter` so an unbounded surface still has something to
+ * draw.
+ *
+ * The plane defaults to the meridional one, which is the view a lens layout has
+ * always meant.
  */
 export function buildLayout(
   system: OpticalSystem,
   traces: readonly { result: RayTraceResult; wavelengthIndex: number; fieldIndex: number }[],
   defaultSemiDiameter: number,
+  view: ViewPlane = VIEW_PLANES.YZ,
 ): LayoutGeometry {
   const profiles: SurfaceProfile[] = [];
   const heights: number[] = [];
@@ -140,28 +187,28 @@ export function buildLayout(
       : defaultSemiDiameter;
     heights.push(semiDiameter);
 
-    const points: LayoutPoint[] = [];
-    for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
-      const y = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
-      // The profile is drawn in the surface's own frame and then carried into
-      // global coordinates, so a tilted element is drawn tilted. For a centered
-      // system this is the vertex offset it always was.
-      const local = new Point3(0, y, sag(surface.shape, y));
-      const global = pose.apply(local);
-      points.push({ z: global.z, y: global.y });
-    }
+    // The outline is built in the surface's own frame and then carried into
+    // global coordinates, so a tilted element is drawn tilted. For a centered
+    // system this is the vertex offset it always was.
+    const points = outlineInLocalFrame(surface.shape, semiDiameter, view).map((local) =>
+      projectToPlane(pose.apply(local), view),
+    );
     profiles.push({
       surfaceIndex: index,
       points,
       isStop: surface.isStop,
       isImage: surface.type === 'IMAGE',
       isMirror: surface.reflective,
+      closed: !view.axial,
     });
   }
 
-  // A glass body spans a surface whose following medium is not air.
+  // A glass body spans a surface whose following medium is not air. Only in a
+  // plane containing the axis: end-on, an element is two rims one behind the
+  // other and the glass between them is edge-on to the viewer, so there is no
+  // section to fill and filling the rim would claim the whole aperture is solid.
   const bodies: GlassBody[] = [];
-  for (let index = 1; index < system.surfaces.length - 1; index += 1) {
+  for (let index = 1; view.axial && index < system.surfaces.length - 1; index += 1) {
     const surface = system.surfaceAt(index);
     if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
@@ -178,7 +225,8 @@ export function buildLayout(
       continue;
     }
 
-    // The profiles run −y to +y, so the first and last points are the two rims.
+    // The outlines run −height to +height, so the first and last points are the
+    // two rims.
     const frontBottom = front.points[0]!;
     const frontTop = front.points[front.points.length - 1]!;
     const backBottom = back.points[0]!;
@@ -196,10 +244,10 @@ export function buildLayout(
         system.vertexZAt(index),
         system.surfaceAt(back.surfaceIndex).shape,
         system.vertexZAt(back.surfaceIndex),
-        Math.min(Math.abs(frontTop.y), Math.abs(backTop.y)),
+        Math.min(Math.abs(frontTop.v), Math.abs(backTop.v)),
         travel,
       ),
-      travel * (backTop.z - frontTop.z),
+      travel * (backTop.h - frontTop.h),
     );
 
     bodies.push({
@@ -214,7 +262,7 @@ export function buildLayout(
   }
 
   const rayPaths = traces.map(({ result, wavelengthIndex, fieldIndex }) => ({
-    points: rayPath(result),
+    points: rayPath(result, view),
     wavelengthIndex,
     fieldIndex,
     blocked: result.status !== 'TERMINATED',
@@ -227,14 +275,14 @@ export function buildLayout(
   const fallbackHeight = Math.max(...heights, defaultSemiDiameter, 1);
   const bounds = allPoints.length
     ? {
-        minZ: Math.min(...allPoints.map((point) => point.z)),
-        maxZ: Math.max(...allPoints.map((point) => point.z)),
-        minY: Math.min(...allPoints.map((point) => point.y)),
-        maxY: Math.max(...allPoints.map((point) => point.y)),
+        minH: Math.min(...allPoints.map((point) => point.h)),
+        maxH: Math.max(...allPoints.map((point) => point.h)),
+        minV: Math.min(...allPoints.map((point) => point.v)),
+        maxV: Math.max(...allPoints.map((point) => point.v)),
       }
-    : { minZ: 0, maxZ: 1, minY: -fallbackHeight, maxY: fallbackHeight };
+    : { minH: 0, maxH: 1, minV: -fallbackHeight, maxV: fallbackHeight };
 
-  return { profiles, bodies, rayPaths, bounds };
+  return { view, profiles, bodies, rayPaths, bounds };
 }
 
 /**
@@ -245,13 +293,13 @@ export function buildLayout(
  * Shared with the first-order overlay so an annotation ray is drawn by exactly
  * the same rule as the bundle it is drawn over.
  */
-export function rayPath(result: RayTraceResult): LayoutPoint[] {
-  const points: LayoutPoint[] = [{ z: result.inputRay.origin.z, y: result.inputRay.origin.y }];
+export function rayPath(result: RayTraceResult, view: ViewPlane = VIEW_PLANES.YZ): LayoutPoint[] {
+  const points: LayoutPoint[] = [projectToPlane(result.inputRay.origin, view)];
   for (const hit of result.intersections) {
-    points.push({ z: hit.point.z, y: hit.point.y });
+    points.push(projectToPlane(hit.point, view));
   }
   if (result.status === 'BLOCKED') {
-    points.push({ z: result.finalRay.origin.z, y: result.finalRay.origin.y });
+    points.push(projectToPlane(result.finalRay.origin, view));
   }
   return points;
 }
@@ -274,6 +322,7 @@ export function rayPath(result: RayTraceResult): LayoutPoint[] {
 export function pupilAim(
   result: RayTraceResult,
   pupilZ: number,
+  view: ViewPlane = VIEW_PLANES.YZ,
 ): { contact: LayoutPoint; atPupil: LayoutPoint; produced: boolean } | undefined {
   const hit = result.intersections[0]?.point;
   const direction = result.inputRay.direction;
@@ -282,8 +331,11 @@ export function pupilAim(
   }
   const distance = (pupilZ - hit.z) / direction.z;
   return {
-    contact: { z: hit.z, y: hit.y },
-    atPupil: { z: pupilZ, y: hit.y + distance * direction.y },
+    contact: projectToPlane(hit, view),
+    atPupil: projectToPlane(
+      { x: hit.x + distance * direction.x, y: hit.y + distance * direction.y, z: pupilZ },
+      view,
+    ),
     // False when the pupil lies in front of the glass: the traced ray already
     // passes through it, so there is nothing to produce and a dashed line would
     // only be laid over the solid one.
@@ -291,7 +343,7 @@ export function pupilAim(
   };
 }
 
-/** Turns system-space points into an SVG path, using a caller-supplied mapping. */
+/** Turns view-plane points into an SVG path, using a caller-supplied mapping. */
 export function toPath(
   points: readonly LayoutPoint[],
   project: (point: LayoutPoint) => { x: number; y: number },

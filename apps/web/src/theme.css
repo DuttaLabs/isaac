@@ -53,6 +53,14 @@
   --grid: #e4e3de;
   --stop-mark: #0b0b0b;
 
+  /* The orientation gizmo: X red, Y green, Z blue — the convention every CAD
+     tool and Three.js itself uses, so it is read before it is looked up. Steps
+     off the same ramps as the rest of the palette rather than pure primaries,
+     which sit badly on both backgrounds. */
+  --axis-x: #cc2b1f;
+  --axis-y: #0f8a2f;
+  --axis-z: #1f5fd0;
+
   --radius: 6px;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
@@ -98,6 +106,14 @@
     --axis: #4e4d46;
     --grid: #2b2b29;
     --stop-mark: #ffffff;
+
+    --axis-x: #ff6f60;
+    --axis-y: #4fd67a;
+    --axis-z: #6ba8ff;
+
+    --axis-x: #ff6f60;
+    --axis-y: #4fd67a;
+    --axis-z: #6ba8ff;
   }
 }
 
@@ -701,9 +717,19 @@ svg.layout.panning {
 /* The 3-D view keeps the 2-D drawing's proportions, so toggling between them
    does not make the panel jump. */
 .layout-3d {
+  position: relative;
   width: 100%;
   aspect-ratio: 900 / 340;
   touch-action: none;
+}
+
+/* The orientation gizmo, laid over the canvas. It takes no pointer events: the
+   corner of the canvas is as good a place to start an orbit as any other. */
+.layout-3d-triad {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  pointer-events: none;
 }
 
 .layout-3d canvas {
@@ -1100,4 +1126,31 @@ input.coefficient {
 
 .panel-stub .hint {
   margin-right: auto;
+}
+
+/*
+ * The orientation gizmo. The backdrop is there because the corner of a layout is
+ * not reliably empty; it is translucent so what it covers is still visible, and
+ * the arrows themselves carry their color as an attribute, from the tokens above.
+ */
+.axis-triad-backdrop {
+  fill: var(--surface-1);
+  fill-opacity: 0.78;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.axis-triad text {
+  font-family: var(--mono);
+  font-weight: 600;
+  user-select: none;
+}
+
+/*
+ * The circle standing in for an axis that runs through the screen. Filled with
+ * the backdrop rather than left open, so the two axes radiating from the origin
+ * pass behind the symbol instead of through it.
+ */
+.axis-triad-glyph {
+  fill: var(--surface-1);
 }

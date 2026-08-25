@@ -112,11 +112,11 @@ test('the ground edges run rim to rim, and slope when the rims differ', () => {
     element({ frontRadius: 50, backRadius: -50, thickness: 6, frontSemiDiameter: 10 }),
   );
   assert.deepEqual(
-    [equal.topEdge[0]!.y, equal.topEdge[1]!.y],
+    [equal.topEdge[0]!.v, equal.topEdge[1]!.v],
     [10, 10],
     'equal semi-diameters give a straight edge',
   );
-  assert.deepEqual([equal.bottomEdge[0]!.y, equal.bottomEdge[1]!.y], [-10, -10]);
+  assert.deepEqual([equal.bottomEdge[0]!.v, equal.bottomEdge[1]!.v], [-10, -10]);
 
   // The edge joins the two rims directly, so unequal apertures slope it rather
   // than squaring it off — squaring would draw glass that is not there.
@@ -129,8 +129,8 @@ test('the ground edges run rim to rim, and slope when the rims differ', () => {
       backSemiDiameter: 8,
     }),
   );
-  assert.deepEqual([stepped.topEdge[0]!.y, stepped.topEdge[1]!.y], [12, 8]);
-  assert.deepEqual([stepped.bottomEdge[0]!.y, stepped.bottomEdge[1]!.y], [-12, -8]);
+  assert.deepEqual([stepped.topEdge[0]!.v, stepped.topEdge[1]!.v], [12, 8]);
+  assert.deepEqual([stepped.bottomEdge[0]!.v, stepped.bottomEdge[1]!.v], [-12, -8]);
 });
 
 test('a workable element reports the gap at its thinnest, and is not crossed', () => {
@@ -261,7 +261,7 @@ test('an unapertured surface falls back to the supplied semi-diameter', () => {
   const body = onlyBody(
     element({ frontRadius: 50, backRadius: -50, thickness: 6, frontSemiDiameter: Infinity }),
   );
-  assert.equal(body.topEdge[0]!.y, DEFAULT_SEMI_DIAMETER, 'the fallback height is drawn');
+  assert.equal(body.topEdge[0]!.v, DEFAULT_SEMI_DIAMETER, 'the fallback height is drawn');
   assert.equal(body.crossed, false);
 });
 
@@ -313,13 +313,13 @@ test('a lens body is built from the aspheric profile the surfaces really have', 
     );
 
   const rimOf = (layout: ReturnType<typeof build>): number =>
-    layout.profiles[0]!.points[layout.profiles[0]!.points.length - 1]!.z;
+    layout.profiles[0]!.points[layout.profiles[0]!.points.length - 1]!.h;
 
   // A stronger conic pulls the rim of the front surface forward, and the glass
   // body drawn from it must follow — the body is built from the same points.
   assert.ok(rimOf(build(-4)) < rimOf(build(0)));
   const body = build(-4).bodies[0]!;
-  assert.equal(body.points[0]!.z, build(-4).profiles[0]!.points[0]!.z);
+  assert.equal(body.points[0]!.h, build(-4).profiles[0]!.points[0]!.h);
 });
 
 test('an element behind a mirror is not condemned as self-intersecting', () => {

@@ -163,6 +163,19 @@
   box-sizing: border-box;
 }
 
+/*
+ * The page itself never scrolls. Everything is inside the window, and anything
+ * too big for its panel scrolls *within* that panel — so the app bar and every
+ * panel header stay put, and no part of the design is somewhere the user has to
+ * go looking for it. Panels tile the window exactly; nothing floats or overlaps.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: var(--surface-0);
@@ -179,7 +192,11 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* dvh, not vh: on a phone or a window with a retracting toolbar, `vh` is the
+     *largest* the viewport gets, so the bottom of the app would sit under the
+     browser's own chrome with no way to scroll to it. */
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app-bar {
@@ -189,8 +206,7 @@ body {
   padding: 10px 16px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
+  flex: none;
   z-index: 10;
   flex-wrap: wrap;
 }
@@ -247,40 +263,61 @@ body {
   flex: 1;
 }
 
+/*
+ * Two columns with a draggable divider between them, filling whatever is left of
+ * the window below the app bar. The track sizes are `fr` weights held in `App`
+ * and written inline, so a drag moves space from one panel to its neighbour
+ * rather than growing the page — there is no page left to grow.
+ *
+ * The left column no longer declares a 648px minimum. It used to, so the whole
+ * lens grid would fit at once; now the table scrolls inside its own panel, which
+ * is the trade that lets the window be any size at all.
+ */
 .workspace {
   display: grid;
-  /* The left pane's minimum is set by the lens grid: every column of it must
-     be visible at once, including the stop radio at the far right. */
-  grid-template-columns: minmax(648px, 1fr) minmax(480px, 1.5fr);
-  gap: 12px;
   padding: 12px;
-  align-items: start;
-}
-
-@media (max-width: 1200px) {
-  .workspace {
-    grid-template-columns: 1fr;
-  }
+  gap: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .column {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ---------- Panels ---------- */
 
+/*
+ * A panel is a column of its own: a header that stays, and a body that takes
+ * what is left and scrolls if its content does not fit. `min-height: 0` on both
+ * is what actually allows the shrinking — a flex or grid item's default minimum
+ * is its content, so without it a tall table pushes the panel past the window
+ * and takes the page's no-scroll promise with it.
+ */
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
+/*
+ * Wraps rather than clips. The header is the one part of a panel that does not
+ * scroll — that is its job — so in a narrow pane its controls would be cut off
+ * with no way to reach them. Wrapping costs a second line of header and keeps
+ * every control usable at any width the dividers can produce.
+ */
 .panel-head {
+  flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
@@ -300,12 +337,18 @@ body {
 .panel-actions {
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
 }
 
 .panel-body {
   padding: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* Both axes: the lens table is wider than any pane will be, and the panels
+     are now short enough that most of them need the vertical one too. */
+  overflow: auto;
 }
 
 .panel-body.flush {
@@ -1120,14 +1163,32 @@ input.coefficient {
    they drag it to, and a single stack fills anything from a narrow strip beside
    the editor to a whole second display.
 */
+/*
+ * The second window scrolls, and has to do it here rather than on its body.
+ * That document is served the *same* stylesheet as this one, so it inherits
+ * `body { overflow: hidden }` — which is right for the main window, where every
+ * panel scrolls internally, and would silently clip the second one, where they
+ * are simply stacked. So the root is the window's height and does the scrolling.
+ *
+ * Panels there are left at their natural height on purpose: the second window
+ * holds whatever has been sent to it, in no fixed number, and squeezing two
+ * panels into a short window is worse than letting the column scroll.
+ */
 .secondary-root {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  min-height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
   background: var(--surface-0);
   color: var(--text-primary);
+}
+
+/* Stacked, not stretched: each keeps the height its content asks for. */
+.secondary-root .panel {
+  flex: none;
 }
 
 .secondary-empty {
@@ -1339,4 +1400,60 @@ input.coefficient {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+/*
+ * The divider between two panels. A track of the grid in its own right, so it
+ * has a width to grab that does not depend on either neighbour, and so the
+ * panels' fractions add up to the space they actually get.
+ *
+ * The visible line is thinner than the target: a 2px rule is what reads well and
+ * a 2px hit area is what nobody can hit, so the element is 10px of mostly
+ * padding with the rule drawn down the middle of it.
+ */
+.splitter {
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.splitter::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.splitter-vertical {
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.splitter-vertical::before {
+  width: 2px;
+  /* Short of the ends, so the rule reads as a divider between two panels rather
+     than as a border belonging to one of them. */
+  inset-block: 10px;
+}
+
+.splitter-horizontal {
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.splitter-horizontal::before {
+  height: 2px;
+  inset-inline: 10px;
+}
+
+.splitter:hover::before,
+.splitter:focus-visible::before {
+  background: var(--accent);
+}
+
+.splitter:focus-visible {
+  outline: none;
 }

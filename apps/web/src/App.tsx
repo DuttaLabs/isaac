@@ -15,6 +15,8 @@ import {
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
 import { elementColorsBySurface, type ElementStyles } from './lib/elements.ts';
+import { resizeTracks, trackTemplate } from './lib/split-sizes.ts';
+import { Splitter } from './components/Splitter.tsx';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
 import { TextCell } from './components/TextCell.tsx';
@@ -50,6 +52,8 @@ const Layout3DView = lazy(() =>
 );
 
 const HISTORY_LIMIT = 50;
+/** Width of a divider track. Wide enough to hit; the rule drawn in it is 2px. */
+const SPLITTER_PX = 10;
 type Theme = 'system' | 'light' | 'dark';
 
 interface Notice {
@@ -105,6 +109,26 @@ export function App() {
    * above it.
    */
   const [elementStyles, setElementStyles] = useState<ElementStyles>({});
+
+  /**
+   * How the window is divided up: the two columns, then the panels within each.
+   * `fr` weights rather than pixels, because the page does not scroll — the
+   * workspace is exactly the height of the window, so a divider moves space from
+   * one panel to its neighbour rather than making the page longer, and the
+   * proportions survive the window being resized.
+   *
+   * A view setting like the field checkboxes, and for the same reason: how big
+   * someone likes the layout panel is not a fact about the lens.
+   */
+  const [columnSizes, setColumnSizes] = useState([1, 1.4]);
+  const [leftSizes, setLeftSizes] = useState([1, 1.5, 0.9]);
+  const [rightSizes, setRightSizes] = useState([1.5, 1]);
+
+  const share = (sizes: readonly number[], divider: number): number => {
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    const before = sizes.slice(0, divider + 1).reduce((sum, size) => sum + size, 0);
+    return total > 0 ? before / total : 0;
+  };
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [showFirstOrder, setShowFirstOrder] = useState(false);
@@ -679,8 +703,11 @@ export function App() {
         </div>
       ) : null}
 
-      <div className="workspace">
-        <div className="column">
+      <div
+        className="workspace"
+        style={{ gridTemplateColumns: trackTemplate(columnSizes, SPLITTER_PX) }}
+      >
+        <div className="column" style={{ gridTemplateRows: trackTemplate(leftSizes, SPLITTER_PX) }}>
           <Placed id="source" placement={placement}>
             <ErrorBoundary label="Source object">
               <SourcePanel
@@ -694,6 +721,12 @@ export function App() {
               />
             </ErrorBoundary>
           </Placed>
+          <Splitter
+            orientation="horizontal"
+            label="Resize the source object panel"
+            valueNow={share(leftSizes, 0)}
+            onResize={(delta) => setLeftSizes((sizes) => resizeTracks(sizes, 0, delta))}
+          />
           <Placed id="system" placement={placement}>
             <ErrorBoundary label="Optical system">
               <LensDataEditor
@@ -707,6 +740,12 @@ export function App() {
               />
             </ErrorBoundary>
           </Placed>
+          <Splitter
+            orientation="horizontal"
+            label="Resize the optical system panel"
+            valueNow={share(leftSizes, 1)}
+            onResize={(delta) => setLeftSizes((sizes) => resizeTracks(sizes, 1, delta))}
+          />
           <Placed id="firstOrder" placement={placement}>
             <ErrorBoundary label="First order">
               <FirstOrderPanel
@@ -718,7 +757,17 @@ export function App() {
           </Placed>
         </div>
 
-        <div className="column">
+        <Splitter
+          orientation="vertical"
+          label="Resize the left column"
+          valueNow={share(columnSizes, 0)}
+          onResize={(delta) => setColumnSizes((sizes) => resizeTracks(sizes, 0, delta))}
+        />
+
+        <div
+          className="column"
+          style={{ gridTemplateRows: trackTemplate(rightSizes, SPLITTER_PX) }}
+        >
           <Placed id="layout" placement={placement}>
             <Panel
               title="Layout"
@@ -887,6 +936,13 @@ export function App() {
               </ErrorBoundary>
             </Panel>
           </Placed>
+
+          <Splitter
+            orientation="horizontal"
+            label="Resize the layout panel"
+            valueNow={share(rightSizes, 0)}
+            onResize={(delta) => setRightSizes((sizes) => resizeTracks(sizes, 0, delta))}
+          />
 
           <Placed id="analysis" placement={placement}>
             <Panel

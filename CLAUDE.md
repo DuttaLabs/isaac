@@ -316,6 +316,44 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
 - **The layout has a 2D and a 3D view**, toggled in the Layout panel. Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture vocabulary deliberately. Each has a reset button, driven by a `resetSignal` counter the views watch. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with the zoom.
 - **`Layout3DView` is lazy-loaded.** Three.js and React Three Fiber are ~900 kB of the bundle, and a session that never opens the 3D view should never fetch them. Keep it behind `lazy()`.
+- **The page itself never scrolls.** `html`/`body`/`#root` are the window's height with
+  `overflow: hidden`, the app bar is `flex: none`, and the workspace takes what is left. Anything too
+  big for its panel scrolls *inside that panel* — `.panel-body` is `overflow: auto` on both axes. So
+  the app bar and every panel header stay put, and no part of the design is somewhere the user has to
+  go looking for it. `min-height: 0` on the panel, the column and the body is what actually permits
+  the shrinking: a flex or grid item's automatic minimum is its content, so without it a tall table
+  pushes the panel past the window and takes the whole promise with it. `100dvh`, not `100vh` —
+  `vh` is the *largest* the viewport gets, so on a window with retracting chrome the bottom would sit
+  under it with no way to scroll there.
+
+  The left column's old `minmax(648px, 1fr)` is gone. It existed so the whole lens grid fitted at
+  once; the table now scrolls inside its own panel, which is the trade that lets the window be any
+  size. Panel headers **wrap rather than clip**, because a header is the one part of a panel that
+  does not scroll, so in a narrow pane its controls would be unreachable.
+
+- **Panels tile the window, and the dividers between them are draggable.** `lib/split-sizes.ts` holds
+  the sizes as `fr` weights — not pixels, because the workspace is exactly the height of the window,
+  so what a divider does is *move space between two neighbours* rather than make one bigger, and
+  fractions survive a window resize with the proportions the user chose. `resizeTracks` touches only
+  the pair either side of the divider, so dragging one never shuffles panels the user was not
+  touching, and clamps both so neither can be squeezed away — a panel dragged to nothing cannot be
+  dragged back, because there is no edge left to grab. Tracks are `minmax(0, Nfr)`: without the 0 a
+  grid item's automatic minimum is its content, and a wide table would push the column past the
+  window.
+
+  `components/Splitter.tsx` is the divider — a `role="separator"` with pointer capture (not a window
+  listener: the drag leaves the element immediately, and capture also works in the second window,
+  where a listener on the opener's `window` would not) and arrow-key support. It is a **grid track of
+  its own**, so it has a width to grab that does not depend on either neighbour. This is the answer
+  to floating windows: nothing overlaps, nothing hides behind anything, and the pieces always tile
+  the window exactly. **Sizes are view state in `App`** — how big someone likes the layout panel is
+  not a fact about the lens.
+
+  The second window scrolls *at `.secondary-root`*, not at its body: that document is served the same
+  stylesheet, so it inherits `body { overflow: hidden }`, which is right here and would silently clip
+  it. Its panels keep their natural height, since it holds whatever has been sent to it in no fixed
+  number.
+
 - **Any panel can be sent to a second browser window** (the ↗ in its header, or the app bar's *Second window* to open an empty one), so a design with more panels than one display has room for can spread across two. This is a `createPortal` into the popup's document (`components/Placed.tsx`), *not* a second React root, and that is the whole reason it needs no synchronization: a detached panel stays in the one React tree, reads the same `system`, and is traced once. A second *tab* over a `BroadcastChannel` would have to be sent the design, and `OpticalSystem`/`Surface`/`Material` are class instances — `structuredClone` delivers their numbers without their prototypes, so the far side would be rebuilding the model and re-tracing it, and the two copies could disagree. Which panels are out there is a *view* setting and lives in `App` state beside the field checkboxes, never on `OpticalSystem`.
 
   Portals work across documents only because React attaches its event system to a portal's *container* and not merely to the root (`HostPortal` → `listenToAllSupportedEvents`); the popup's DOM events never reach the opener's root, so without that every control out there would be inert. Three consequences worth knowing:

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { exportZmx, importZmx } from '@isaac/zemax-io';
 import {
@@ -15,7 +16,7 @@ import {
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
 import { elementColorsBySurface, type ElementStyles } from './lib/elements.ts';
-import { resizeTracks, trackTemplate } from './lib/split-sizes.ts';
+import { trackTemplate } from './lib/split-sizes.ts';
 import { Splitter } from './components/Splitter.tsx';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
@@ -23,8 +24,23 @@ import { TextCell } from './components/TextCell.tsx';
 import { formatMicrons } from './lib/format.ts';
 import { describeError, type Result } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import { ErrorNote, Panel, type PanelDetach } from './components/Panel.tsx';
-import { PANELS, Placed, type PanelId, type Placement } from './components/Placed.tsx';
+import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './components/Panel.tsx';
+import { Placed, type Placement } from './components/Placed.tsx';
+import { PANELS, PANEL_TITLES, type PanelId } from './lib/panels.ts';
+import {
+  DEFAULT_WORKSPACE,
+  addFirstPanel,
+  closeSlot,
+  duplicateSlot,
+  isEmpty,
+  panelsOnScreen,
+  resizeColumns,
+  resizeSlots,
+  setSlotPanel,
+  slotsInOrder,
+  type Column,
+  type Slot,
+} from './lib/workspace.ts';
 import { SecondaryWindow } from './components/SecondaryWindow.tsx';
 import { VIEW_PLANES, VIEW_PLANE_IDS, type ViewPlaneId } from './lib/view-plane.ts';
 import {
@@ -111,18 +127,25 @@ export function App() {
   const [elementStyles, setElementStyles] = useState<ElementStyles>({});
 
   /**
-   * How the window is divided up: the two columns, then the panels within each.
-   * `fr` weights rather than pixels, because the page does not scroll — the
-   * workspace is exactly the height of the window, so a divider moves space from
-   * one panel to its neighbour rather than making the page longer, and the
-   * proportions survive the window being resized.
+   * The whole arrangement: which panels are open, where, and how big.
    *
-   * A view setting like the field checkboxes, and for the same reason: how big
-   * someone likes the layout panel is not a fact about the lens.
+   * Sizes are `fr` weights rather than pixels, because the page does not scroll
+   * — the workspace is exactly the height of the window, so a divider moves
+   * space from one panel to its neighbour rather than making the page longer,
+   * and the proportions survive the window being resized.
+   *
+   * One piece of state rather than the four it grew from, because opening and
+   * closing panels means the sizes and the panels can no longer be separate
+   * lists kept in step by hand: a closed panel has to take its weight with it.
+   *
+   * A view setting like the field checkboxes, and for the same reason: an
+   * arrangement someone likes is not a fact about the lens, so it must not land
+   * on the undo stack or be written into a file.
    */
-  const [columnSizes, setColumnSizes] = useState([1, 1.4]);
-  const [leftSizes, setLeftSizes] = useState([1, 1.5, 0.9]);
-  const [rightSizes, setRightSizes] = useState([1.5, 1]);
+  const [workspace, setWorkspace] = useState(DEFAULT_WORKSPACE);
+
+  /** Which panels are open at all — what the traces below are gated on. */
+  const openPanels = useMemo(() => panelsOnScreen(workspace), [workspace]);
 
   const share = (sizes: readonly number[], divider: number): number => {
     const total = sizes.reduce((sum, size) => sum + size, 0);
@@ -146,15 +169,19 @@ export function App() {
    */
   const [cycleBase, setCycleBase] = useState<boolean[] | undefined>(undefined);
   const [allWavelengths, setAllWavelengths] = useState(false);
-  const [view, setView] = useState<'2d' | '3d'>('2d');
   /**
    * Which plane the 2-D view is drawn in. A view setting like the rest of them:
    * turning a design round to look at it from the side is not an edit, so it
    * never reaches `OpticalSystem` or the undo stack.
    */
   const [planeId, setPlaneId] = useState<ViewPlaneId>('YZ');
-  /** Bumped by the reset button; both views watch it and nothing else does. */
-  const [viewReset, setViewReset] = useState(0);
+  /**
+   * Bumped by each view's reset button. One counter per view rather than one
+   * shared: the two layouts can now be on screen together, and re-fitting the
+   * cross-section must not throw away the camera angle set up beside it.
+   */
+  const [reset2d, setReset2d] = useState(0);
+  const [reset3d, setReset3d] = useState(0);
   const [notice, setNotice] = useState<Notice | undefined>();
   /**
    * The second window, and which panels have been sent to it. Both are view
@@ -163,7 +190,7 @@ export function App() {
    * and moving one must not land on the undo stack.
    */
   const [secondary, setSecondary] = useState<SecondaryWindowHandle | undefined>();
-  const [detached, setDetached] = useState<Partial<Record<PanelId, boolean>>>({});
+  const [detached, setDetached] = useState<Record<string, boolean>>({});
   /**
    * Whether the browser will place a window on a chosen display. Asked once, up
    * front, because the answer decides whether opening the window can move it
@@ -259,26 +286,27 @@ export function App() {
   };
 
   /** Sends a panel to the second window, opening one if there is not one yet. */
-  const toggleDetached = (id: PanelId): void => {
-    if (detached[id] === true) {
-      setDetached(({ [id]: _gone, ...rest }) => rest);
+  const toggleDetached = (slotKey: string): void => {
+    if (detached[slotKey] === true) {
+      setDetached(({ [slotKey]: _gone, ...rest }) => rest);
       return;
     }
     if ((secondary === undefined || secondary.window.closed) && openSecondary() === undefined) {
       return; // blocked, and the notice says so — leave the panel where it is
     }
-    setDetached((current) => ({ ...current, [id]: true }));
+    setDetached((current) => ({ ...current, [slotKey]: true }));
   };
 
   const placement: Placement = {
     detached,
     container: secondary?.container,
+    order: slotsInOrder(workspace).map((slot) => slot.key),
     onReturn: toggleDetached,
   };
 
-  const detachOf = (id: PanelId): PanelDetach => ({
-    detached: detached[id] === true,
-    onToggle: () => toggleDetached(id),
+  const detachOf = (slotKey: string): PanelDetach => ({
+    detached: detached[slotKey] === true,
+    onToggle: () => toggleDetached(slotKey),
   });
 
   useEffect(() => {
@@ -401,19 +429,21 @@ export function App() {
   // being a footprint.
   const layout = useMemo(
     () =>
-      view === '2d' && plane.fanAxis === undefined
-        ? computeVolumeTraces(system, {
-            gridCount: gridAcrossPupil(raysPerFan),
-            wavelengthIndices,
-            fieldIndices: visibleFieldIndices,
-          })
-        : computeLayoutTraces(system, {
-            raysPerFan,
-            fanAxis: plane.fanAxis ?? 'y',
-            wavelengthIndices,
-            fieldIndices: visibleFieldIndices,
-          }),
-    [view, plane, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
+      !openPanels.has('layout2d')
+        ? undefined
+        : plane.fanAxis === undefined
+          ? computeVolumeTraces(system, {
+              gridCount: gridAcrossPupil(raysPerFan),
+              wavelengthIndices,
+              fieldIndices: visibleFieldIndices,
+            })
+          : computeLayoutTraces(system, {
+              raysPerFan,
+              fanAxis: plane.fanAxis ?? 'y',
+              wavelengthIndices,
+              fieldIndices: visibleFieldIndices,
+            }),
+    [openPanels, plane, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
   );
 
   // The first-order construction: the two rays it is built from, plus the two
@@ -423,16 +453,16 @@ export function App() {
   // ray bundle beside it.
   const firstOrderRays = useMemo(
     () =>
-      showFirstOrder && meridional && visibleFieldIndices.length > 0
+      showFirstOrder && meridional && openPanels.has('layout2d') && visibleFieldIndices.length > 0
         ? computeFirstOrderRays(system, visibleFieldIndices)
         : undefined,
-    [showFirstOrder, meridional, system, visibleFieldIndices],
+    [showFirstOrder, meridional, openPanels, system, visibleFieldIndices],
   );
   // With every field switched off there is nothing for a construction ray to
   // belong to, so the overlay goes with them rather than quietly falling back to
   // a field that is not being drawn.
   const firstOrderOverlay =
-    showFirstOrder && view === '2d' && meridional && visibleFieldIndices.length > 0
+    showFirstOrder && openPanels.has('layout2d') && meridional && visibleFieldIndices.length > 0
       ? buildFirstOrderOverlay(firstOrder, firstOrderRays)
       : undefined;
 
@@ -442,14 +472,14 @@ export function App() {
   // control: a grid of n across the pupil is the same density as a fan of n.
   const volume = useMemo(
     () =>
-      view === '3d'
+      openPanels.has('layout3d')
         ? computeVolumeTraces(system, {
             gridCount: gridAcrossPupil(raysPerFan),
             fieldIndices: visibleFieldIndices,
             wavelengthIndices,
           })
         : undefined,
-    [view, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
+    [openPanels, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
   );
   const fan = useMemo(() => computeRayFan(system, activeField, 21), [system, activeField]);
   const spot = useMemo(() => computeSpot(system, activeField, 15), [system, activeField]);
@@ -572,6 +602,367 @@ export function App() {
       : `h = ${field.objectHeight ?? 0} ${system.units}`;
   };
 
+  /**
+   * The panel a slot has been turned over to.
+   *
+   * Every panel is written once here and rendered wherever its slot happens to
+   * be, which is the whole of what makes the header dropdown possible: the
+   * arrangement is data, so a panel is no longer tied to the one place in the
+   * JSX it was written.
+   */
+  /**
+   * Controls the two layout panels share.
+   *
+   * Both set what is *traced* rather than how it is drawn, so both views read
+   * them and every copy of either view moves together — which is the rule the
+   * whole arrangement rests on. Anything that must differ between two panels on
+   * screen is a difference of panel, and that is exactly why the 2-D/3-D switch
+   * is gone: it is now the panel chooser.
+   */
+  const raysControl = (
+    <label className="inline hint">
+      rays
+      <input
+        type="number"
+        min={1}
+        max={31}
+        step={2}
+        value={raysPerFan}
+        style={{ width: 56 }}
+        onChange={(event) =>
+          setRaysPerFan(Math.max(1, Math.min(31, Number(event.target.value) || 1)))
+        }
+      />
+    </label>
+  );
+
+  const wavelengthsControl = (
+    <label className="inline hint">
+      <input
+        type="checkbox"
+        checked={allWavelengths}
+        onChange={(event) => setAllWavelengths(event.target.checked)}
+      />
+      all wavelengths
+    </label>
+  );
+
+  /**
+   * The panel a slot has been turned over to.
+   *
+   * Every panel is written once here and rendered wherever its slots happen to
+   * be — slot*s*, because the same panel may be open several times. Two copies
+   * are this same JSX reading this same state, which is the whole of why they
+   * mirror each other: there is nothing keeping them in step because there is
+   * nothing to keep in step. Add a field in one Source object panel and the
+   * other shows it because both are rendering one `system`.
+   */
+  const renderPanel = (slot: Slot, choice: PanelChoice): ReactNode => {
+    const detach = detachOf(slot.key);
+    switch (slot.panel) {
+      case 'source':
+        return (
+          <ErrorBoundary label="Source object">
+            <SourcePanel
+              system={system}
+              onChange={pushSystem}
+              fieldVisibility={fieldVisibility}
+              onFieldVisibilityChange={changeFieldVisibility}
+              cyclingFields={cycleBase !== undefined}
+              onToggleFieldCycling={toggleFieldCycling}
+              detach={detach}
+              choice={choice}
+            />
+          </ErrorBoundary>
+        );
+      case 'system':
+        return (
+          <ErrorBoundary label="Optical system">
+            <LensDataEditor
+              system={system}
+              onChange={pushSystem}
+              onHighlight={setHighlightedSurface}
+              highlightedSurface={highlightedSurface}
+              elementStyles={elementStyles}
+              onElementStyle={setElementStyle}
+              detach={detach}
+              choice={choice}
+            />
+          </ErrorBoundary>
+        );
+      case 'firstOrder':
+        return (
+          <ErrorBoundary label="First order">
+            <FirstOrderPanel
+              system={system}
+              firstOrder={firstOrder}
+              detach={detach}
+              choice={choice}
+            />
+          </ErrorBoundary>
+        );
+      case 'layout2d':
+        return (
+          <Panel
+            title="Layout 2D"
+            flush
+            detach={detach}
+            choice={choice}
+            actions={
+              <>
+                {raysControl}
+                {wavelengthsControl}
+                {/* Only offered on the meridional cross-section: these are
+                  construction lines through that one plane, and neither the
+                  3-D view nor the other two planes draw them, so the control
+                  would otherwise promise something that does not happen. */}
+                {meridional ? (
+                  <label
+                    className="inline hint"
+                    title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showFirstOrder}
+                      onChange={(event) => setShowFirstOrder(event.target.checked)}
+                    />
+                    first-order rays
+                  </label>
+                ) : null}
+                <label className="inline hint" title={plane.description}>
+                  plane
+                  <select
+                    value={planeId}
+                    aria-label="Layout plane"
+                    onChange={(event) => setPlaneId(event.target.value as ViewPlaneId)}
+                  >
+                    {VIEW_PLANE_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {VIEW_PLANES[id].label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  title="Fit the drawing to the panel again"
+                  onClick={() => setReset2d((count) => count + 1)}
+                >
+                  Reset view
+                </button>
+              </>
+            }
+          >
+            <ErrorBoundary label="Layout 2D">
+              {layout?.ok ? (
+                <>
+                  <LayoutView
+                    system={system}
+                    traces={layout.value}
+                    plane={plane}
+                    defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
+                    highlightedSurface={highlightedSurface}
+                    elementColors={elementColors}
+                    resetSignal={reset2d}
+                    firstOrder={firstOrderOverlay}
+                  />
+                  <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
+                  {/* Dash-only. Color belongs to the field now, so a colored
+                    wavelength swatch would name a mapping that is not on screen. */}
+                  {allWavelengths ? <WavelengthLegend system={system} pattern /> : null}
+                  {firstOrderOverlay ? (
+                    <FirstOrderLegend
+                      rays={firstOrderOverlay.rays}
+                      entrance={firstOrderOverlay.entrance}
+                      exit={firstOrderOverlay.exit}
+                      principal={firstOrderOverlay.principal}
+                      units={system.units}
+                    />
+                  ) : null}
+                  {showFirstOrder && meridional && firstOrderRays?.ok === false ? (
+                    <p className="hint" style={{ padding: '0 12px 10px' }}>
+                      No first-order rays: {firstOrderRays.error}
+                    </p>
+                  ) : null}
+                  <p className="hint view-hint">Wheel zooms · drag pans</p>
+                </>
+              ) : (
+                <div style={{ padding: 12 }}>
+                  <ErrorNote message={layout?.ok === false ? layout.error : 'No rays to draw.'} />
+                </div>
+              )}
+            </ErrorBoundary>
+          </Panel>
+        );
+      case 'layout3d':
+        return (
+          <Panel
+            title="Layout 3D"
+            flush
+            detach={detach}
+            choice={choice}
+            actions={
+              <>
+                {raysControl}
+                {wavelengthsControl}
+                <button
+                  title="Put the camera back where it started"
+                  onClick={() => setReset3d((count) => count + 1)}
+                >
+                  Reset view
+                </button>
+              </>
+            }
+          >
+            <ErrorBoundary label="Layout 3D">
+              {volume?.ok ? (
+                <>
+                  <Suspense
+                    fallback={
+                      <p className="hint" style={{ padding: 12 }}>
+                        Loading the 3D view…
+                      </p>
+                    }
+                  >
+                    <Layout3DView
+                      system={system}
+                      traces={volume.value}
+                      defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
+                      highlightedSurface={highlightedSurface}
+                      elementColors={elementColors}
+                      resetSignal={reset3d}
+                    />
+                  </Suspense>
+                  <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
+                  {/* No wavelength legend here: a line material has no dash to
+                    offer, so in 3-D the wavelengths are drawn but not
+                    distinguished, and a legend would name a cue that is absent. */}
+                  <p className="hint view-hint">Wheel zooms · drag pans · wheel-drag orbits</p>
+                </>
+              ) : (
+                <div style={{ padding: 12 }}>
+                  <ErrorNote message={volume?.ok === false ? volume.error : 'No rays to draw.'} />
+                </div>
+              )}
+            </ErrorBoundary>
+          </Panel>
+        );
+      case 'analysis':
+        return (
+          <Panel
+            title="Analysis"
+            flush
+            detach={detach}
+            choice={choice}
+            actions={
+              <label className="inline hint">
+                field
+                <select
+                  value={activeField}
+                  onChange={(event) => setFieldIndex(Number(event.target.value))}
+                  disabled={system.fields.length === 0}
+                >
+                  {(system.fields.length > 0 ? system.fields : [null]).map((_, index) => (
+                    <option value={index} key={index}>
+                      {fieldLabel(index)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            }
+          >
+            <ErrorBoundary label="Analysis">
+              <div className="plot-grid" style={{ padding: 12 }}>
+                <div>
+                  <h3 className="stat-label">Ray fan — tangential</h3>
+                  {fan.ok ? (
+                    <RayFanPlot data={fan.value} title={`Ray fan at ${fieldLabel(activeField)}`} />
+                  ) : (
+                    <ErrorNote message={fan.error} />
+                  )}
+                </div>
+                <div>
+                  <h3 className="stat-label">Spot diagram</h3>
+                  {spot.ok ? (
+                    <>
+                      <SpotDiagram data={spot.value} title={`Spot at ${fieldLabel(activeField)}`} />
+                      <p className="hint" style={{ margin: '4px 0 0' }}>
+                        RMS radius {formatMicrons(spot.value.rmsRadius)} · max{' '}
+                        {formatMicrons(spot.value.maxRadius)} · {spot.value.traced} rays
+                        {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <ErrorNote message={spot.error} />
+                  )}
+                </div>
+              </div>
+              <WavelengthLegend system={system} />
+            </ErrorBoundary>
+          </Panel>
+        );
+    }
+  };
+
+  /** Closes a slot, and forgets that it was in the second window. */
+  const closePanel = (slotKey: string): void => {
+    setWorkspace((current) => closeSlot(current, slotKey));
+    setDetached(({ [slotKey]: _gone, ...rest }) => rest);
+  };
+
+  /** The three things that can be done to a slot, as opposed to its panel. */
+  const choiceOf = (slot: Slot): PanelChoice => ({
+    id: slot.panel,
+    onChange: (next) => setWorkspace((current) => setSlotPanel(current, slot.key, next)),
+    onDuplicate: () => setWorkspace((current) => duplicateSlot(current, slot.key)),
+    onClose: () => closePanel(slot.key),
+  });
+
+  /**
+   * One column of slots, with a divider between each neighbouring pair.
+   *
+   * Panels are keyed by slot and dividers by the slot beneath them, so opening
+   * or closing a panel moves the surviving DOM rather than rebuilding the
+   * column. A divider belongs to the boundary between two slots rather than to
+   * either panel sitting there, and its label names whatever is above it *now*.
+   */
+  const renderColumn = (column: Column): ReactNode => {
+    const sizes = column.slots.map((slot) => slot.size);
+    return (
+      <div
+        key={column.key}
+        className="column"
+        style={{ gridTemplateRows: trackTemplate(sizes, SPLITTER_PX) }}
+      >
+        {column.slots.flatMap((slot, index) => {
+          const panel = (
+            <Placed key={slot.key} slotKey={slot.key} panel={slot.panel} placement={placement}>
+              {renderPanel(slot, choiceOf(slot))}
+            </Placed>
+          );
+          if (index === 0) {
+            return [panel];
+          }
+          const above = column.slots[index - 1];
+          return [
+            <Splitter
+              key={`divider-${slot.key}`}
+              orientation="horizontal"
+              label={
+                above === undefined
+                  ? 'Resize this panel'
+                  : `Resize the ${PANEL_TITLES[above.panel]} panel`
+              }
+              valueNow={share(sizes, index - 1)}
+              onResize={(delta) =>
+                setWorkspace((current) => resizeSlots(current, column.key, index - 1, delta))
+              }
+            />,
+            panel,
+          ];
+        })}
+      </div>
+    );
+  };
   return (
     <div className="app">
       <header className="app-bar">
@@ -703,307 +1094,68 @@ export function App() {
         </div>
       ) : null}
 
-      <div
-        className="workspace"
-        style={{ gridTemplateColumns: trackTemplate(columnSizes, SPLITTER_PX) }}
-      >
-        <div className="column" style={{ gridTemplateRows: trackTemplate(leftSizes, SPLITTER_PX) }}>
-          <Placed id="source" placement={placement}>
-            <ErrorBoundary label="Source object">
-              <SourcePanel
-                system={system}
-                onChange={pushSystem}
-                fieldVisibility={fieldVisibility}
-                onFieldVisibilityChange={changeFieldVisibility}
-                cyclingFields={cycleBase !== undefined}
-                onToggleFieldCycling={toggleFieldCycling}
-                detach={detachOf('source')}
-              />
-            </ErrorBoundary>
-          </Placed>
-          <Splitter
-            orientation="horizontal"
-            label="Resize the source object panel"
-            valueNow={share(leftSizes, 0)}
-            onResize={(delta) => setLeftSizes((sizes) => resizeTracks(sizes, 0, delta))}
-          />
-          <Placed id="system" placement={placement}>
-            <ErrorBoundary label="Optical system">
-              <LensDataEditor
-                system={system}
-                onChange={pushSystem}
-                onHighlight={setHighlightedSurface}
-                highlightedSurface={highlightedSurface}
-                elementStyles={elementStyles}
-                onElementStyle={setElementStyle}
-                detach={detachOf('system')}
-              />
-            </ErrorBoundary>
-          </Placed>
-          <Splitter
-            orientation="horizontal"
-            label="Resize the optical system panel"
-            valueNow={share(leftSizes, 1)}
-            onResize={(delta) => setLeftSizes((sizes) => resizeTracks(sizes, 1, delta))}
-          />
-          <Placed id="firstOrder" placement={placement}>
-            <ErrorBoundary label="First order">
-              <FirstOrderPanel
-                system={system}
-                firstOrder={firstOrder}
-                detach={detachOf('firstOrder')}
-              />
-            </ErrorBoundary>
-          </Placed>
+      {isEmpty(workspace) ? (
+        /* Closing the last panel must not be a one-way door. The workspace is
+          the whole window, so an empty one is the only place this can be said. */
+        <div className="workspace workspace-empty">
+          <p className="hint">No panels are open.</p>
+          <label className="inline hint">
+            Open a panel
+            <select
+              value=""
+              aria-label="Open a panel"
+              onChange={(event) =>
+                setWorkspace((current) => addFirstPanel(current, event.target.value as PanelId))
+              }
+            >
+              <option value="" disabled>
+                Choose…
+              </option>
+              {PANELS.map((id) => (
+                <option key={id} value={id}>
+                  {PANEL_TITLES[id]}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-
-        <Splitter
-          orientation="vertical"
-          label="Resize the left column"
-          valueNow={share(columnSizes, 0)}
-          onResize={(delta) => setColumnSizes((sizes) => resizeTracks(sizes, 0, delta))}
-        />
-
+      ) : (
         <div
-          className="column"
-          style={{ gridTemplateRows: trackTemplate(rightSizes, SPLITTER_PX) }}
+          className="workspace"
+          style={{
+            gridTemplateColumns: trackTemplate(
+              workspace.columns.map((column) => column.size),
+              SPLITTER_PX,
+            ),
+          }}
         >
-          <Placed id="layout" placement={placement}>
-            <Panel
-              title="Layout"
-              flush
-              detach={detachOf('layout')}
-              actions={
-                <>
-                  <label className="inline hint">
-                    rays
-                    <input
-                      type="number"
-                      min={1}
-                      max={31}
-                      step={2}
-                      value={raysPerFan}
-                      style={{ width: 56 }}
-                      onChange={(event) =>
-                        setRaysPerFan(Math.max(1, Math.min(31, Number(event.target.value) || 1)))
-                      }
-                    />
-                  </label>
-                  <label className="inline hint">
-                    <input
-                      type="checkbox"
-                      checked={allWavelengths}
-                      onChange={(event) => setAllWavelengths(event.target.checked)}
-                    />
-                    all wavelengths
-                  </label>
-                  {/* Only offered on the meridional cross-section: these are
-                    construction lines through that one plane, and neither the
-                    3-D view nor the other two planes draw them, so the control
-                    would otherwise promise something that does not happen. */}
-                  {view === '2d' && meridional ? (
-                    <label
-                      className="inline hint"
-                      title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={showFirstOrder}
-                        onChange={(event) => setShowFirstOrder(event.target.checked)}
-                      />
-                      first-order rays
-                    </label>
-                  ) : null}
-                  <button
-                    title={
-                      view === '2d'
-                        ? 'Show the system as a solid, free to orbit'
-                        : 'Back to the meridional cross-section'
-                    }
-                    aria-pressed={view === '3d'}
-                    onClick={() => setView(view === '2d' ? '3d' : '2d')}
-                  >
-                    <span className="label-swap">
-                      <span className={view === '2d' ? undefined : 'label-hidden'}>3D</span>
-                      <span className={view === '2d' ? 'label-hidden' : undefined}>2D</span>
-                    </span>
-                  </button>
-                  {/* 2-D only: the 3-D view is free to orbit, so naming one
-                    plane for it would be a setting with nothing to set. */}
-                  {view === '2d' ? (
-                    <label className="inline hint" title={plane.description}>
-                      plane
-                      <select
-                        value={planeId}
-                        aria-label="Layout plane"
-                        onChange={(event) => setPlaneId(event.target.value as ViewPlaneId)}
-                      >
-                        {VIEW_PLANE_IDS.map((id) => (
-                          <option key={id} value={id}>
-                            {VIEW_PLANES[id].label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  <button
-                    title={
-                      view === '2d'
-                        ? 'Fit the drawing to the panel again'
-                        : 'Put the camera back where it started'
-                    }
-                    onClick={() => setViewReset((count) => count + 1)}
-                  >
-                    Reset view
-                  </button>
-                </>
-              }
-            >
-              <ErrorBoundary label="Layout">
-                {layout.ok ? (
-                  <>
-                    {view === '2d' ? (
-                      <LayoutView
-                        system={system}
-                        traces={layout.value}
-                        plane={plane}
-                        defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
-                        highlightedSurface={highlightedSurface}
-                        elementColors={elementColors}
-                        resetSignal={viewReset}
-                        firstOrder={firstOrderOverlay}
-                      />
-                    ) : volume?.ok ? (
-                      <Suspense
-                        fallback={
-                          <p className="hint" style={{ padding: 12 }}>
-                            Loading the 3D view…
-                          </p>
-                        }
-                      >
-                        <Layout3DView
-                          system={system}
-                          traces={volume.value}
-                          defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
-                          highlightedSurface={highlightedSurface}
-                          elementColors={elementColors}
-                          resetSignal={viewReset}
-                        />
-                      </Suspense>
-                    ) : (
-                      <div style={{ padding: 12 }}>
-                        <ErrorNote
-                          message={volume?.ok === false ? volume.error : 'No rays to draw.'}
-                        />
-                      </div>
-                    )}
-                    <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
-                    {/* Dash-only, and 2-D only. Color belongs to the field now, so
-                      a colored wavelength swatch would name a mapping that is not
-                      on screen — and a line material has no dash to offer, so in
-                      3-D the wavelengths are drawn but not distinguished. */}
-                    {allWavelengths && view === '2d' ? (
-                      <WavelengthLegend system={system} pattern />
-                    ) : null}
-                    {firstOrderOverlay ? (
-                      <FirstOrderLegend
-                        rays={firstOrderOverlay.rays}
-                        entrance={firstOrderOverlay.entrance}
-                        exit={firstOrderOverlay.exit}
-                        principal={firstOrderOverlay.principal}
-                        units={system.units}
-                      />
-                    ) : null}
-                    {showFirstOrder &&
-                    view === '2d' &&
-                    meridional &&
-                    firstOrderRays?.ok === false ? (
-                      <p className="hint" style={{ padding: '0 12px 10px' }}>
-                        No first-order rays: {firstOrderRays.error}
-                      </p>
-                    ) : null}
-                    <p className="hint view-hint">
-                      {view === '2d'
-                        ? 'Wheel zooms · drag pans'
-                        : 'Wheel zooms · drag pans · wheel-drag orbits'}
-                    </p>
-                  </>
-                ) : (
-                  <div style={{ padding: 12 }}>
-                    <ErrorNote message={layout.error} />
-                  </div>
+          {workspace.columns.flatMap((column, index) => {
+            if (index === 0) {
+              return [renderColumn(column)];
+            }
+            const left = workspace.columns[index - 1];
+            return [
+              <Splitter
+                key={`column-divider-${column.key}`}
+                orientation="vertical"
+                label={
+                  left === undefined
+                    ? 'Resize this column'
+                    : `Resize the column holding ${PANEL_TITLES[left.slots[0]?.panel ?? 'source']}`
+                }
+                valueNow={share(
+                  workspace.columns.map((each) => each.size),
+                  index - 1,
                 )}
-              </ErrorBoundary>
-            </Panel>
-          </Placed>
-
-          <Splitter
-            orientation="horizontal"
-            label="Resize the layout panel"
-            valueNow={share(rightSizes, 0)}
-            onResize={(delta) => setRightSizes((sizes) => resizeTracks(sizes, 0, delta))}
-          />
-
-          <Placed id="analysis" placement={placement}>
-            <Panel
-              title="Analysis"
-              flush
-              detach={detachOf('analysis')}
-              actions={
-                <label className="inline hint">
-                  field
-                  <select
-                    value={activeField}
-                    onChange={(event) => setFieldIndex(Number(event.target.value))}
-                    disabled={system.fields.length === 0}
-                  >
-                    {(system.fields.length > 0 ? system.fields : [null]).map((_, index) => (
-                      <option value={index} key={index}>
-                        {fieldLabel(index)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              }
-            >
-              <ErrorBoundary label="Analysis">
-                <div className="plot-grid" style={{ padding: 12 }}>
-                  <div>
-                    <h3 className="stat-label">Ray fan — tangential</h3>
-                    {fan.ok ? (
-                      <RayFanPlot
-                        data={fan.value}
-                        title={`Ray fan at ${fieldLabel(activeField)}`}
-                      />
-                    ) : (
-                      <ErrorNote message={fan.error} />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="stat-label">Spot diagram</h3>
-                    {spot.ok ? (
-                      <>
-                        <SpotDiagram
-                          data={spot.value}
-                          title={`Spot at ${fieldLabel(activeField)}`}
-                        />
-                        <p className="hint" style={{ margin: '4px 0 0' }}>
-                          RMS radius {formatMicrons(spot.value.rmsRadius)} · max{' '}
-                          {formatMicrons(spot.value.maxRadius)} · {spot.value.traced} rays
-                          {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ''}
-                        </p>
-                      </>
-                    ) : (
-                      <ErrorNote message={spot.error} />
-                    )}
-                  </div>
-                </div>
-                <WavelengthLegend system={system} />
-              </ErrorBoundary>
-            </Panel>
-          </Placed>
+                onResize={(delta) =>
+                  setWorkspace((current) => resizeColumns(current, index - 1, delta))
+                }
+              />,
+              renderColumn(column),
+            ];
+          })}
         </div>
-      </div>
+      )}
 
       {secondary ? (
         <SecondaryWindow
@@ -1011,7 +1163,7 @@ export function App() {
           title={`Isaac — ${system.name}`}
           onClose={forgetSecondary}
         >
-          {PANELS.every((id) => detached[id] !== true) ? (
+          {slotsInOrder(workspace).every((slot) => detached[slot.key] !== true) ? (
             <p className="hint secondary-empty">
               Send panels here with the ↗ button in each panel's header.
             </p>

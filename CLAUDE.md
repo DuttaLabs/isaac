@@ -314,8 +314,28 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   someone who simply changed their mind. The write itself is outside that catch, because a failure to
   write *is* a failure and swallowing it would report a save that did not happen.
 
-- **The layout has a 2D and a 3D view**, toggled in the Layout panel. Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture vocabulary deliberately. Each has a reset button, driven by a `resetSignal` counter the views watch. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with the zoom.
-- **`Layout3DView` is lazy-loaded.** Three.js and React Three Fiber are ~900 kB of the bundle, and a session that never opens the 3D view should never fetch them. Keep it behind `lazy()`.
+- **The layout is two panels, not one panel with a switch.** `Layout 2D` and `Layout 3D` are separate
+  entries in `PANELS`, so both can be on screen at once. They were one panel with a 2D/3D button until
+  panels could be opened twice: two copies of a panel are meant to behave identically, so a duplicated
+  Layout would have mirrored its own toggle and both copies would have shown the same view — which is
+  the one thing the duplicate was opened to avoid. **Anything two copies must be able to differ in has
+  to be a difference of panel.** Each has its own `resetSignal` counter for the same reason: re-fitting
+  the cross-section must not throw away the camera angle set up beside it. The *plane* (Y–Z, X–Z, X–Y)
+  is still a control inside Layout 2D, so two Layout 2D panels necessarily show the same plane — by the
+  rule above, planes would have to become panel types before they could differ.
+
+  Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which
+  is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture
+  vocabulary deliberately. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with
+  the zoom.
+
+  **`.layout-3d` is `flex: 1 1 0`, and the `0` is load-bearing.** It used to hold a fixed
+  `aspect-ratio` so that toggling to 3D did not make the panel jump; with no toggle left, a fixed
+  aspect in a panel that can be any height is just an overflow waiting to happen, so the canvas fills
+  its panel instead. But `flex-basis: auto` bases the box on its *content*, and its content is a canvas
+  R3F sizes *from* the box — a loop that settles on the canvas's untouched 300 × 150 default. Basis `0`
+  takes the height purely from the flex free space and breaks it.
+- **`Layout3DView` is lazy-loaded.** Three.js and React Three Fiber are ~900 kB of the bundle, and a session that never opens the 3D view should never fetch them. Keep it behind `lazy()`, and keep the volume trace gated on `panelsOnScreen(workspace).has('layout3d')` — the gate is what makes "never opened" mean "never traced and never fetched".
 - **The page itself never scrolls.** `html`/`body`/`#root` are the window's height with
   `overflow: hidden`, the app bar is `flex: none`, and the workspace takes what is left. Anything too
   big for its panel scrolls *inside that panel* — `.panel-body` is `overflow: auto` on both axes. So
@@ -353,6 +373,52 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   stylesheet, so it inherits `body { overflow: hidden }`, which is right here and would silently clip
   it. Its panels keep their natural height, since it holds whatever has been sent to it in no fixed
   number.
+
+- **Any slot can be turned over to any panel**, chosen from the dropdown its header title *is*
+  (`lib/panels.ts` names the panels, `lib/workspace.ts` arranges them, `Panel`'s `PanelChooser` offers
+  them). The arrangement is data rather than the shape of the JSX — `App`'s `renderPanel` writes each
+  panel once and `renderColumn` renders it wherever its slots happen to be — which is the whole of what
+  makes the dropdown possible. Blender is the reference for tiling without floating windows, but *not*
+  for how you rearrange it: splitting by dragging a corner is a gesture you enter by accident and
+  cannot discover on purpose, so every operation here is typed and named.
+
+  **The same panel may be open more than once, and the copies are indistinguishable.** That is not a
+  tolerated duplicate, it is the feature: a second Source object panel in the second window saves
+  crossing back to the first, and two copies of anything stay in step because they are the same JSX
+  reading the same `system` and the same view state. Nothing keeps them synchronized because there is
+  nothing to synchronize — add a field in one and the other shows it, because both are rendering one
+  immutable model. This is also why a panel is *replaced* rather than exchanged when the dropdown
+  changes: with duplicates allowed there is no panel to rescue from being displaced.
+
+  **A slot is not a panel, and the distinction is load-bearing.** A `PanelId` no longer identifies
+  anything on screen once the same panel can be open twice, so `Slot.key` does: React keys, which copy
+  was sent to the second window (`Placement.detached`, `Placement.order`), and which copy was closed
+  all name the slot, while everything about *what is shown* names the panel. Getting these the wrong
+  way round would detach both copies of a panel at once, or neither.
+
+  **Closing is a red disc in the header, the Mac's own**, showing its × on hover. A close that can
+  strand the user is a trap, so the reachable states are closed carefully: closing the last slot of a
+  column drops the column rather than leaving a strip that can never be filled, and closing the last
+  panel of all leaves an empty workspace that offers the panel list back. The `+` beside it opens a
+  second copy below, taking half the height of the panel it came from so no neighbour moves.
+
+  Sizes moved *into* the arrangement (`Workspace` holds `fr` weights on every slot and column) because
+  opening and closing panels means the sizes and the panels can no longer be separate lists kept in
+  step by hand — a closed panel has to take its weight with it. Nothing needs redistributing when one
+  goes: the weights that remain still divide the same space. `nextKey` lives on the workspace so every
+  operation is a pure function of it, which is what lets the tests check the operations rather than a
+  side effect.
+
+  Two smaller things follow. **Dividers are keyed by the slot beneath them and panels by their slot
+  key**, so opening or closing a panel moves the surviving DOM rather than rebuilding the column, and a
+  divider's label names whatever is above it *now*. And the second window's stacking order is read from
+  the **live arrangement**, not a fixed list: it was documented as "the order they appear in on one
+  screen", which quietly stopped being true the moment slots could be rearranged.
+
+  The chooser is a **native `select`** — keyboard-navigable and type-ahead searchable for free, drawn
+  where the platform draws menus, which matters when a panel has been dragged too small to hang one of
+  our own inside it. It stays inside the `h2`, so the document outline is what it always was and the
+  heading's accessible name is the panel on screen.
 
 - **Any panel can be sent to a second browser window** (the ↗ in its header, or the app bar's *Second window* to open an empty one), so a design with more panels than one display has room for can spread across two. This is a `createPortal` into the popup's document (`components/Placed.tsx`), *not* a second React root, and that is the whole reason it needs no synchronization: a detached panel stays in the one React tree, reads the same `system`, and is traced once. A second *tab* over a `BroadcastChannel` would have to be sent the design, and `OpticalSystem`/`Surface`/`Material` are class instances — `structuredClone` delivers their numbers without their prototypes, so the far side would be rebuilding the model and re-tracing it, and the two copies could disagree. Which panels are out there is a *view* setting and lives in `App` state beside the field checkboxes, never on `OpticalSystem`.
 

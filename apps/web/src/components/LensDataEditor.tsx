@@ -31,7 +31,7 @@ import {
   CoordinateTransformDialog,
   CoordinateTransformSummaryButton,
 } from './CoordinateTransformEditor.tsx';
-import { ErrorNote, Panel, type PanelDetach } from './Panel.tsx';
+import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
 import { ElementColorPicker } from './ElementColorPicker.tsx';
@@ -61,6 +61,7 @@ export function LensDataEditor({
   highlightedSurface,
   elementStyles,
   onElementStyle,
+  choice,
   detach,
 }: {
   system: OpticalSystem;
@@ -73,6 +74,7 @@ export function LensDataEditor({
   onHighlight: (surfaceIndex: number | undefined) => void;
   /** The surface currently pointed out, which the arrow keys step through. */
   highlightedSurface: number | undefined;
+  choice?: PanelChoice;
   detach?: PanelDetach;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
@@ -305,6 +307,7 @@ export function LensDataEditor({
       title="Optical system"
       flush
       detach={detach}
+      choice={choice}
       actions={
         <>
           <button

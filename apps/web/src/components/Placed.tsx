@@ -1,31 +1,22 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelStub } from './Panel.tsx';
-
-/**
- * The panels that can be moved to the second window, in the order they are
- * stacked once they get there — the order they appear in on one screen, so
- * splitting the app across two does not reshuffle it.
- */
-export const PANELS = ['source', 'system', 'firstOrder', 'layout', 'analysis'] as const;
-
-export type PanelId = (typeof PANELS)[number];
-
-/** Titles for the stubs left behind, which have no panel to read one from. */
-export const PANEL_TITLES: Record<PanelId, string> = {
-  source: 'Source object',
-  system: 'Optical system',
-  firstOrder: 'First order',
-  layout: 'Layout',
-  analysis: 'Analysis',
-};
+import { PANEL_TITLES, type PanelId } from '../lib/panels.ts';
 
 export interface Placement {
-  /** Which panels are in the second window. */
-  detached: Partial<Record<PanelId, boolean>>;
+  /** Which *slots* are in the second window, by slot key. */
+  detached: Readonly<Record<string, boolean>>;
   /** Where to render them, or undefined while there is no second window. */
   container: HTMLElement | undefined;
-  onReturn: (id: PanelId) => void;
+  /**
+   * The slot keys in the order their slots are arranged, which is the order
+   * they stack once they are in the second window. Read from the live
+   * arrangement rather than from a fixed list, so re-pointing or closing a slot
+   * moves the panel in both windows and splitting the app across two never
+   * reshuffles it.
+   */
+  order: readonly string[];
+  onReturn: (slotKey: string) => void;
 }
 
 /**
@@ -34,31 +25,37 @@ export interface Placement {
  * A portal and not a second React root, so a detached panel stays in this tree
  * and goes on reading the same `system`, the same traces, and the same view
  * settings as everything else. Nothing is copied between the windows because
- * there is only ever one of everything.
+ * there is only ever one of everything — which is also exactly why two copies
+ * of a panel mirror each other for free, in one window or across both.
+ *
+ * Addressed by `slotKey`, not by panel: the same panel may be open several
+ * times, and only the slot says which of them was sent across.
  */
 export function Placed({
-  id,
+  slotKey,
+  panel,
   placement,
   children,
 }: {
-  id: PanelId;
+  slotKey: string;
+  panel: PanelId;
   placement: Placement;
   children: ReactNode;
 }): ReactNode {
   const { container, onReturn } = placement;
-  if (placement.detached[id] !== true || container === undefined) {
+  if (placement.detached[slotKey] !== true || container === undefined) {
     return children;
   }
 
   return (
     <>
-      <PanelStub title={PANEL_TITLES[id]} onReturn={() => onReturn(id)} />
+      <PanelStub title={PANEL_TITLES[panel]} onReturn={() => onReturn(slotKey)} />
       {createPortal(
         // Portals sharing a container append in the order they mount rather than
         // the order they are written, so a panel sent across second would land
         // under one sent first however this file is arranged. The slot carries
         // its own place in the list and the flex order settles it.
-        <div className="secondary-slot" style={{ order: PANELS.indexOf(id) }}>
+        <div className="secondary-slot" style={{ order: placement.order.indexOf(slotKey) }}>
           {children}
         </div>,
         container,

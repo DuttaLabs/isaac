@@ -2,21 +2,23 @@ import type { OpticalSystem } from '@isaac/optical-core';
 import type { FirstOrder } from '../lib/analysis.ts';
 import { formatOptional } from '../lib/format.ts';
 import type { Result } from '../lib/result.ts';
-import { ErrorNote, Panel, type PanelDetach } from './Panel.tsx';
+import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './Panel.tsx';
 
 /** The first-order numbers a designer checks constantly while editing. */
 export function FirstOrderPanel({
   system,
   firstOrder,
+  choice,
   detach,
 }: {
   system: OpticalSystem;
   firstOrder: Result<FirstOrder>;
+  choice?: PanelChoice;
   detach?: PanelDetach;
 }) {
   if (!firstOrder.ok) {
     return (
-      <Panel title="First order" detach={detach}>
+      <Panel title="First order" detach={detach} choice={choice}>
         <ErrorNote message={firstOrder.error} />
       </Panel>
     );
@@ -33,6 +35,7 @@ export function FirstOrderPanel({
     <Panel
       title="First order"
       detach={detach}
+      choice={choice}
       actions={<span className="hint">at {system.primaryWavelengthNm.toFixed(1)} nm</span>}
     >
       <div className="readout">

@@ -334,6 +334,37 @@ body {
   margin: 0;
 }
 
+/*
+ * The panel's name is also the control that changes it: a slot can be turned
+ * over to any panel, so the heading and the menu are the same thing. It is
+ * styled as the heading it replaces rather than as a form control -- the panel
+ * is still named where it always was -- and the affordance is held back until
+ * hover or focus, where it is wanted and not before.
+ *
+ * The native arrow is kept. It is the one cue that says "there is a menu here",
+ * it is drawn in the platform's own colors so it follows the theme for free,
+ * and re-drawing it as a background image would mean a caret that does not.
+ */
+.panel-chooser {
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.panel-chooser:hover,
+.panel-chooser:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
 .panel-actions {
   margin-left: auto;
   display: flex;
@@ -794,7 +825,20 @@ td select {
 }
 
 svg.plot,
+/*
+   A flush body stacks a view over its legends, and the 3-D view is the one child
+   that should take whatever height is left: a WebGL camera can frame any aspect,
+   so there is no reason for it to overflow its panel. The 2-D drawing is
+   `flex: none` so it keeps the intrinsic aspect of its viewBox and scrolls when
+   the panel is too short, exactly as it did before.
+*/
+.panel-body.flush {
+  display: flex;
+  flex-direction: column;
+}
+
 svg.layout {
+  flex: none;
   display: block;
   width: 100%;
   height: auto;
@@ -808,12 +852,25 @@ svg.layout.panning {
   cursor: grabbing;
 }
 
-/* The 3-D view keeps the 2-D drawing's proportions, so toggling between them
-   does not make the panel jump. */
+/*
+   The 3-D view fills its panel. It used to hold the 2-D drawing's proportions so
+   that toggling between the two did not make the panel jump -- but they are two
+   panels now, with no toggle between them, and a fixed aspect ratio in a panel
+   that can be any height is just an overflow waiting to happen. The floor keeps
+   it usable in a panel dragged very small; below that the body scrolls.
+*/
 .layout-3d {
   position: relative;
   width: 100%;
-  aspect-ratio: 900 / 340;
+  /*
+     Basis 0, not `auto`. With `auto` the box's base size is its content, and its
+     content is a canvas that R3F sizes *from* this box -- a loop that settles on
+     the canvas's untouched 300x150 default. Taking the height purely from the
+     flex free space breaks it, and the floor keeps the view usable in a panel
+     dragged very small; below that the body scrolls.
+  */
+  flex: 1 1 0;
+  min-height: 140px;
   touch-action: none;
 }
 
@@ -1224,6 +1281,66 @@ input.coefficient {
 .panel-detach[aria-pressed='true'] {
   color: var(--text-primary);
   border-color: var(--border-strong);
+}
+
+.panel-duplicate {
+  padding: 1px 6px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.panel-duplicate:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/*
+   The Mac's close button, because that is where the gesture is already learned:
+   a red disc that shows its glyph on hover. Always colored rather than revealed
+   on hover, which is what the Mac does and what keeps it findable -- the glyph
+   is the confirmation you are on it, not the announcement that it exists.
+
+   The × is a span so the disc's own color can stay red while the glyph darkens
+   independently; `color: transparent` on the button would take the disc with it.
+*/
+.panel-close {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.panel-close > span {
+  color: transparent;
+}
+
+.panel-head:hover .panel-close > span,
+.panel-close:hover > span,
+.panel-close:focus-visible > span {
+  color: rgba(0, 0, 0, 0.62);
+}
+
+/*
+   The answer to closing the last panel. The workspace is the whole window, so
+   an empty one is the only place left to say that panels can be opened again --
+   a close button with no way back is a trap, not a feature.
+*/
+.workspace-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 /*

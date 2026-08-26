@@ -64,6 +64,7 @@ export function LayoutView({
   plane,
   defaultSemiDiameter,
   highlightedSurface,
+  elementColors,
   resetSignal,
   firstOrder,
 }: {
@@ -75,6 +76,13 @@ export function LayoutView({
   /** Surface the user is on in the lens table, picked out so the row and the
    *  picture can be read together. */
   highlightedSurface?: number;
+  /**
+   * A color per surface, for the elements the user has colored. Keyed by surface
+   * rather than by element because a body is identified by its front surface,
+   * and a cemented pair is two bodies inside one element — both have to find the
+   * same answer or the doublet comes out in two colors.
+   */
+  elementColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
   /** The first-order construction to draw over the design, when it is asked for. */
@@ -140,7 +148,15 @@ export function LayoutView({
         <path
           key={`body-${index}`}
           d={toPath(body.points, project, true)}
-          fill={body.crossed ? 'var(--glass-fill-crossed)' : 'var(--glass-fill)'}
+          // A crossed element keeps the fault color whatever the user chose:
+          // the fill is the only thing saying the solid cannot be made, and a
+          // chosen color would quietly overrule the warning.
+          fill={
+            body.crossed
+              ? 'var(--glass-fill-crossed)'
+              : (elementColors?.get(body.frontIndex) ?? 'var(--glass-fill)')
+          }
+          fillOpacity={elementColors?.has(body.frontIndex) && !body.crossed ? 0.45 : undefined}
           stroke="none"
         >
           {body.crossed ? <title>{crossedMessage(body, system.units)}</title> : null}

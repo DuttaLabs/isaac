@@ -240,6 +240,50 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   In 2-D the gizmo is pinned to the corner of the *visible* area, computed from the `viewBox` because that is what panning moves, and scaled by the zoom — a legend that grows when you zoom in has stopped being one. In 3-D it is an SVG laid over the canvas rather than geometry inside it: it is a legend, so it belongs in the same medium as the 2-D one, and ⊙/⊗ is a 2-D symbol that would have to be faked in three dimensions. It is fed by a `useFrame` inside the canvas that publishes through a **ref to the gizmo's own setState**, not up through props — a setter called on the parent would re-render the whole scene on every frame of an orbit, and what actually changed is nine SVG elements. It takes no pointer events: the corner of the canvas is as good a place to start an orbit as any other, and a small dead patch there would be a puzzle.
 
+- **An element is derived, never stored.** The model has a list of surfaces and no notion of a lens:
+  a surface's `material` is the medium *after* it, so a piece of glass is *implied* by a surface whose
+  following medium is not air together with the next drawn surface. `lib/elements.ts` reads exactly
+  that, which is the same rule `layout.ts` uses to fill a cross-section and `three-optics` uses to
+  revolve a solid — so the elements the table names are the ones both views draw, and a color chosen
+  against one lands on the other.
+
+  **A run of glass is one element with several *gaps*.** A cemented doublet is three surfaces with
+  glass across both, and one thing you can pick up — so it is one element spanning three rows, with a
+  name of its own. But the two halves are different glasses, and both views already draw them as two
+  bodies, so each gap is colored separately and the cell carries **one square swatch per gap**.
+  `elementColorsBySurface` is therefore keyed by *surface*: a body is identified by its front surface,
+  and that is what lets a doublet's halves be told apart.
+
+  A `COORDINATE_TRANSFORM` is skipped when looking for faces — it carries the medium before it, so
+  left in the walk it would look like the middle of a piece of glass — but it is still *covered* by
+  the span, because a tilted rear face is written exactly that way.
+
+- **Every piece of glass has a color from the start**, cycled through `ELEMENT_PALETTE` by its
+  position in the whole system so no two open alike. A design therefore arrives with its elements
+  already told apart, which is the point of coloring them; the swatch always shows a real color rather
+  than a placeholder standing in for one. A user's choice overrides the default and can be dropped
+  again. **A crossed element keeps the fault color regardless**, in both views: the fill is the only
+  thing saying the solid cannot be made.
+
+- **Element names and colors are view state**, in `App` beside the field checkboxes and the filename,
+  keyed by the **id of the front surface** — of the element for a name, of the gap for a color — so
+  they survive an insert above them. They are not on `OpticalSystem` because a `.zmx` has nowhere to
+  put them: storing them there would either drop them silently on save or break the round trip. They
+  are cleared on New, Reset and Open, since surface ids are only unique within one system and two
+  files both call their first surface `surf-1`.
+
+  The picker is a `<dialog>` rather than a popover anchored to the swatch, because the lens table
+  scrolls in both directions and an anchored popover has to be re-positioned on every scroll. It
+  offers **colors already in this design** first — defaults included, since those are what is on
+  screen — then the palette, then the platform's own color input, which is the OS's full RGB picker.
+
+- **A column's width comes from the `<colgroup>`, not from the `<th>`.** The lens table declares one
+  `<col>` per column and sets widths there; a `width` on a `th` is only a suggestion the auto table
+  algorithm may ignore, and this colgroup overrules it. **Adding a column means adding a `<col>`** —
+  miss it and every column after the new one silently takes its neighbour's width, which looks like a
+  CSS bug and is not one. The Element column is deliberately narrow (62px, name truncated with the
+  full text on hover): every column pushed off the side is one a designer has to scroll for.
+
 - **The lens name is editable in the app bar**, because it is written into the file and has to be
   settable somewhere — and the app bar is where it was already shown, so the thing you see is the
   thing you edit. It reuses `TextCell` (draft on focus, commit on blur or Enter, Escape restores), so

@@ -14,6 +14,7 @@ import {
 } from './lib/analysis.ts';
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
+import { elementColorsBySurface, type ElementStyles } from './lib/elements.ts';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
 import { TextCell } from './components/TextCell.tsx';
@@ -94,6 +95,16 @@ export function App() {
    * renamed, and usually is.
    */
   const [fileName, setFileName] = useState<string | undefined>(undefined);
+  /**
+   * What the user has named and colored each element, keyed by the id of the
+   * element's front surface. View state, like the field checkboxes and the
+   * filename: a `.zmx` has nowhere to put a label or a color, so keeping these
+   * on `OpticalSystem` would either be dropped silently on save or break the
+   * round trip that says a file written and read back is the same system. The
+   * key is a surface id rather than a row number so a name survives an insert
+   * above it.
+   */
+  const [elementStyles, setElementStyles] = useState<ElementStyles>({});
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [showFirstOrder, setShowFirstOrder] = useState(false);
@@ -167,6 +178,10 @@ export function App() {
       setNotice(undefined);
       // Neither the blank system nor the sample doublet came from a file.
       setFileName(undefined);
+      // Element styles are keyed by surface id, and ids are only unique within
+      // one system — two files both name their first surface `surf-1`. Carrying
+      // them over would paint a new design in the last one's colors.
+      setElementStyles({});
     },
     [pushSystem],
   );
@@ -257,6 +272,14 @@ export function App() {
 
   // Keep the selected field valid when the field list shrinks.
   const activeField = Math.min(fieldIndex, Math.max(system.fields.length - 1, 0));
+
+  // One color per surface of an element, so a view can look one up by the index
+  // it already has on a body or a solid. A cemented pair is two bodies inside
+  // one element; keying by surface is what makes both halves come out alike.
+  const elementColors = useMemo(
+    () => elementColorsBySurface(system, elementStyles),
+    [system, elementStyles],
+  );
 
   const firstOrder = useMemo(() => computeFirstOrder(system), [system]);
   const pupilRadius = firstOrder.ok ? firstOrder.value.entrancePupilRadius : 10;
@@ -414,6 +437,8 @@ export function App() {
       pushSystem(result.system);
       setFileName(file.name);
       setFieldIndex(0);
+      // A different design brings different elements; see `startFrom`.
+      setElementStyles({});
       // A file brings its own field list, so flags set against the previous
       // design mean nothing against this one. Everything starts visible.
       setFieldVisibility([]);
@@ -486,6 +511,31 @@ export function App() {
       // has to say why.
       setNotice({ kind: 'error', text: renamed.error });
     }
+  };
+
+  /**
+   * Records one change to an element's appearance. A `color` of `undefined`
+   * hands it back to the theme, which is different from never having chosen —
+   * so the key is dropped rather than left holding an empty style.
+   */
+  const setElementStyle = (
+    key: string,
+    change: { label?: string; color?: string | undefined },
+  ): void => {
+    setElementStyles((current) => {
+      const entry: { label?: string; color?: string } = { ...current[key], ...change };
+      if (entry.color === undefined) {
+        delete entry.color;
+      }
+      if (entry.label === undefined || entry.label.trim() === '') {
+        delete entry.label;
+      }
+      const next = { ...current, [key]: entry };
+      if (Object.keys(entry).length === 0) {
+        delete next[key];
+      }
+      return next;
+    });
   };
 
   const fieldLabel = (index: number): string => {
@@ -651,6 +701,8 @@ export function App() {
                 onChange={pushSystem}
                 onHighlight={setHighlightedSurface}
                 highlightedSurface={highlightedSurface}
+                elementStyles={elementStyles}
+                onElementStyle={setElementStyle}
                 detach={detachOf('system')}
               />
             </ErrorBoundary>
@@ -768,6 +820,7 @@ export function App() {
                         plane={plane}
                         defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                         highlightedSurface={highlightedSurface}
+                        elementColors={elementColors}
                         resetSignal={viewReset}
                         firstOrder={firstOrderOverlay}
                       />
@@ -784,6 +837,7 @@ export function App() {
                           traces={volume.value}
                           defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                           highlightedSurface={highlightedSurface}
+                          elementColors={elementColors}
                           resetSignal={viewReset}
                         />
                       </Suspense>

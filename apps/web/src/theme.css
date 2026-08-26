@@ -597,8 +597,23 @@ input.text-input {
  * fit. `Surface type` is the widest because COORDINATE_TRANSFORM is a long name
  * in a select, and `Model glass` because it holds a compound "nd / Vd" value.
  */
+/*
+ * Wide enough for the word "SURFACE" itself. At 56px the header overflowed its
+ * own column — invisible while the next header was right-aligned across 184px of
+ * empty space, and a collision the moment a narrow column was put beside it.
+ */
 .col-surface {
-  width: 56px;
+  width: 70px;
+}
+/*
+ * The `<col>` is what actually sets a column's width here — a width on the `<th>`
+ * is only a suggestion the auto table algorithm may ignore, and this colgroup
+ * overrules it. Narrow on purpose: every column pushed off the side is one a
+ * designer has to scroll for, so the name is a two-or-three character field and
+ * a longer one is truncated with the full text on hover.
+ */
+.col-element {
+  width: 62px;
 }
 .col-type {
   /* Wide enough for COORDINATE_TRANSFORM, the longest type name, to read in
@@ -924,7 +939,8 @@ svg.layout.panning {
   text-align: left;
 }
 
-.asphere-dialog {
+.asphere-dialog,
+.color-dialog {
   background: var(--surface-1);
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
@@ -936,13 +952,15 @@ svg.layout.panning {
   overflow-y: auto;
 }
 
-.asphere-dialog::backdrop {
+.asphere-dialog::backdrop,
+.color-dialog::backdrop {
   /* Dark in both themes: the backdrop's job is to sink the page behind the
      dialog, and a light scrim over a light page does not do that. */
   background: rgba(0, 0, 0, 0.45);
 }
 
-.asphere-dialog header {
+.asphere-dialog header,
+.color-dialog header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -951,7 +969,8 @@ svg.layout.panning {
   background: var(--surface-2);
 }
 
-.asphere-dialog h2 {
+.asphere-dialog h2,
+.color-dialog h2 {
   font-size: 12px;
   font-weight: 650;
   text-transform: uppercase;
@@ -1189,4 +1208,135 @@ input.coefficient {
  */
 .axis-triad-glyph {
   fill: var(--surface-1);
+}
+
+/*
+ * The Element column: one cell spanning the two or three rows of a lens, holding
+ * what the element is called and the color each of its pieces of glass is drawn
+ * in. Kept narrow on purpose — every column pushed off the side of the screen is
+ * one a designer has to scroll for — so the name is a two-or-three character
+ * field by default and a longer one is truncated with the full text on hover.
+ */
+/*
+ * "ELEMENT" is a hair wider than 62px leaves once the standard header padding is
+ * taken, and `th` is `nowrap`, so it would run into "SURFACE" next door. Centered
+ * to match the cells below it, and trimmed of padding to fit.
+ */
+.element-header {
+  text-align: center;
+  padding-inline: 2px;
+}
+
+/*
+ * Vertical rules on both sides, always, so the column reads as a column even on
+ * rows that hold no element. The horizontal rule comes from the plain `td` rule
+ * and so is *absent exactly where a cell spans* — which is what draws the two or
+ * three rows of a lens together, and why a row that is not part of one still
+ * gets its line like every other row in the table.
+ */
+.element-cell {
+  vertical-align: middle;
+  text-align: center;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 3px 4px;
+}
+
+/*
+ * A fixed width, not 100%. An <input> is a replaced element: its *intrinsic*
+ * width comes from its character size and nothing else, so `width: 100%` leaves
+ * the cell's min-content width at around twenty characters and an auto-layout
+ * table hands it that much however narrow the column is asked to be. Pinning the
+ * pixels is what actually makes the column narrow.
+ */
+.element-cell .text-input {
+  text-align: center;
+  width: 52px;
+  min-width: 0;
+  padding: 1px 2px;
+  font-size: 11px;
+}
+
+/*
+ * One square per piece of glass, side by side: a cemented doublet is two
+ * glasses, so it gets two. Square rather than a full-width bar because a bar
+ * spanning the cell reads as a property of the whole element, and after a
+ * doublet showed two of them it read as a progress bar cut in half.
+ */
+.element-swatches {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.element-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.element-swatch:hover {
+  border-color: var(--accent);
+}
+
+.color-dialog section {
+  padding: 8px 12px;
+}
+
+.color-dialog h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* The chosen one is ringed rather than merely bordered, because the swatches are
+   themselves colors and a border color would be one more color to read. */
+.color-swatch.is-chosen {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.color-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-custom input[type='color'] {
+  width: 40px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.color-custom code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-secondary);
 }

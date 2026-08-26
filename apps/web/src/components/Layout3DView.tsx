@@ -207,6 +207,7 @@ export function Layout3DView({
   traces,
   defaultSemiDiameter,
   highlightedSurface,
+  elementColors,
   resetSignal,
 }: {
   system: OpticalSystem;
@@ -214,6 +215,8 @@ export function Layout3DView({
   defaultSemiDiameter: number;
   /** Surface the user is on in the lens table, picked out as it is in 2-D. */
   highlightedSurface?: number;
+  /** A color per surface for colored elements, exactly as the 2-D view takes it. */
+  elementColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
 }) {
@@ -279,7 +282,13 @@ export function Layout3DView({
           {scene.elements.map((element) => (
             <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
               <meshStandardMaterial
-                color={element.crossed ? colors.faulty : colors.glass}
+                // A crossed element keeps the fault color whatever the user
+                // chose: it is the only thing saying the solid cannot be made.
+                color={
+                  element.crossed
+                    ? colors.faulty
+                    : (elementColors?.get(element.frontIndex) ?? colors.glass)
+                }
                 transparent
                 opacity={element.crossed ? 0.55 : 0.42}
                 roughness={0.12}

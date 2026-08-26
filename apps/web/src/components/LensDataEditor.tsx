@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Material, OpticalSystem } from '@isaac/optical-core';
 import {
   GLASS_CATALOG,
@@ -34,6 +34,18 @@ import {
 import { ErrorNote, Panel, type PanelDetach } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
+import { ElementColorPicker } from './ElementColorPicker.tsx';
+import {
+  colorsInUse,
+  defaultGapColor,
+  elementLabel,
+  elementRowSpan,
+  findElements,
+  gapColor,
+  hasChosenColor,
+  type ElementGap,
+  type ElementStyles,
+} from '../lib/elements.ts';
 
 const MATERIAL_LIST_ID = 'material-names';
 
@@ -47,10 +59,16 @@ export function LensDataEditor({
   onChange,
   onHighlight,
   highlightedSurface,
+  elementStyles,
+  onElementStyle,
   detach,
 }: {
   system: OpticalSystem;
   onChange: (system: OpticalSystem) => void;
+  /** Labels and colors the user has given elements, keyed by front surface id. */
+  elementStyles: ElementStyles;
+  /** Records one change; `undefined` clears that part back to the default. */
+  onElementStyle: (key: string, change: { label?: string; color?: string | undefined }) => void;
   /** Reports the surface the user is on, so the layout can point it out. */
   onHighlight: (surfaceIndex: number | undefined) => void;
   /** The surface currently pointed out, which the arrow keys step through. */
@@ -63,6 +81,8 @@ export function LensDataEditor({
   const [asphereSurface, setAsphereSurface] = useState<number | undefined>(undefined);
   /** Surface whose coordinate transform is open in the modal, if any. */
   const [transformSurface, setTransformSurface] = useState<number | undefined>(undefined);
+  /** The piece of glass whose color picker is open, by its key, if any. */
+  const [colorGap, setColorGap] = useState<string | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
   const [pointerInside, setPointerInside] = useState(false);
@@ -70,6 +90,86 @@ export function LensDataEditor({
   // The row the cursor is on, by hover or by keyboard focus — both set
   // `highlightedSurface`. Guarded against an index left over from a system that
   // has since lost that surface.
+  // Derived, never stored: an element is implied by where the glass is, so it
+  // cannot fall out of step with the surfaces it is made of.
+  const elements = useMemo(() => findElements(system), [system]);
+  const elementStart = useMemo(
+    () => new Map(elements.map((element) => [element.firstIndex, element])),
+    [elements],
+  );
+  const coveredRows = useMemo(() => {
+    const covered = new Set<number>();
+    for (const element of elements) {
+      for (let index = element.firstIndex + 1; index <= element.lastIndex; index += 1) {
+        covered.add(index);
+      }
+    }
+    return covered;
+  }, [elements]);
+  const openGap: { gap: ElementGap; label: string } | undefined = elements
+    .flatMap((element) =>
+      element.gaps.map((gap) => ({
+        gap,
+        // A doublet's two halves share the element's name, so the picker says
+        // which half by counting them: `L1 · 1 of 2`.
+        label:
+          element.gaps.length > 1
+            ? `${elementLabel(element, elementStyles)} · ${element.gaps.indexOf(gap) + 1} of ${element.gaps.length}`
+            : elementLabel(element, elementStyles),
+      })),
+    )
+    .find((entry) => entry.gap.key === colorGap);
+
+  /**
+   * The Element cell for one row: the spanning cell on an element's first row,
+   * nothing at all on the rows underneath it, and an empty cell everywhere else.
+   *
+   * The label is a live text cell like any other, and the swatch under it opens
+   * the picker. Both are view state — a `.zmx` has nowhere to put either — so
+   * neither touches the system or the undo stack.
+   */
+  const renderElementCell = (index: number) => {
+    if (coveredRows.has(index)) {
+      return null; // the cell above spans this row
+    }
+    const element = elementStart.get(index);
+    if (element === undefined) {
+      return <td className="element-cell is-empty" />;
+    }
+    const name = elementLabel(element, elementStyles);
+    return (
+      <td className="element-cell" rowSpan={elementRowSpan(element)}>
+        <TextCell
+          value={name}
+          ariaLabel={`Name of element ${name}`}
+          title="What this element is called. A name of your own, or L1, L2, … in order."
+          onCommit={(next) => onElementStyle(element.key, { label: next })}
+        />
+        {/* One swatch per piece of glass, so the two halves of a cemented
+            doublet can be told apart — they are different glasses, and both
+            views already draw them as two bodies. */}
+        <div className="element-swatches">
+          {element.gaps.map((gap, gapIndex) => {
+            const color = gapColor(gap, elementStyles);
+            const which =
+              element.gaps.length > 1 ? `${name}, glass ${gapIndex + 1}` : `element ${name}`;
+            return (
+              <button
+                key={gap.key}
+                type="button"
+                className="element-swatch"
+                style={{ background: color }}
+                aria-label={`Color of ${which}`}
+                title={`${which}: ${color}${hasChosenColor(gap, elementStyles) ? '' : ' (default)'}. Click to change.`}
+                onClick={() => setColorGap(gap.key)}
+              />
+            );
+          })}
+        </div>
+      </td>
+    );
+  };
+
   const headerIsTransform =
     highlightedSurface !== undefined &&
     highlightedSurface < system.surfaces.length &&
@@ -257,6 +357,7 @@ export function LensDataEditor({
               stops the table jumping when a value simply gets longer. */}
           <colgroup>
             <col className="col-surface" />
+            <col className="col-element" />
             <col className="col-type" />
             <col className="col-label" />
             <col className="col-radius" />
@@ -273,6 +374,7 @@ export function LensDataEditor({
           <thead>
             <tr>
               <th>Surface</th>
+              <th className="element-header">Element</th>
               <th>Surface Type</th>
               <th className="text-column">Label</th>
               {/* A header names a whole column, so it can only speak for one row
@@ -342,6 +444,13 @@ export function LensDataEditor({
                   <td className="row-label" title={`Surface ${index}`}>
                     {label}
                   </td>
+
+                  {/* One cell spanning every row of the element, so the two (or
+                      three) faces of a lens read as the one thing they are.
+                      Rows inside the span render no cell at all — that is what
+                      rowSpan means — and a row belonging to no element gets an
+                      empty one to keep the column aligned. */}
+                  {renderElementCell(index)}
 
                   <td>
                     <SurfaceTypeCell
@@ -572,6 +681,20 @@ export function LensDataEditor({
         <p className="hint" style={{ padding: '10px 12px', margin: 0 }}>
           {status}
         </p>
+      ) : null}
+
+      {openGap !== undefined ? (
+        <ElementColorPicker
+          key={openGap.gap.key}
+          label={openGap.label}
+          color={gapColor(openGap.gap, elementStyles)}
+          isDefault={!hasChosenColor(openGap.gap, elementStyles)}
+          defaultColor={defaultGapColor(openGap.gap)}
+          inUse={colorsInUse(elements, elementStyles)}
+          onPick={(color) => onElementStyle(openGap.gap.key, { color })}
+          onReset={() => onElementStyle(openGap.gap.key, { color: undefined })}
+          onClose={() => setColorGap(undefined)}
+        />
       ) : null}
 
       {asphereSurface !== undefined && system.surfaces[asphereSurface] ? (

@@ -14,3 +14,7 @@ zmx files from Zemax/
 
 # Local reference texts and working notes — kept on disk, not pushed.
 SupportingMaterial/
+
+# Lenses saved from Isaac itself while working. The corpus beside them is
+# tracked on purpose; this folder is scratch, and is not.
+ZMX files/myZMXfiles/

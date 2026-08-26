@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AIR, N_BK7, OpticalSystem, Surface, paraxialProperties } from '@isaac/optical-core';
+import { GLASS_CATALOG } from '../src/lib/materials.ts';
 import { computeSpot } from '../src/lib/analysis.ts';
 import { measureSpot, quickFocus, spotMerit } from '../src/lib/focus.ts';
 
@@ -360,4 +361,93 @@ test('a system with nothing between object and image is refused', () => {
   if (!result.ok) {
     assert.match(result.error, /no surface before the image/i);
   }
+});
+
+/**
+ * A positive lens followed by a negative one, with the *last* surface convex
+ * toward the image — so its rim sits 0.25 mm downstream of its vertex.
+ *
+ * That detail is the whole point. Set the last thickness to zero and the image
+ * plane lands at that vertex, behind where every off-axis ray already crossed
+ * the glass: those rays would have to travel backwards to reach it and are
+ * correctly reported MISSED. The only ray still arriving is the one through the
+ * vertex, which sits exactly on the chief ray — a perfect zero over a single
+ * ray, which a minimizer will take over any real focus.
+ */
+function positiveAndNegative(lastThickness: number): OpticalSystem {
+  return new OpticalSystem({
+    name: 'positive and negative',
+    wavelengthsNm: [486.1327, 587.5618, 656.2725],
+    primaryWavelengthIndex: 1,
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    fields: [{ angleDeg: 0 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 'l1f',
+        type: 'STANDARD',
+        radius: 100,
+        thickness: 5,
+        semiDiameter: 10,
+        material: N_BK7,
+        isStop: true,
+      }),
+      new Surface({ id: 'l1r', type: 'STANDARD', radius: -100, thickness: 30, semiDiameter: 10 }),
+      new Surface({
+        id: 'l2f',
+        type: 'STANDARD',
+        radius: -200,
+        thickness: 5,
+        semiDiameter: 10,
+        material: GLASS_CATALOG.get('SF10')!,
+      }),
+      // Convex toward the image: this is the surface whose sag creates the trap.
+      new Surface({
+        id: 'l2r',
+        type: 'STANDARD',
+        radius: 200,
+        thickness: lastThickness,
+        semiDiameter: 10,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+}
+
+test('an image plane buried in the last surface is no focus at all', () => {
+  const buried = positiveAndNegative(0);
+
+  // The trap, confirmed: one ray of forty-nine arrives, exactly on axis.
+  const spot = computeSpot(buried, 0, 9);
+  assert.ok(spot.ok, spot.ok ? '' : spot.error);
+  assert.ok(spot.value.missedAtImage > 0, 'expected rays to miss the image surface');
+  assert.equal(spot.value.rmsRadius, 0, 'the surviving vertex ray scores a perfect zero');
+
+  // And the merit refuses to be fooled by it.
+  assert.equal(spotMerit(buried), Infinity);
+});
+
+test('quick focus finds the same focus from every starting thickness', () => {
+  // Regression: the scan walks outward in windows that quadruple, and whether
+  // the best sample of a window lands on its last index or the one before
+  // decides whether the search refines there or widens once more. Widening once
+  // more used to reach thickness zero, where the merit read a false zero — so
+  // starting at 45 mm worked and starting at 44 mm collapsed to 0.
+  const focused = [10, 20, 30, 40, 44, 45, 60].map((start) => {
+    const outcome = quickFocus(positiveAndNegative(start));
+    assert.ok(outcome.ok, `${start}: ${outcome.ok ? '' : outcome.error}`);
+    return outcome.value;
+  });
+
+  for (const outcome of focused) {
+    assert.ok(
+      outcome.thickness > 100,
+      `focused to ${outcome.thickness} from ${outcome.previousThickness}`,
+    );
+    assert.ok(outcome.rms < outcome.previousRms / 10, 'the spot should be far tighter');
+  }
+
+  const spread =
+    Math.max(...focused.map((o) => o.thickness)) - Math.min(...focused.map((o) => o.thickness));
+  assert.ok(spread < 0.01, `starting points disagreed by ${spread}`);
 });

@@ -153,6 +153,11 @@ function paraxialThickness(system: OpticalSystem, surfaceIndex: number): number 
  * that far out, wherever it went — which is enough to stop a blinded system from
  * beating a focused one.
  *
+ * A ray that *misses* the image surface is a different failure, and it is not
+ * charged but disqualifying — see the note in the loop. Charging it would leave
+ * the same hole this paragraph describes: the survivor is the vertex ray, which
+ * scores zero, and zero cannot be beaten.
+ *
  * Only rays stopped *at the image* are charged. A ray vignetted earlier is lost
  * at every focus, so charging for it adds a constant — and not a small one. An
  * image semi-diameter is tens of millimeters where a spot is tens of microns, so
@@ -184,6 +189,22 @@ export function measureSpot(system: OpticalSystem, gridCount = DEFAULT_GRID_COUN
     if (!spot.ok) {
       droppedFields.push(fieldIndex);
       continue;
+    }
+
+    // A ray that met the image surface *nowhere* says something different from
+    // one its aperture stopped, and it has to be handled before the averaging:
+    // this focus position is not a position at all. It happens when the plane
+    // lies behind the light — the last surface is curved, so its rim is
+    // downstream of its vertex, and a plane at or before that rim is one a ray
+    // that already crossed the glass would have to travel backwards to reach.
+    //
+    // Charging those rays a radius would not do. The trap is that the ray still
+    // arriving is the one through the *vertex*, which sits exactly on the chief
+    // ray and scores zero — so the merit reads a flawless zero over a single ray
+    // and a minimizer takes it every time. Excluding the position outright needs
+    // no invented penalty and works whether or not the image has an aperture.
+    if (spot.value.missedAtImage > 0) {
+      return { rms: Infinity, droppedFields: [] };
     }
 
     const charged = lostRadius === undefined ? 0 : spot.value.blockedAtImage;

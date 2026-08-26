@@ -333,6 +333,19 @@ export interface SpotData {
    * focus search charge for the ones it is responsible for and no others.
    */
   blockedAtImage: number;
+  /**
+   * Rays that met the image surface nowhere at all — a different loss from
+   * {@link blockedAtImage} and worth counting separately, because it says the
+   * image plane is in an impossible place rather than merely a small one.
+   *
+   * It happens when the plane lies *behind* the light. The last surface is
+   * curved, so its rim sits downstream of its vertex; put the image plane at or
+   * before that rim and a ray that already crossed the glass would have to
+   * travel backwards to reach it. The tracer says MISSED, which is right, and
+   * the only ray still arriving is the one through the vertex — sitting exactly
+   * on the chief ray, scoring a perfect zero. See `focus.ts`.
+   */
+  missedAtImage: number;
   traced: number;
 }
 
@@ -354,6 +367,7 @@ export function computeSpot(
     let traced = 0;
     let blocked = 0;
     let blockedAtImage = 0;
+    let missedAtImage = 0;
     let maxRadius = 0;
     const imageIndex = system.surfaces.length - 1;
 
@@ -364,8 +378,12 @@ export function computeSpot(
       for (const result of traceRays(system, rays)) {
         if (result.status !== 'TERMINATED') {
           blocked += 1;
-          if (result.status === 'BLOCKED' && result.terminatedAtSurface === imageIndex) {
-            blockedAtImage += 1;
+          if (result.terminatedAtSurface === imageIndex) {
+            if (result.status === 'BLOCKED') {
+              blockedAtImage += 1;
+            } else if (result.status === 'MISSED') {
+              missedAtImage += 1;
+            }
           }
           continue;
         }
@@ -385,6 +403,7 @@ export function computeSpot(
       maxRadius,
       blocked,
       blockedAtImage,
+      missedAtImage,
       traced,
     };
   });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Material, OpticalSystem } from '@isaac/optical-core';
 import {
   GLASS_CATALOG,
@@ -87,6 +87,51 @@ export function LensDataEditor({
   const [colorGap, setColorGap] = useState<string | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
+
+  /*
+   * Where the frozen Element column has to sit: the rendered width of the
+   * Surface column beside it, published to CSS as `--frozen-offset`.
+   *
+   * Measured rather than written down, because `table-layout: fixed` only hands
+   * out the colgroup's declared widths when they happen to total the width of
+   * the table. They do not: they sum to more than the `min-width`, so every
+   * column is already scaled a little, and they scale the other way once a panel
+   * is wider than the grid. A constant here would be right at exactly one panel
+   * width and quietly wrong at every other, leaving the two frozen columns
+   * overlapping or a gap between them.
+   *
+   * Written straight to the element's style rather than held in state — this is
+   * a measurement of what was just laid out, and putting it through a render
+   * would mean laying out again to use it.
+   */
+  useLayoutEffect(() => {
+    const scroll = table.current;
+    if (scroll === null) {
+      return;
+    }
+    const sync = (): void => {
+      const first = scroll.querySelector('thead th');
+      if (first !== null) {
+        scroll.style.setProperty('--frozen-offset', `${first.getBoundingClientRect().width}px`);
+      }
+    };
+    sync();
+
+    // The observer has to come from the realm the panel is in: one built from
+    // the opener's `window` never reports on an element in the second window.
+    const view = scroll.ownerDocument.defaultView;
+    if (view === null) {
+      return;
+    }
+    const observer = new view.ResizeObserver(sync);
+    observer.observe(scroll);
+    return () => observer.disconnect();
+    // Mount and resize only, rather than every commit. The rendered width of a
+    // column is a function of the table's width and nothing else — the colgroup
+    // is fixed, and the table takes the container — so the observer sees every
+    // change there is, and re-measuring on each render would force a layout on
+    // every keystroke to learn a number that had not moved.
+  }, []);
   const [pointerInside, setPointerInside] = useState(false);
 
   // The row the cursor is on, by hover or by keyboard focus — both set

@@ -284,6 +284,35 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   CSS bug and is not one. The Element column is deliberately narrow (62px, name truncated with the
   full text on hover): every column pushed off the side is one a designer has to scroll for.
 
+  **Those widths are what is asked for, not what is rendered.** `table-layout: fixed` hands out the
+  declared widths only when they happen to total the width of the table; they sum to more than the
+  `min-width`, so every column is already scaled down a little in a narrow pane, and they scale *up*
+  once a pane is wider than the grid — a 70px Surface column renders at 86px in a 1660px panel. So
+  anything needing a column's real width must measure it.
+
+- **The header row and the Surface and Element columns are frozen.** A lens grid is read by row and
+  by column at once — which surface is this, and which quantity — and both answers scroll off, so the
+  two columns that *name* a row are pinned left and the header is pinned top, leaving the values to
+  scroll between them. Four things this rests on, each of which breaks it alone:
+
+  - **`.table-scroll` owns both axes.** `position: sticky` sticks within the nearest scrolling
+    ancestor, so while the panel body did the vertical scrolling a header stuck to the top of a box
+    growing with its own content never moved.
+  - **The table is `border-collapse: separate`.** A collapsed border belongs to the table rather than
+    the cell that declared it, so it stays put while a sticky cell slides away from it. Nothing here
+    draws a border that meets another one, so zero spacing looks identical.
+  - **Sticky goes on the cells**, never on `thead` or `tr` — sticky does not apply to row and
+    row-group boxes in every engine.
+  - **The second column's offset is measured**, published by `LensDataEditor` as `--frozen-offset`,
+    for the scaling reason above. A constant would be right at exactly one panel width and leave a
+    hole or an overlap at every other.
+
+  Two consequences. A frozen cell must be opaque, so the row tint and the highlight mark are
+  repainted onto it — and the Element cell, which `rowSpan`s a whole lens, belongs to only the first
+  of its rows and so cannot be lit for the others; the Surface cell beside it is what says which row
+  is live. And **the Element cell is absent from rows inside a span**, so these rules key off
+  `.row-label` and `.element-cell` rather than `nth-child`, which would land on Surface Type.
+
 - **The lens name is editable in the app bar**, because it is written into the file and has to be
   settable somewhere — and the app bar is where it was already shown, so the thing you see is the
   thing you edit. It reuses `TextCell` (draft on focus, commit on blur or Enter, Escape restores), so

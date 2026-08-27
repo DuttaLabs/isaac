@@ -621,7 +621,6 @@ tbody tr:hover {
  */
 tbody tr.row-highlight {
   background: var(--surface-2);
-  box-shadow: inset 3px 0 0 var(--surface-highlight);
 }
 
 tbody tr:focus {
@@ -643,9 +642,20 @@ input.text-input {
   min-width: 96px;
 }
 
-/* With the label column the grid can outgrow a narrow left pane. */
+/*
+ * With the label column the grid can outgrow a narrow left pane, and with enough
+ * surfaces it outgrows the pane vertically too.
+ *
+ * **Both axes scroll here, not on `.panel-body`**, and that is what the frozen
+ * header below rests on: `position: sticky` sticks within its nearest scrolling
+ * ancestor, so a header stuck to the top of a box that grows with its own content
+ * never moves. Shrinking rather than growing (`flex` is left at its default, with
+ * `min-height: 0` to permit it) keeps a short table its own height instead of
+ * stretching it down an empty panel.
+ */
 .table-scroll {
-  overflow-x: auto;
+  overflow: auto;
+  min-height: 0;
 }
 
 .table-scroll > table {
@@ -663,6 +673,17 @@ input.text-input {
    * kept the table twitching whenever a value grew a digit.
    */
   table-layout: fixed;
+  /*
+   * Separate, not collapsed. A collapsed border belongs to the *table* rather
+   * than to the cell that declared it, so it stays where the table put it while
+   * a sticky cell slides away from it — the frozen header loses its rule and the
+   * frozen columns lose their sides the moment anything scrolls. Nothing here
+   * draws a border that meets another one (bottoms on every cell, sides on the
+   * element column, and no table border at all), so with zero spacing the
+   * picture is exactly what collapsing gave.
+   */
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 /*
@@ -727,6 +748,88 @@ input.text-input {
 }
 .col-actions {
   width: 44px;
+}
+
+/*
+ * ---------- The frozen header row and Surface/Element columns ----------
+ *
+ * A lens grid is read by row and by column at once — which surface is this, and
+ * which quantity — and both answers scroll off. So the header row is pinned to
+ * the top and the two columns that *name* a row are pinned to the left, leaving
+ * everything a value scrollable between them.
+ *
+ * Pinned on the **cells**, never on `thead` or `tr`: sticky positioning does not
+ * apply to row and row-group boxes in every engine, and the cells are what the
+ * offsets belong to anyway.
+ *
+ * The left offset for the second frozen column is measured, not written down.
+ * `table-layout: fixed` hands out the colgroup's widths only when they happen to
+ * total the table's width; wider or narrower, every column is scaled, and the
+ * declared 70px is then the one number that is certainly wrong. `LensDataEditor`
+ * publishes the real width as `--frozen-offset`, and the declared width is the
+ * fallback for the frame before it does.
+ */
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  /* Above a frozen column, which the header must cross over as rows scroll under it. */
+  z-index: 3;
+  background: var(--surface-1);
+}
+
+.table-scroll tbody td.row-label,
+.table-scroll tbody td.element-cell {
+  position: sticky;
+  z-index: 2;
+  /*
+   * Opaque, which is the whole trick: a frozen cell has to hide what passes
+   * beneath it. It costs the element column its share of the row tint, since a
+   * cell spanning three rows belongs to only the first of them and cannot be
+   * lit for the other two — the Surface cell beside it and the mark on its edge
+   * are what say which row is live.
+   */
+  background: var(--surface-1);
+}
+
+.table-scroll thead th:first-child,
+.table-scroll tbody td.row-label {
+  left: 0;
+}
+
+.table-scroll .element-header,
+.table-scroll tbody td.element-cell {
+  left: var(--frozen-offset, 70px);
+}
+
+/* The corner: frozen both ways, so it has to sit above both. */
+.table-scroll thead th:first-child,
+.table-scroll .element-header {
+  z-index: 4;
+}
+
+/* The element column carries its own rules; the header takes them too, so the
+   edge of the frozen region is one unbroken line down the table. */
+.table-scroll .element-header {
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* A frozen cell is opaque, so the row's own tint has to be repainted onto it. */
+.table-scroll tbody tr:hover > td.row-label,
+.table-scroll tbody tr:hover > td.element-cell,
+.table-scroll tbody tr.row-highlight > td.row-label,
+.table-scroll tbody tr.row-highlight > td.element-cell {
+  background: var(--surface-2);
+}
+
+/*
+ * The highlight mark moves from the row to the frozen cell for the same reason:
+ * on the row it is drawn at the row's left edge, which is underneath the frozen
+ * column and therefore never seen. On the cell it rides along as the table
+ * scrolls sideways, which is where a marker wants to be.
+ */
+.table-scroll tbody tr.row-highlight > td.row-label {
+  box-shadow: inset 3px 0 0 var(--surface-highlight);
 }
 
 /* A compound value — a model glass is "nd / Vd", optionally with ΔPg,F — so it

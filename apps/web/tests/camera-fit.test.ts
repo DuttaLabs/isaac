@@ -16,7 +16,12 @@ const DOUBLET: SystemExtent = {
   radius: 57.7,
 };
 
-const PERSPECTIVE: CameraFit = { projection: 'perspective', fieldOfView: 24, fitMargin: 1.12 };
+const PERSPECTIVE: CameraFit = {
+  projection: 'perspective',
+  fieldOfView: 24,
+  fitMargin: 1.12,
+  cameraDistance: 1,
+};
 
 test('a narrower canvas pushes the camera back', () => {
   const wide = fitDistance(DOUBLET, 24, 5, 1.12);
@@ -91,14 +96,14 @@ test('the depth range brackets the system from where the camera stands', () => {
 test('an orthographic fit ignores the field of view and answers with zoom', () => {
   const wide = placeCamera(
     DOUBLET,
-    { projection: 'orthographic', fieldOfView: 60, fitMargin: 1.12 },
+    { projection: 'orthographic', fieldOfView: 60, fitMargin: 1.12, cameraDistance: 1 },
     [0, 0, -1],
     1000,
     200,
   );
   const narrow = placeCamera(
     DOUBLET,
-    { projection: 'orthographic', fieldOfView: 6, fitMargin: 1.12 },
+    { projection: 'orthographic', fieldOfView: 6, fitMargin: 1.12, cameraDistance: 1 },
     [0, 0, -1],
     1000,
     200,
@@ -115,10 +120,56 @@ test('a system with no length still gets a finite fit', () => {
   assert.ok(Number.isFinite(perspective.position[2]));
   const ortho = placeCamera(
     flat,
-    { projection: 'orthographic', fieldOfView: 24, fitMargin: 1.12 },
+    { projection: 'orthographic', fieldOfView: 24, fitMargin: 1.12, cameraDistance: 1 },
     [0, 0, -1],
     1000,
     200,
   );
   assert.ok(Number.isFinite(ortho.zoom) && ortho.zoom > 0);
+});
+
+test('camera distance multiplies the fitted standoff', () => {
+  const fitted = placeCamera(DOUBLET, PERSPECTIVE, [0, 0, -1], 1000, 200);
+  const back = placeCamera(DOUBLET, { ...PERSPECTIVE, cameraDistance: 2 }, [0, 0, -1], 1000, 200);
+  const fittedOffset = DOUBLET.target[2] - fitted.position[2];
+  const backOffset = DOUBLET.target[2] - back.position[2];
+  assert.ok(Math.abs(backOffset / fittedOffset - 2) < 1e-12);
+});
+
+test('the depth range follows the camera back', () => {
+  // Stepping back and leaving `far` where it was would clip the system away.
+  const back = placeCamera(DOUBLET, { ...PERSPECTIVE, cameraDistance: 3 }, [0, 0, -1], 1000, 200);
+  const distance = fitDistance(DOUBLET, 24, 5, 1.12) * 3;
+  assert.ok(back.far > distance + DOUBLET.radius);
+  assert.ok(back.near < distance - DOUBLET.radius);
+});
+
+test('camera distance changes nothing you can see orthographically', () => {
+  // Size there is zoom, so the standoff only moves the clipping planes.
+  const ortho: CameraFit = {
+    projection: 'orthographic',
+    fieldOfView: 24,
+    fitMargin: 1.12,
+    cameraDistance: 1,
+  };
+  const near = placeCamera(DOUBLET, ortho, [0, 0, -1], 1000, 200);
+  const far = placeCamera(DOUBLET, { ...ortho, cameraDistance: 3 }, [0, 0, -1], 1000, 200);
+  assert.equal(near.zoom, far.zoom);
+  assert.ok(far.position[2] < near.position[2], 'it does still move the camera');
+  assert.ok(far.far > near.far, 'and the depth range with it');
+});
+
+test('distance and fit margin are the same lever in perspective', () => {
+  // Both scale the standoff, which is why the panel offers them as two knobs
+  // rather than one: a margin is how the fit frames, distance is where you then
+  // stand. Anything relying on them being independent is relying on nothing.
+  const byMargin = placeCamera(DOUBLET, { ...PERSPECTIVE, fitMargin: 2.24 }, [0, 0, -1], 1000, 200);
+  const byDistance = placeCamera(
+    DOUBLET,
+    { ...PERSPECTIVE, cameraDistance: 2 },
+    [0, 0, -1],
+    1000,
+    200,
+  );
+  assert.ok(Math.abs(byMargin.position[2] - byDistance.position[2]) < 1e-9);
 });

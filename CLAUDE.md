@@ -356,7 +356,12 @@ The marginal ray is also **produced undeviated from its first contact to the pup
     put is a zoom, not a change of perspective. `Controls` holds `distance · tan(fov/2)`
     constant instead — a dolly zoom, which keeps the system the same size on screen and
     changes only the depth of the picture. That is the knob that answers "too much
-    perspective"; orthographic is its limit.
+    perspective"; orthographic is its limit. The distance knob beside it slides the camera
+    along the same ray and is the same question asked from the other end, so both are
+    applied to wherever the camera currently is rather than by refitting — which is what
+    lets an orbit survive being turned. Distance and `fitMargin` scale the one number;
+    they are two knobs because a margin is how the fit frames and distance is where you
+    then stand.
 
 - **`src/dev/` is development only and is not in the production build.** `App` reaches
   `dev/TweakPanel.tsx` through a dynamic import behind `import.meta.env.DEV`, which Vite

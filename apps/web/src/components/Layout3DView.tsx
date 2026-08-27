@@ -446,7 +446,8 @@ function Controls({
   /** Whether the user has moved the camera since the last deliberate reframe. */
   const touched = useRef(false);
   const lastFov = useRef(tweaks.fieldOfView);
-  const { projection, fieldOfView, fitMargin } = tweaks;
+  const lastDistance = useRef(tweaks.cameraDistance);
+  const { projection, fieldOfView, fitMargin, cameraDistance } = tweaks;
 
   const fit = (): void => {
     // Nothing to fit against yet. The measurement effect will call back.
@@ -509,29 +510,40 @@ function Controls({
   }, [camera, domElement]);
 
   /**
+   * The two knobs that slide the camera along its own view ray, applied to
+   * wherever it currently is rather than by refitting — so the orbit angle and
+   * any zoom the user set up survive being turned.
+   *
    * A field of view is only worth turning if the system stays the same size
-   * while it turns — otherwise all that happens is a zoom, and the perspective
+   * while it turns; otherwise all that happens is a zoom and the perspective
    * looks unchanged. Holding `distance · tan(fov/2)` constant is the dolly zoom:
-   * the subject keeps its size, the depth of the picture is what changes. It
-   * works off whatever distance the camera is at, so a zoom the user set up
-   * survives it, as does the orbit angle.
+   * the subject keeps its size, the depth of the picture is what changes.
+   * Distance is the plainer of the two — step back and the system shrinks and
+   * flattens together, which is the same effect arrived at from the other end.
+   *
+   * Both are inert on an orthographic camera, which has no field of view and
+   * takes its size from zoom rather than from distance.
    */
   useLayoutEffect(() => {
     const perspective = asPerspective(camera);
-    const before = lastFov.current;
+    const beforeFov = lastFov.current;
+    const beforeDistance = lastDistance.current;
     lastFov.current = fieldOfView;
+    lastDistance.current = cameraDistance;
     if (perspective === undefined) {
       return;
     }
-    if (before !== fieldOfView) {
+    if (beforeFov !== fieldOfView || beforeDistance !== cameraDistance) {
       const target = controls.current?.target ?? new Vector3(...framing.target);
-      const scale = Math.tan((before * Math.PI) / 360) / Math.tan((fieldOfView * Math.PI) / 360);
+      const scale =
+        (Math.tan((beforeFov * Math.PI) / 360) / Math.tan((fieldOfView * Math.PI) / 360)) *
+        (cameraDistance / beforeDistance);
       const offset = camera.position.clone().sub(target).multiplyScalar(scale);
       camera.position.copy(target).add(offset);
     }
     perspective.fov = fieldOfView;
     perspective.updateProjectionMatrix();
-  }, [camera, fieldOfView, framing]);
+  }, [camera, fieldOfView, cameraDistance, framing]);
 
   // Damping only settles if the controls are stepped every frame.
   useFrame(() => controls.current?.update());

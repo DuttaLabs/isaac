@@ -95,6 +95,7 @@ export default function TweakPanel({ open }: { open: boolean }) {
     camera.add(params, 'projection', ['perspective', 'orthographic']).name('Projection');
     camera.add(params, 'fieldOfView', 4, 70, 0.5).name('Field of view °');
     camera.add(params, 'fitMargin', 1, 2, 0.01).name('Fit margin');
+    camera.add(params, 'cameraDistance', 0.25, 4, 0.05).name('Distance (x fit)');
 
     gui.onChange(() => {
       const next = { ...params };

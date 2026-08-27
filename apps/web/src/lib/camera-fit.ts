@@ -25,6 +25,12 @@ export interface CameraFit {
   /** Vertical field of view in degrees. Ignored when projecting orthographically. */
   readonly fieldOfView: number;
   readonly fitMargin: number;
+  /**
+   * A multiple of the fitted distance: 1 stands where the fit put the camera, 2
+   * twice as far off. Orthographically it moves the camera without changing what
+   * is seen, since size there is zoom rather than distance.
+   */
+  readonly cameraDistance: number;
   readonly projection: 'perspective' | 'orthographic';
 }
 
@@ -88,9 +94,10 @@ export function placeCamera(
   const orthographic = fit.projection === 'orthographic';
   // Orthographically the distance no longer sets the size, so it is chosen only
   // to clear the system and give the depth range something to bracket.
-  const distance = orthographic
-    ? extent.radius * 6
-    : fitDistance(extent, fit.fieldOfView, width / height, fit.fitMargin);
+  const distance =
+    (orthographic
+      ? extent.radius * 6
+      : fitDistance(extent, fit.fieldOfView, width / height, fit.fitMargin)) * fit.cameraDistance;
 
   return {
     position: [

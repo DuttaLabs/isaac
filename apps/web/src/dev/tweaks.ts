@@ -56,6 +56,19 @@ export interface Tweaks {
   fieldOfView: number;
   /** Breathing room around the system once it is fitted. */
   fitMargin: number;
+  /**
+   * Where the camera stands, as a multiple of the distance the fit chose. 1 is
+   * the fit; 2 is twice as far off, with the system half the size on screen and
+   * the perspective correspondingly flatter.
+   *
+   * It multiplies the same number `fitMargin` does, and the two are kept apart
+   * because they are asked for differently: a margin is how much air to leave
+   * when framing, and is obeyed by the orthographic fit too, while this is a
+   * deliberate step backwards from wherever that landed. **Orthographically it
+   * changes nothing you can see** — size there is zoom, not distance — and only
+   * moves the depth range.
+   */
+  cameraDistance: number;
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -70,6 +83,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   projection: 'perspective',
   fieldOfView: 24,
   fitMargin: 1.12,
+  cameraDistance: 1,
 };
 
 /**

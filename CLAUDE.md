@@ -336,6 +336,43 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   R3F sizes *from* the box — a loop that settles on the canvas's untouched 300 × 150 default. Basis `0`
   takes the height purely from the flex free space and breaks it.
 - **`Layout3DView` is lazy-loaded.** Three.js and React Three Fiber are ~900 kB of the bundle, and a session that never opens the 3D view should never fetch them. Keep it behind `lazy()`, and keep the volume trace gated on `panelsOnScreen(workspace).has('layout3d')` — the gate is what makes "never opened" mean "never traced and never fetched".
+
+- **The 3-D camera is fitted against the canvas's own aspect**, in `lib/camera-fit.ts`
+  — free of Three, and unit-tested, because it is arithmetic with a right answer that no
+  screenshot can falsify: every wrong fit still draws *a* picture. `frameFor` measures
+  the system, and `placeCamera` decides where the camera stands, which is why the fit
+  happens **inside** the canvas: R3F renders this subtree while the canvas is still at
+  its untouched 300 × 150 default and reports a size of zero, so `Controls` fits on the
+  *measurement*, not on the mount. Two effects, then — a reframe (new system, Reset
+  view) and a measurement — and the second stops refitting once the user has orbited,
+  which `OrbitControls`' `start` event is what marks.
+
+  Two traps, both of which cost an afternoon:
+
+  - **Never name a camera `position` in `<Canvas camera={{…}}>`.** R3F re-applies that
+    object to the camera on every render, so anything named there is pinned and a fitted
+    position is stomped on the next re-render. Field of view only.
+  - **Field of view means nothing without the refit.** Turning it while the camera stays
+    put is a zoom, not a change of perspective. `Controls` holds `distance · tan(fov/2)`
+    constant instead — a dolly zoom, which keeps the system the same size on screen and
+    changes only the depth of the picture. That is the knob that answers "too much
+    perspective"; orthographic is its limit.
+
+- **`src/dev/` is development only and is not in the production build.** `App` reaches
+  `dev/TweakPanel.tsx` through a dynamic import behind `import.meta.env.DEV`, which Vite
+  replaces with a literal `false` when building, so the branch and `lil-gui` with it are
+  dropped — `lil-gui` is a devDependency, and the bundle is grepped to check rather than
+  trusted. A library here where the rest of the app hand-rolls its controls, because
+  everything that argues against one argues about *product* UI: this panel does not have
+  to match Isaac's look, mirror across duplicate panels, or land on the undo stack.
+
+  `dev/tweaks.ts` holds the knobs and their defaults; components read them through
+  `useTweaks()`, which in a production build is `DEFAULT_TWEAKS` and a subscription that
+  never fires. **The tweak is the experiment and the default is the result**: turn the
+  knobs, press *Copy values*, paste the record into `DEFAULT_TWEAKS`. Values persist in
+  `localStorage` so a session survives a reload. Nothing here may become a user-facing
+  setting by accident — a knob worth keeping graduates to real UI, on `App` view state,
+  rather than shipping as a frozen default behind a dev flag.
 - **The page itself never scrolls.** `html`/`body`/`#root` are the window's height with
   `overflow: hidden`, the app bar is `flex: none`, and the workspace takes what is left. Anything too
   big for its panel scrolls *inside that panel* — `.panel-body` is `overflow: auto` on both axes. So

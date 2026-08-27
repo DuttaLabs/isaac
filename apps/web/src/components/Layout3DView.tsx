@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Canvas, extend, useFrame, useThree, type ThreeElement } from '@react-three/fiber';
-import { Box3, DoubleSide, MOUSE, Quaternion, Sphere, Vector3 } from 'three';
+import {
+  Box3,
+  DoubleSide,
+  MOUSE,
+  Quaternion,
+  Sphere,
+  Vector3,
+  type PerspectiveCamera,
+} from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { buildOpticalScene, type OpticalScene } from '@isaac/three-optics';
@@ -10,6 +18,8 @@ import { useThemeColors } from '../lib/theme-colors.ts';
 import { AxisTriad } from './AxisTriad.tsx';
 import { cameraAxes } from '../lib/camera-axes.ts';
 import type { ProjectedAxis } from '../lib/view-plane.ts';
+import { useTweaks, type Tweaks } from '../dev/tweaks.ts';
+import { placeCamera, type SystemExtent } from '../lib/camera-fit.ts';
 
 // Three's own controls rather than a wrapper library: the app needs one class
 // from them, and the mouse mapping below is the whole of the configuration.
@@ -35,14 +45,24 @@ declare module '@react-three/fiber' {
  */
 const HOME_DIRECTION = new Vector3(-0.86, 0.42, -0.28).normalize();
 
-/** Vertical field of view. Narrow: long systems foreshorten badly on a wide one. */
-const FIELD_OF_VIEW = 24;
+/** The same direction as a plain tuple, which is what the fit takes. */
+const HOME_TUPLE: readonly [number, number, number] = [
+  HOME_DIRECTION.x,
+  HOME_DIRECTION.y,
+  HOME_DIRECTION.z,
+];
 
-/** The canvas aspect, fixed in CSS so the panel does not jump when views swap. */
-const ASPECT = 900 / 340;
-
-/** Breathing room around the system once it is fitted. */
-const FIT_MARGIN = 1.12;
+/**
+ * The camera is fitted against the canvas's *own* aspect, read from R3F inside
+ * the canvas where it is known. It used to be fitted against a hard-coded
+ * 900 / 340, which was the panel's shape back when `.layout-3d` carried a fixed
+ * `aspect-ratio`; that CSS went when panels became freely resizable, and the
+ * constant stayed behind, fitting every system to the shape of a panel that no
+ * longer exists.
+ *
+ * Field of view and fit margin are `dev/tweaks.ts` knobs — see the note there on
+ * why field of view only means anything together with the refit.
+ */
 
 /**
  * The mouse mapping: the wheel zooms, the left button pans, and the wheel
@@ -221,6 +241,7 @@ export function Layout3DView({
   resetSignal: number;
 }) {
   const colors = useThemeColors();
+  const tweaks = useTweaks();
   const mount = useRef<HTMLDivElement>(null);
   const view = useOwnWindow(mount);
   const pixelRatio = usePixelRatio(view);
@@ -252,14 +273,18 @@ export function Layout3DView({
       {/* Held back one render until the window is known — see `useOwnWindow`. */}
       {view ? (
         <Canvas
+          // R3F builds the default camera once, from these props. Switching
+          // between the two kinds is therefore a remount, which is why the orbit
+          // is stashed and restored either side of it.
+          key={tweaks.projection}
+          orthographic={tweaks.projection === 'orthographic'}
           resize={resize}
           dpr={pixelRatio}
-          camera={{
-            fov: FIELD_OF_VIEW,
-            near: framing.near,
-            far: framing.far,
-            position: framing.position,
-          }}
+          // Field of view only, and deliberately **no position**: R3F re-applies
+          // this object to the camera on every render, so anything named here is
+          // pinned and a fitted position would be stomped back on the next
+          // re-render. Where the camera goes is `Controls`' business alone.
+          camera={{ fov: tweaks.fieldOfView }}
           // A middle click starts autoscroll in some browsers, which fights the
           // orbit gesture; the canvas has no use for a context menu either.
           onPointerDown={(event) => {
@@ -274,10 +299,15 @@ export function Layout3DView({
           <directionalLight position={[1, 1.4, -1]} intensity={1.6} />
           <directionalLight position={[-1, -0.6, 0.8]} intensity={0.5} />
 
-          <Controls target={framing.target} home={framing.position} resetSignal={resetSignal} />
+          <Controls framing={framing} tweaks={tweaks} resetSignal={resetSignal} />
           <CameraOrientation publish={publishAxes} />
 
-          <AxisLine from={framing.axisFrom} to={framing.axisTo} color={colors.axis} />
+          <AxisLine
+            from={framing.axisFrom}
+            to={framing.axisTo}
+            color={colors.axis}
+            opacity={tweaks.axisOpacity}
+          />
 
           {scene.elements.map((element) => (
             <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
@@ -290,7 +320,7 @@ export function Layout3DView({
                     : (elementColors?.get(element.frontIndex) ?? colors.glass)
                 }
                 transparent
-                opacity={element.crossed ? 0.55 : 0.42}
+                opacity={element.crossed ? tweaks.crossedElementOpacity : tweaks.elementOpacity}
                 roughness={0.12}
                 metalness={0}
                 // A lens is looked through, so its far wall has to still be there
@@ -317,7 +347,13 @@ export function Layout3DView({
                         : colors.surface
                 }
                 transparent={!shell.isMirror}
-                opacity={shell.isMirror ? 1 : shell.isImage ? 0.5 : 0.66}
+                opacity={
+                  shell.isMirror
+                    ? 1
+                    : shell.isImage
+                      ? tweaks.imageSurfaceOpacity
+                      : tweaks.surfaceOpacity
+                }
                 roughness={shell.isMirror ? 0.25 : 0.55}
                 // Held well below 1: there is no environment map in this scene, so
                 // a fully metallic surface has nothing to reflect and renders
@@ -340,7 +376,7 @@ export function Layout3DView({
                 <lineBasicMaterial
                   color={colors.fields[style.colorVariable] ?? colors.surface}
                   transparent
-                  opacity={bundle.blocked ? 0.16 : 0.7}
+                  opacity={bundle.blocked ? tweaks.blockedRayOpacity : tweaks.rayOpacity}
                 />
               </lineSegments>
             );
@@ -353,7 +389,17 @@ export function Layout3DView({
 }
 
 /** The optical axis, so the system has something to sit on. */
-function AxisLine({ from, to, color }: { from: number; to: number; color: string }) {
+function AxisLine({
+  from,
+  to,
+  color,
+  opacity,
+}: {
+  from: number;
+  to: number;
+  color: string;
+  opacity: number;
+}) {
   const positions = useMemo(() => new Float32Array([0, 0, from, 0, 0, to]), [from, to]);
 
   return (
@@ -361,38 +407,131 @@ function AxisLine({ from, to, color }: { from: number; to: number; color: string
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
-      <lineBasicMaterial color={color} transparent opacity={0.55} />
+      <lineBasicMaterial color={color} transparent opacity={opacity} />
     </lineSegments>
   );
 }
 
+/** Three types the default camera as a bare `Camera`, which has no field of view. */
+function asPerspective(camera: object): PerspectiveCamera | undefined {
+  const perspective = camera as PerspectiveCamera;
+  return perspective.isPerspectiveCamera ? perspective : undefined;
+}
+
 /**
- * Orbit controls, and the reset. They live inside the canvas because they need
- * the camera and the canvas element, and neither exists outside it.
+ * Orbit controls, the fit, and the reset. They live inside the canvas because
+ * they need the camera, the canvas element and its measured size, and none of
+ * those exists outside it.
+ *
+ * The fit is *deferred until the canvas has been measured*, which is not the
+ * same moment as the mount: R3F renders this subtree while the canvas is still
+ * at its untouched 300 x 150 default and reports a size of zero, and a fit
+ * computed against a zero aspect puts the camera at infinity — a blank panel.
+ * So there are two effects rather than one. Fitting to a constant used to hide
+ * this, because the fit did not depend on the canvas at all.
  */
 function Controls({
-  target,
-  home,
+  framing,
+  tweaks,
   resetSignal,
 }: {
-  target: [number, number, number];
-  home: [number, number, number];
+  framing: Framing;
+  tweaks: Tweaks;
   resetSignal: number;
 }) {
   const camera = useThree((state) => state.camera);
+  const size = useThree((state) => state.size);
   const domElement = useThree((state) => state.gl.domElement);
   const controls = useRef<OrbitControls>(null);
+  /** Whether the user has moved the camera since the last deliberate reframe. */
+  const touched = useRef(false);
+  const lastFov = useRef(tweaks.fieldOfView);
+  const { projection, fieldOfView, fitMargin } = tweaks;
 
-  // A new system reframes the scene, and the reset button restores that framing
-  // — one effect, because they are the same operation asked for two ways.
-  useEffect(() => {
-    camera.position.set(...home);
+  const fit = (): void => {
+    // Nothing to fit against yet. The measurement effect will call back.
+    if (size.width === 0 || size.height === 0) {
+      return;
+    }
+    const placed = placeCamera(framing, tweaks, HOME_TUPLE, size.width, size.height);
+    camera.near = placed.near;
+    camera.far = placed.far;
+    camera.zoom = placed.zoom;
+    camera.position.set(...placed.position);
+    camera.updateProjectionMatrix();
+
     const orbit = controls.current;
     if (orbit) {
-      orbit.target.set(...target);
+      orbit.target.set(...framing.target);
       orbit.update();
     }
-  }, [camera, home, target, resetSignal]);
+  };
+
+  // The latest `fit`, so the two effects below can call it without taking every
+  // value it closes over as a dependency of their own — a field of view change
+  // would otherwise refit, which is precisely what the dolly below exists to
+  // avoid. Declared first, so it is current by the time either of them runs.
+  const latestFit = useRef(fit);
+  useLayoutEffect(() => {
+    latestFit.current = fit;
+  });
+
+  // A new system reframes the scene, and the reset button restores that framing
+  // — one effect, because they are the same operation asked for two ways. Both
+  // hand the view back, so both clear the record of the user having set one up.
+  useLayoutEffect(() => {
+    touched.current = false;
+    latestFit.current();
+  }, [camera, framing, resetSignal, projection, fitMargin]);
+
+  // The canvas being measured, which happens once on mount and again whenever a
+  // divider is dragged. Refitting is right up until the user has framed
+  // something themselves; after that a resize widens the frame and leaves their
+  // view alone, as it does in every other 3-D application.
+  useLayoutEffect(() => {
+    if (!touched.current) {
+      latestFit.current();
+    }
+  }, [size.width, size.height]);
+
+  // What counts as the user framing something: `start` fires on a drag or a
+  // wheel, and not on our own `update()`.
+  useEffect(() => {
+    const orbit = controls.current;
+    if (orbit === null) {
+      return;
+    }
+    const onStart = (): void => {
+      touched.current = true;
+    };
+    orbit.addEventListener('start', onStart);
+    return () => orbit.removeEventListener('start', onStart);
+  }, [camera, domElement]);
+
+  /**
+   * A field of view is only worth turning if the system stays the same size
+   * while it turns — otherwise all that happens is a zoom, and the perspective
+   * looks unchanged. Holding `distance · tan(fov/2)` constant is the dolly zoom:
+   * the subject keeps its size, the depth of the picture is what changes. It
+   * works off whatever distance the camera is at, so a zoom the user set up
+   * survives it, as does the orbit angle.
+   */
+  useLayoutEffect(() => {
+    const perspective = asPerspective(camera);
+    const before = lastFov.current;
+    lastFov.current = fieldOfView;
+    if (perspective === undefined) {
+      return;
+    }
+    if (before !== fieldOfView) {
+      const target = controls.current?.target ?? new Vector3(...framing.target);
+      const scale = Math.tan((before * Math.PI) / 360) / Math.tan((fieldOfView * Math.PI) / 360);
+      const offset = camera.position.clone().sub(target).multiplyScalar(scale);
+      camera.position.copy(target).add(offset);
+    }
+    perspective.fov = fieldOfView;
+    perspective.updateProjectionMatrix();
+  }, [camera, fieldOfView, framing]);
 
   // Damping only settles if the controls are stepped every frame.
   useFrame(() => controls.current?.update());
@@ -409,19 +548,15 @@ function Controls({
   );
 }
 
-interface Framing {
-  position: [number, number, number];
-  target: [number, number, number];
-  near: number;
-  far: number;
+interface Framing extends SystemExtent {
   axisFrom: number;
   axisTo: number;
 }
 
 /**
- * Puts the camera where the whole system is in view, three-quarters on rather
- * than square to it: the point of a 3-D view is that it is not the 2-D one, and
- * looking straight down the x axis would reproduce it exactly.
+ * Measures the system. *Where the camera goes* is a separate question, answered
+ * by `placeCamera` inside the canvas — because it depends on the canvas's aspect
+ * and on the field of view, neither of which is knowable out here.
  */
 function frameFor(scene: OpticalScene): Framing {
   const box = new Box3(new Vector3(...scene.bounds.min), new Vector3(...scene.bounds.max));
@@ -437,17 +572,11 @@ function frameFor(scene: OpticalScene): Framing {
   const halfHeight = Math.max(size.y, size.x) / 2;
   const halfLength = Math.max(size.z, 1e-6) / 2;
 
-  const verticalTan = Math.tan((FIELD_OF_VIEW * Math.PI) / 360);
-  const distance =
-    Math.max(halfHeight / verticalTan, halfLength / (verticalTan * ASPECT)) * FIT_MARGIN;
-
-  const position = sphere.center.clone().add(HOME_DIRECTION.clone().multiplyScalar(distance));
-
   return {
-    position: [position.x, position.y, position.z],
     target: [sphere.center.x, sphere.center.y, sphere.center.z],
-    near: Math.max(radius / 500, 1e-4),
-    far: distance + radius * 20,
+    halfHeight,
+    halfLength,
+    radius,
     axisFrom: scene.bounds.min[2],
     axisTo: scene.bounds.max[2],
   };

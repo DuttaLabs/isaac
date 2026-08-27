@@ -1,0 +1,38 @@
+/*
+  Development only — this file is imported by `TweakPanel.tsx` and so is dropped
+  from a production build along with it. Nothing here belongs in `theme.css`.
+*/
+
+.dev-tweaks {
+  position: fixed;
+  top: 52px;
+  right: 12px;
+  z-index: 200;
+}
+
+/* lil-gui places itself in the corner of the window unless it is given a
+   container; given one, it still wants to be `position: fixed` inside it. */
+.dev-tweaks .lil-gui.root {
+  position: static;
+  max-height: calc(100dvh - 72px);
+}
+
+/* Bound to the app's own palette so the panel is legible in either theme rather
+   than being a dark box on a light page. */
+.dev-tweaks .lil-gui {
+  --background-color: var(--surface-1);
+  --text-color: var(--text-primary);
+  --title-background-color: var(--surface-2);
+  --title-text-color: var(--text-primary);
+  --widget-color: var(--surface-2);
+  --hover-color: var(--surface-3, var(--surface-2));
+  --focus-color: var(--accent);
+  --number-color: var(--accent);
+  --string-color: var(--text-secondary);
+  --font-family: inherit;
+  --font-size: 12px;
+  --input-font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}

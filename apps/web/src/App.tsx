@@ -67,6 +67,14 @@ const Layout3DView = lazy(() =>
   import('./components/Layout3DView.tsx').then((module) => ({ default: module.Layout3DView })),
 );
 
+/**
+ * The development tweak panel, and `lil-gui` behind it. `import.meta.env.DEV` is
+ * a literal `false` in a production build, so the whole `lazy` arm is dead code
+ * and the dynamic import goes with it — which is what keeps a devDependency out
+ * of the shipped bundle. Verified by grepping the build output, not assumed.
+ */
+const TweakPanel = import.meta.env.DEV ? lazy(() => import('./dev/TweakPanel.tsx')) : undefined;
+
 const HISTORY_LIMIT = 50;
 /** Width of a divider track. Wide enough to hit; the rule drawn in it is 2px. */
 const SPLITTER_PX = 10;
@@ -143,6 +151,8 @@ export function App() {
    * on the undo stack or be written into a file.
    */
   const [workspace, setWorkspace] = useState(DEFAULT_WORKSPACE);
+  /** Development only: whether the tweak panel is showing. See `dev/tweaks.ts`. */
+  const [showTweaks, setShowTweaks] = useState(false);
 
   /** Which panels are open at all — what the traces below are gated on. */
   const openPanels = useMemo(() => panelsOnScreen(workspace), [workspace]);
@@ -1025,6 +1035,15 @@ export function App() {
         >
           Theme: {theme}
         </button>
+        {TweakPanel ? (
+          <button
+            onClick={() => setShowTweaks((showing) => !showing)}
+            aria-pressed={showTweaks}
+            title="Development only: live knobs for values that have to be looked at"
+          >
+            Tweaks
+          </button>
+        ) : null}
         {secondary && (displayAccess === 'prompt' || displayAccess === 'granted') ? (
           <button
             onClick={moveSecondaryAcross}
@@ -1169,6 +1188,12 @@ export function App() {
             </p>
           ) : null}
         </SecondaryWindow>
+      ) : null}
+
+      {TweakPanel ? (
+        <Suspense fallback={null}>
+          <TweakPanel open={showTweaks} />
+        </Suspense>
       ) : null}
     </div>
   );

@@ -475,6 +475,7 @@ export function LensDataEditor({
           <colgroup>
             <col className="col-surface" />
             <col className="col-element" />
+            <col className="col-stop" />
             <col className="col-type" />
             <col className="col-label" />
             <col className="col-radius" />
@@ -485,13 +486,13 @@ export function LensDataEditor({
             <col className="col-material" />
             <col className="col-model" />
             <col className="col-semidia" />
-            <col className="col-stop" />
             <col className="col-actions" />
           </colgroup>
           <thead>
             <tr>
               <th>Surface</th>
               <th className="element-header">Element</th>
+              <th>Stop</th>
               <th>Surface Type</th>
               <th className="text-column">Label</th>
               {/* A header names a whole column, so it can only speak for one row
@@ -514,7 +515,6 @@ export function LensDataEditor({
               <th>Material</th>
               <th>Model glass</th>
               <th>Semi-dia</th>
-              <th>Stop</th>
               <th aria-label="Row actions" />
             </tr>
           </thead>
@@ -526,15 +526,12 @@ export function LensDataEditor({
               const isTransform = surface.type === 'COORDINATE_TRANSFORM';
               const isFixed = isObject || isImage;
               const modelParameters = modelGlassText(surface.material);
-              // Zemax names the ends of the system and the stop rather than
-              // numbering them; everything else is its surface number.
-              const label = isObject
-                ? 'OBJ'
-                : isImage
-                  ? 'IMA'
-                  : surface.isStop
-                    ? 'STO'
-                    : String(index);
+              // Every surface is its own number, with no exceptions: the object
+              // is 0 and the image is whatever the last one comes to. Zemax names
+              // three rows here — OBJ, STO, IMA — and each name costs that row the
+              // one thing the column is for. The ends are named in the Element
+              // column instead, and the stop has a column of its own.
+              const label = String(index);
 
               return (
                 <tr
@@ -568,6 +565,22 @@ export function LensDataEditor({
                       rowSpan means — and a row belonging to no element gets an
                       empty one to keep the column aligned. */}
                   {renderElementCell(index)}
+
+                  {/* Beside the row's identity rather than out past the glass:
+                      which surface is the stop is a fact about the *system*, like
+                      the surface's number and the element it belongs to, and it
+                      was the one such fact stranded at the far end of a table
+                      that has to be scrolled. */}
+                  <td className="stop-cell">
+                    <input
+                      type="radio"
+                      name="stop-surface"
+                      checked={surface.isStop}
+                      disabled={isFixed}
+                      aria-label={`Make surface ${label} the aperture stop`}
+                      onChange={() => apply(setStop(system, index))}
+                    />
+                  </td>
 
                   <td>
                     <SurfaceTypeCell
@@ -749,17 +762,6 @@ export function LensDataEditor({
                         }
                       />
                     )}
-                  </td>
-
-                  <td className="stop-cell">
-                    <input
-                      type="radio"
-                      name="stop-surface"
-                      checked={surface.isStop}
-                      disabled={isFixed}
-                      aria-label={`Make surface ${label} the aperture stop`}
-                      onChange={() => apply(setStop(system, index))}
-                    />
                   </td>
 
                   <td>

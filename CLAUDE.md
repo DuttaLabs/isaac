@@ -240,6 +240,44 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   In 2-D the gizmo is pinned to the corner of the *visible* area, computed from the `viewBox` because that is what panning moves, and scaled by the zoom — a legend that grows when you zoom in has stopped being one. In 3-D it is an SVG laid over the canvas rather than geometry inside it: it is a legend, so it belongs in the same medium as the 2-D one, and ⊙/⊗ is a 2-D symbol that would have to be faked in three dimensions. It is fed by a `useFrame` inside the canvas that publishes through a **ref to the gizmo's own setState**, not up through props — a setter called on the parent would re-render the whole scene on every frame of an orbit, and what actually changed is nine SVG elements. It takes no pointer events: the corner of the canvas is as good a place to start an orbit as any other, and a small dead patch there would be a puzzle.
 
+- **Every row is numbered, with no exceptions.** The Surface column shows a surface's own number —
+  the object is 0 and the image is whatever the last one comes to, which is how a `.zmx` refers to
+  them and how Zemax numbers them. Zemax also *names* three of those rows in that column, `OBJ`,
+  `STO` and `IMA` (the 2000 manual, Chapter 4: "the object surface, denoted OBJ on the left edge, the
+  stop, denoted STO, and the image plane, denoted IMA"), and each name costs that row the one thing
+  the column is for. Isaac says both instead: the ends are named in the **Element column** as `OBJ`
+  and `IMG`, and the stop keeps its **own column**, moved to sit third — right after Element and
+  before Surface Type. Which surface is the stop is a fact about the *system*, like the row's number
+  and the element it belongs to, and it was the one such fact stranded past the glass at the far end
+  of a table that has to be scrolled sideways.
+
+  `IMG` rather than Zemax's `IMA` because that cell is in Isaac's own Element column, which Zemax does
+  not have; the Surface column, which is Zemax's, carries the number.
+
+  Those two are **`SystemEnd`s, not elements** (`lib/elements.ts`): single surfaces rather than pieces
+  of glass, each with a name fixed by position and a color of its own. They share `ElementStyles`
+  because it is already keyed by surface id and **their ids are ones no gap can claim** — the walk in
+  `findElements` starts past the object, and the last surface can only ever be a gap's *back* face, so
+  neither id is ever a gap key. There is a test on exactly that, because a collision would silently
+  give one thing two owners.
+
+  Their default colors sit deliberately **outside `ELEMENT_PALETTE`** — an end is not glass and should
+  not wear a glass color — and they are drawn through their own `endColorsBySurface` map rather than
+  being merged into `elementColorsBySurface`: that map is read *by body*, and the 2-D view strokes a
+  profile for every surface including the faces of a lens, so one combined map would quietly paint
+  every lens face in its body's color.
+
+  One consequence of the span rule: an element's `rowSpan` can reach the image row — a lens whose rear
+  face *is* the image plane is a system the model allows — and IMG then has no cell of its own rather
+  than a second one fighting for the same square.
+
+- **The object plane is drawn when it has somewhere to be.** Both views used to start at surface 1
+  with a comment saying the object sits at −∞; that is true at an infinite conjugate and false at a
+  finite one, where the rays already start from a plane that was the one thing missing from the
+  picture. `Number.isFinite(system.vertexZAt(0))` is the test — at infinity there is no pose to build
+  geometry on. Drawing it is also what makes the OBJ color a real control rather than a swatch with
+  nothing to paint.
+
 - **An element is derived, never stored.** The model has a list of surfaces and no notion of a lens:
   a surface's `material` is the medium *after* it, so a piece of glass is *implied* by a surface whose
   following medium is not air together with the next drawn surface. `lib/elements.ts` reads exactly

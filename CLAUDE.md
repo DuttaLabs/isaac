@@ -307,6 +307,14 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   between two lenses does not renumber the lenses. `ordinal` is therefore a position among elements
   *of that kind*, not in the whole list.
 
+  Air on both sides is the whole definition, deliberately. A real mirror usually has a **substrate**
+  behind it — glass the light never enters, there only to be drawn — and Zemax carries that in a
+  surface's properties rather than in its prescription. That is where it belongs here too, and until
+  it exists a mirror element is a surface and nothing behind it. Do not reach for the glass rule to
+  express a substrate: the glass rule is about where light goes, and a substrate is about what a
+  picture shows. (A `MIRROR` on a surface whose preceding medium *is* glass stays part of that run —
+  a Mangin mirror, where the light really does pass through the glass twice.)
+
 - **Every piece of glass has a color from the start**, cycled through `ELEMENT_PALETTE` by its
   position in the whole system so no two open alike. A design therefore arrives with its elements
   already told apart, which is the point of coloring them; the swatch always shows a real color rather

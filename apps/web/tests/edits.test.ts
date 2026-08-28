@@ -4,6 +4,7 @@ import { AIR, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
 import {
   insertSurfaceAfter,
   insertSurfaceBefore,
+  removeSurface,
   renameSystem,
   setMirror,
   setSurfaceType,
@@ -224,4 +225,17 @@ test('an inserted surface is a plane in air, so it bends no ray', () => {
   assert.equal(inserted.material.name, AIR.name);
   // Sized like the surface it went under rather than left unapertured.
   assert.equal(inserted.semiDiameter, 8);
+});
+
+test('the two ends of the system cannot be deleted', () => {
+  const system = singlet(spherical);
+  const last = system.surfaces.length - 1;
+  for (const index of [0, last]) {
+    const result = removeSurface(system, index);
+    assert.equal(result.ok, false, `surface ${index} should not be removable`);
+  }
+  // And an ordinary surface still is, so the guard is not simply refusing everything.
+  const middle = removeSurface(system, 1);
+  assert.ok(middle.ok);
+  assert.equal(middle.value.surfaces.length, 3);
 });

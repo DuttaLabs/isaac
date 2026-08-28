@@ -21,6 +21,7 @@ import {
 } from '../src/lib/elements.ts';
 import { GLASS_CATALOG } from '../src/lib/materials.ts';
 import { defaultSystem } from '../src/lib/default-system.ts';
+import { removeSurface } from '../src/lib/edits.ts';
 
 const F2 = GLASS_CATALOG.get('F2')!;
 
@@ -319,4 +320,85 @@ test('colors already in the design include the ends when asked', () => {
   assert.ok(!withoutEnds.includes(IMAGE_END_COLOR.toLowerCase()));
   assert.ok(withEnds.includes(IMAGE_END_COLOR.toLowerCase()));
   assert.ok(withEnds.includes(OBJECT_END_COLOR.toLowerCase()));
+});
+
+/*
+ * What deleting a surface does to the element it belonged to.
+ *
+ * Nothing tells `findElements` about the delete, and nothing needs to: an
+ * element is a run of glass between two faces, so removing a face re-reads as
+ * whatever run is left. These pin the three outcomes, because the whole point of
+ * deriving elements is that the answer is never stored anywhere to go stale.
+ */
+
+/** Crown, cemented interface, flint, then air: one element spanning three rows. */
+function doublet(): OpticalSystem {
+  return system(glassFace('s1', 60, 6, N_BK7), glassFace('s2', -40, 4, F2), airFace('s3', -90, 90));
+}
+
+test('a doublet is one element over three rows before anything is deleted', () => {
+  const [element, ...rest] = findElements(doublet());
+  assert.equal(rest.length, 0);
+  assert.equal(element?.gaps.length, 2);
+  assert.equal(elementRowSpan(element!), 3);
+});
+
+test('deleting the cemented interface leaves a singlet, not half a doublet', () => {
+  const result = removeSurface(doublet(), 2);
+  assert.ok(result.ok);
+  const [element, ...rest] = findElements(result.value);
+  assert.equal(rest.length, 0);
+  // One piece of glass across one gap: the crown now runs to what was the rear
+  // face. The element survives, smaller, and keeps its key — so the name and the
+  // color the user gave it stay with it.
+  assert.equal(element?.gaps.length, 1);
+  assert.equal(elementRowSpan(element!), 2);
+  assert.equal(element?.key, 's1');
+});
+
+test('deleting the face the glass begins at leaves no element at all', () => {
+  const result = removeSurface(doublet(), 1);
+  assert.ok(result.ok);
+  const [element, ...rest] = findElements(result.value);
+  assert.equal(rest.length, 0);
+  // The flint still starts somewhere, so there is still an element — this is the
+  // *front* face going, and the run that is left is the flint half.
+  assert.equal(element?.key, 's2');
+  assert.equal(element?.gaps.length, 1);
+
+  // Take that one too and there is no glass left to imply anything: two air
+  // surfaces and no element, which is a surface and nothing more.
+  const bare = removeSurface(result.value, 1);
+  assert.ok(bare.ok);
+  assert.deepEqual(findElements(bare.value), []);
+});
+
+test('an element deleted out of the middle renumbers the ones behind it', () => {
+  const two = system(
+    glassFace('a1', 60, 6, N_BK7),
+    airFace('a2', -60, 20),
+    glassFace('b1', 80, 6, F2),
+    airFace('b2', -80, 90),
+  );
+  assert.deepEqual(
+    findElements(two).map((element) => [element.key, element.ordinal, element.gaps[0]?.colorIndex]),
+    [
+      ['a1', 1, 0],
+      ['b1', 2, 1],
+    ],
+  );
+
+  // The first element's glass goes, so the second becomes the first — and takes
+  // the first default color with it. Only a *chosen* color survives a delete
+  // ahead of it, which is what choosing one is for.
+  const result = removeSurface(two, 1);
+  assert.ok(result.ok);
+  assert.deepEqual(
+    findElements(result.value).map((element) => [
+      element.key,
+      element.ordinal,
+      element.gaps[0]?.colorIndex,
+    ]),
+    [['b1', 1, 0]],
+  );
 });

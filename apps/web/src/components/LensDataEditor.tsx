@@ -315,11 +315,16 @@ export function LensDataEditor({
    * menu reads down the page in the direction it acts. Both are ghosted at the
    * end they cannot reach — nothing goes above the object plane and nothing
    * below the image plane — rather than left to fail on the click, and the
-   * tooltip says which rule it ran into. The same two guards are in `edits.ts`,
-   * so a caller that never saw this menu gets the same answer.
+   * tooltip says which rule it ran into. The same guards are in `edits.ts`, so a
+   * caller that never saw this menu gets the same answer.
+   *
+   * Delete is set apart by a rule, because it is the one item here that destroys
+   * something. The two inserts are reversible by deleting what they made; this
+   * one is reversible only through Undo.
    */
   const rowMenu = (index: number): MenuItem[] => {
     const last = system.surfaces.length - 1;
+    const isEnd = index === 0 || index === last;
     return [
       {
         key: 'insert-above',
@@ -340,6 +345,21 @@ export function LensDataEditor({
             ? 'The image plane has to be the last surface, so nothing can go below it.'
             : `A plane air surface, which becomes surface ${index + 1}.`,
         onSelect: () => apply(insertSurfaceAfter(system, index)),
+      },
+      {
+        key: 'delete',
+        label: 'Delete surface',
+        startsGroup: true,
+        disabled: isEnd,
+        // Every element is *derived* from where the glass is, so nothing has to
+        // be told about this: drop the cemented interface of a doublet and what
+        // is left is a run of glass across one gap, which is a singlet. Drop the
+        // face the glass begins at and there is no run at all, so no element —
+        // just a surface. Both fall out of `findElements` on the next render.
+        hint: isEnd
+          ? 'The object and image planes are what the system is measured between, so neither can be removed.'
+          : `Removes surface ${index}. An element it was part of is re-read from the glass that is left.`,
+        onSelect: () => apply(removeSurface(system, index)),
       },
     ];
   };

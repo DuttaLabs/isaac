@@ -1749,3 +1749,11 @@ input.coefficient {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Marks a change of kind, so it is inset from the menu's edges rather than run
+   wall to wall — a full-width rule reads as the end of the menu. */
+.context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}

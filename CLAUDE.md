@@ -385,16 +385,38 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   - **It closes on anything that moves what it points at** — Escape, a click outside, a scroll, a
     resize, the window losing focus. The menu is fixed to the viewport and the row it names is not,
     so a scroll would leave it offering to insert beside a different surface.
+  - **A separator is carried by the item below it** (`startsGroup`), not written into the list as an
+    entry of its own. A separator is not a thing to click — it exists only to say that what follows
+    is different in kind — and spelling it this way makes the states that read as a bug
+    unrepresentable: a rule at the top of the menu, one at the bottom, or two together.
 
-  In the lens grid the two items are **Insert surface above** and **Insert surface below**, in that
-  order, because the row is between them and the menu reads down the page in the direction it acts.
-  Below is what the `+` in the last column already does. Each is ghosted at the end it cannot reach:
-  nothing goes above the object plane, nothing below the image plane. The **same two guards are in
-  `edits.ts`** (`insertSurfaceBefore`, and `insertSurfaceAfter` on the last surface), so a caller that
-  never saw this menu gets the same answer in its own words — the model would refuse it anyway, but by
-  then the message is about an invariant rather than about what the user just asked for. The menu also
-  **names the row in its heading**, because the pointer leaves the row on the way to the menu and takes
-  the highlight with it.
+  In the lens grid the items are **Insert surface above**, **Insert surface below**, then, past a
+  rule, **Delete surface**. The inserts are in that order because the row is between them and the
+  menu reads down the page in the direction it acts; below is what the `+` in the last column already
+  does, and delete is the `×` beside it. Delete is set apart because it is the one item here that
+  destroys something: the two inserts are undone by deleting what they made, this one only by Undo.
+  Each is ghosted at the end it cannot reach — nothing goes above the object plane, nothing below the
+  image plane, and neither end can be removed at all. The **same guards are in `edits.ts`**
+  (`insertSurfaceBefore`, `insertSurfaceAfter` on the last surface, `removeSurface` on either end), so
+  a caller that never saw this menu gets the same answer in its own words — the model would refuse it
+  anyway, but by then the message is about an invariant rather than about what the user just asked
+  for. The menu also **names the row in its heading**, because the pointer leaves the row on the way
+  to the menu and takes the highlight with it.
+
+  **Deleting a surface needs to tell the elements nothing**, which is the derivation earning its
+  keep. An element is a run of glass between two faces, so removing a face is re-read on the next
+  render as whatever run is left: drop a doublet's cemented interface and one gap remains, which is a
+  singlet spanning two rows with one swatch; drop the face the glass *begins* at and there is no run
+  at all, so no element — just a surface. `elements.test.ts` pins all three outcomes, because the
+  whole point of deriving elements is that the answer is never stored anywhere to go stale.
+
+  What *is* stored is `ElementStyles` — names and colors, keyed by surface id — and those are
+  deliberately **not pruned when a surface goes**. An orphaned entry is harmless (`newSurfaceId` never
+  reuses an id, and the styles are cleared on New, Open and Reset), while pruning would mean Undo
+  brought the surface back without the color the user chose for it. Default colors are a different
+  matter and do move: `colorIndex` counts gaps across the whole system, so deleting an element ahead
+  of another one shifts the second's default color up the palette. Only a *chosen* color stays put,
+  which is what choosing one is for.
 
 - **The lens name is editable in the app bar**, because it is written into the file and has to be
   settable somewhere — and the app bar is where it was already shown, so the thing you see is the

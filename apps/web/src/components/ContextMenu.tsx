@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -20,6 +21,16 @@ export interface MenuItem {
    * that vanished is the one the user was reaching for.
    */
   disabled?: boolean;
+  /**
+   * Draws a rule above this item, because it begins a new group of them.
+   *
+   * Carried by the item rather than sitting in the list as a separator of its
+   * own, so the states that read as a bug cannot be written: a rule at the top
+   * of the menu, one at the bottom, or two together. A separator is not a thing
+   * to click — it exists only to say that what follows is different in kind —
+   * and this way it is spelled as exactly that.
+   */
+  startsGroup?: boolean;
   onSelect: () => void;
 }
 
@@ -124,12 +135,17 @@ export function ContextMenu({
       return;
     }
     const here = buttons.findIndex((button) => button === event.target);
+    // Focus somewhere in the menu but not on an item — the container itself —
+    // starts from just outside the end being stepped away from, so Down opens on
+    // the first item and Up on the last. Taking -1 as an ordinary position would
+    // make Up land on the second one.
+    const from = here === -1 ? (delta > 0 ? buttons.length - 1 : 0) : here;
     const next =
       event.key === 'Home'
         ? 0
         : event.key === 'End'
           ? buttons.length - 1
-          : (here + delta + buttons.length) % buttons.length;
+          : (from + delta + buttons.length) % buttons.length;
     buttons[next]?.focus();
   };
 
@@ -150,26 +166,30 @@ export function ContextMenu({
         </div>
       )}
       {items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          role="menuitem"
-          className="context-menu-item"
-          // `aria-disabled`, not `disabled`: a disabled button cannot be focused,
-          // so the arrow keys would skip the very item whose tooltip says why it
-          // is unavailable.
-          aria-disabled={item.disabled === true}
-          title={item.hint}
-          onClick={() => {
-            if (item.disabled === true) {
-              return;
-            }
-            item.onSelect();
-            onClose();
-          }}
-        >
-          {item.label}
-        </button>
+        <Fragment key={item.key}>
+          {item.startsGroup === true ? (
+            <div className="context-menu-separator" role="separator" />
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="context-menu-item"
+            // `aria-disabled`, not `disabled`: a disabled button cannot be
+            // focused, so the arrow keys would skip the very item whose tooltip
+            // says why it is unavailable.
+            aria-disabled={item.disabled === true}
+            title={item.hint}
+            onClick={() => {
+              if (item.disabled === true) {
+                return;
+              }
+              item.onSelect();
+              onClose();
+            }}
+          >
+            {item.label}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

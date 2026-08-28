@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { PanelStub } from './Panel.tsx';
-import { PANEL_TITLES, type PanelId } from '../lib/panels.ts';
 
 export interface Placement {
   /** Which *slots* are in the second window, by slot key. */
@@ -9,11 +8,10 @@ export interface Placement {
   /** Where to render them, or undefined while there is no second window. */
   container: HTMLElement | undefined;
   /**
-   * The slot keys in the order their slots are arranged, which is the order
-   * they stack once they are in the second window. Read from the live
-   * arrangement rather than from a fixed list, so re-pointing or closing a slot
-   * moves the panel in both windows and splitting the app across two never
-   * reshuffles it.
+   * The pane keys in the order the panes are arranged, which is the order they
+   * stack once they are in the second window. Read from the live arrangement
+   * rather than from a fixed list, so re-pointing or closing a pane moves the
+   * panel in both windows and splitting the app across two never reshuffles it.
    */
   order: readonly string[];
   onReturn: (slotKey: string) => void;
@@ -33,12 +31,13 @@ export interface Placement {
  */
 export function Placed({
   slotKey,
-  panel,
+  title,
   placement,
   children,
 }: {
   slotKey: string;
-  panel: PanelId;
+  /** What the stub left behind should call it — the panel's name, or `Empty`. */
+  title: string;
   placement: Placement;
   children: ReactNode;
 }): ReactNode {
@@ -49,7 +48,7 @@ export function Placed({
 
   return (
     <>
-      <PanelStub title={PANEL_TITLES[panel]} onReturn={() => onReturn(slotKey)} />
+      <PanelStub title={title} onReturn={() => onReturn(slotKey)} />
       {createPortal(
         // Portals sharing a container append in the order they mount rather than
         // the order they are written, so a panel sent across second would land

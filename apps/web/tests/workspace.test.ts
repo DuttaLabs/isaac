@@ -1,123 +1,184 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
-
+import test from 'node:test';
 import {
   DEFAULT_WORKSPACE,
+  MINIMUM_RATIO,
   addFirstPanel,
-  closeSlot,
-  duplicateSlot,
+  closePane,
+  findPane,
   isEmpty,
   panelsOnScreen,
-  resizeColumns,
-  resizeSlots,
-  setSlotPanel,
-  slotsInOrder,
+  panesInOrder,
+  resizeSplit,
+  setPanePanel,
+  splitPane,
+  type LayoutNode,
+  type Split,
   type Workspace,
 } from '../src/lib/workspace.ts';
 
-const keys = (workspace: Workspace): string[] => slotsInOrder(workspace).map((slot) => slot.key);
-const panels = (workspace: Workspace): string[] =>
-  slotsInOrder(workspace).map((slot) => slot.panel);
+const one: Workspace = {
+  root: { kind: 'pane', key: 'p1', panel: 'system' },
+  nextKey: 1,
+};
 
-test('a slot takes whatever panel it is given, and no other slot moves', () => {
-  const next = setSlotPanel(DEFAULT_WORKSPACE, 'slot-a', 'analysis');
-  assert.deepEqual(panels(next), ['analysis', 'system', 'firstOrder', 'layout2d', 'analysis']);
+/** The shape of a tree, for comparing arrangements without their keys. */
+function shape(node: LayoutNode): unknown {
+  return node.kind === 'pane'
+    ? (node.panel ?? '(blank)')
+    : { [node.direction]: [shape(node.first), shape(node.second)] };
+}
+
+const keys = (workspace: Workspace): string[] => panesInOrder(workspace).map((found) => found.key);
+
+test('the default layout is the arrangement Isaac has always opened with', () => {
+  assert.deepEqual(
+    panesInOrder(DEFAULT_WORKSPACE).map((found) => found.panel),
+    ['source', 'system', 'firstOrder', 'layout2d', 'analysis'],
+  );
+  assert.equal(isEmpty(DEFAULT_WORKSPACE), false);
 });
 
-test('the same panel may be shown twice', () => {
-  // The whole point of dropping the exchange: two Source object panels are a
-  // thing someone may want, one of them in the second window.
-  const next = setSlotPanel(DEFAULT_WORKSPACE, 'slot-d', 'source');
-  assert.equal(panels(next).filter((panel) => panel === 'source').length, 2);
+test('splitting a pane leaves it where it is and puts a blank one beside it', () => {
+  const right = splitPane(one, 'p1', 'row');
+  assert.deepEqual(shape(right.root), { row: ['system', '(blank)'] });
+
+  const down = splitPane(one, 'p1', 'column');
+  assert.deepEqual(shape(down.root), { column: ['system', '(blank)'] });
+
+  // The pane keeps its key, so it keeps its React identity, its scroll position
+  // and its place in the second window.
+  assert.equal(keys(right)[0], 'p1');
+  assert.equal((right.root as Split).ratio, 0.5);
 });
 
-test('a panel may be closed until none is left', () => {
+test('every split gets a key of its own, so two splits of one pane never collide', () => {
+  const once = splitPane(one, 'p1', 'row');
+  const twice = splitPane(once, 'p1', 'column');
+  const paneKeys = keys(twice);
+  assert.equal(new Set(paneKeys).size, paneKeys.length);
+  assert.equal(twice.nextKey, 3);
+  // The second split went inside the first, where the pane now is.
+  assert.deepEqual(shape(twice.root), { row: [{ column: ['system', '(blank)'] }, '(blank)'] });
+});
+
+test('splitting a pane that is not there changes nothing at all', () => {
+  assert.equal(splitPane(one, 'nobody', 'row'), one);
+});
+
+test('nothing outside a split moves', () => {
+  const before = DEFAULT_WORKSPACE;
+  const after = splitPane(before, 'pane-analysis', 'row');
+  // The whole left branch is the very same object, so React re-renders only the
+  // branch that actually moved.
+  assert.equal(
+    (after.root as Split).first,
+    (before.root as Split).first,
+    'the untouched half should be the same object',
+  );
+});
+
+test('closing a pane gives its space to its sibling and to nothing else', () => {
+  // Three rows written as a tree: A over (B over C).
+  const three: Workspace = {
+    root: {
+      kind: 'split',
+      key: 's1',
+      direction: 'column',
+      ratio: 0.4,
+      first: { kind: 'pane', key: 'a', panel: 'source' },
+      second: {
+        kind: 'split',
+        key: 's2',
+        direction: 'column',
+        ratio: 0.5,
+        first: { kind: 'pane', key: 'b', panel: 'system' },
+        second: { kind: 'pane', key: 'c', panel: 'firstOrder' },
+      },
+    },
+    nextKey: 1,
+  };
+
+  // B goes: C takes the whole of the lower half. A does not move a pixel — the
+  // split above it still divides at 0.4.
+  const withoutB = closePane(three, 'b');
+  assert.deepEqual(shape(withoutB.root), { column: ['source', 'firstOrder'] });
+  assert.equal((withoutB.root as Split).ratio, 0.4);
+
+  // A goes: the lower pair takes everything, keeping the proportions it had.
+  const withoutA = closePane(three, 'a');
+  assert.deepEqual(shape(withoutA.root), { column: ['system', 'firstOrder'] });
+  assert.equal((withoutA.root as Split).ratio, 0.5);
+});
+
+test('closing the last pane blanks it rather than leaving nothing', () => {
+  const emptied = closePane(one, 'p1');
+  assert.equal(isEmpty(emptied), true);
+  assert.equal(panesInOrder(emptied).length, 1);
+  // And it is recoverable, which is the whole reason it is not removed.
+  assert.equal(isEmpty(addFirstPanel(emptied, 'layout2d')), false);
+  assert.deepEqual(panelsOnScreen(addFirstPanel(emptied, 'layout2d')), new Set(['layout2d']));
+});
+
+test('closing every pane one at a time ends somewhere the user can recover from', () => {
   let workspace = DEFAULT_WORKSPACE;
-  for (const key of keys(DEFAULT_WORKSPACE)) {
-    workspace = closeSlot(workspace, key);
+  for (const found of panesInOrder(DEFAULT_WORKSPACE)) {
+    workspace = closePane(workspace, found.key);
   }
   assert.equal(isEmpty(workspace), true);
-  assert.deepEqual(workspace.columns, []);
 });
 
-test('closing the last slot of a column drops the column, not just the slot', () => {
-  let workspace = closeSlot(DEFAULT_WORKSPACE, 'slot-d');
-  workspace = closeSlot(workspace, 'slot-e');
-  assert.equal(workspace.columns.length, 1);
-  assert.deepEqual(panels(workspace), ['source', 'system', 'firstOrder']);
+test('closing a pane that is not there changes nothing at all', () => {
+  assert.equal(closePane(one, 'nobody'), one);
+  assert.equal(closePane(DEFAULT_WORKSPACE, 'nobody'), DEFAULT_WORKSPACE);
 });
 
-test('an emptied workspace can be filled again', () => {
-  let workspace = DEFAULT_WORKSPACE;
-  for (const key of keys(DEFAULT_WORKSPACE)) {
-    workspace = closeSlot(workspace, key);
-  }
-  const filled = addFirstPanel(workspace, 'system');
-  assert.equal(isEmpty(filled), false);
-  assert.deepEqual(panels(filled), ['system']);
+test('a divider moves only its own split, and cannot squeeze either side away', () => {
+  const two = splitPane(one, 'p1', 'row');
+  const key = (two.root as Split).key;
+
+  assert.equal((resizeSplit(two, key, 0.2).root as Split).ratio, 0.7);
+  assert.equal((resizeSplit(two, key, -0.2).root as Split).ratio, 0.3);
+
+  // A panel dragged to nothing could never be dragged back: there would be no
+  // edge left to grab.
+  assert.equal((resizeSplit(two, key, -5).root as Split).ratio, MINIMUM_RATIO);
+  assert.equal((resizeSplit(two, key, 5).root as Split).ratio, 1 - MINIMUM_RATIO);
 });
 
-test('duplicating a slot puts the copy directly beneath it', () => {
-  const next = duplicateSlot(DEFAULT_WORKSPACE, 'slot-a');
-  assert.deepEqual(panels(next), [
-    'source',
-    'source',
-    'system',
-    'firstOrder',
-    'layout2d',
-    'analysis',
-  ]);
+test('a divider leaves every other split where it was', () => {
+  const before = DEFAULT_WORKSPACE.root as Split;
+  const after = resizeSplit(DEFAULT_WORKSPACE, 'split-right', 0.1).root as Split;
+  assert.equal(after.ratio, before.ratio);
+  assert.equal(after.first, before.first);
+  assert.equal((after.second as Split).ratio, 0.7);
 });
 
-test('a duplicate takes half of its source, so no neighbour changes size', () => {
-  const before = slotsInOrder(DEFAULT_WORKSPACE);
-  const next = duplicateSlot(DEFAULT_WORKSPACE, 'slot-a');
-  const after = slotsInOrder(next);
-
-  const source = before.find((slot) => slot.key === 'slot-a');
-  assert.ok(source);
-  assert.equal(after[0]?.size, source.size / 2);
-  assert.equal(after[1]?.size, source.size / 2);
-  // Everything below is untouched.
-  assert.equal(after[2]?.size, before[1]?.size);
-  assert.equal(after[3]?.size, before[2]?.size);
-});
-
-test('every duplicate gets a key of its own', () => {
-  let workspace = duplicateSlot(DEFAULT_WORKSPACE, 'slot-a');
-  workspace = duplicateSlot(workspace, 'slot-a');
-  const all = keys(workspace);
-  assert.equal(new Set(all).size, all.length);
-});
-
-test('panelsOnScreen reports each panel once, however many slots show it', () => {
-  const next = setSlotPanel(DEFAULT_WORKSPACE, 'slot-d', 'source');
+test('a pane can be turned over to another panel, and its neighbours are untouched', () => {
+  const changed = setPanePanel(DEFAULT_WORKSPACE, 'pane-analysis', 'layout3d');
+  assert.equal(findPane(changed, 'pane-analysis')?.panel, 'layout3d');
   assert.deepEqual(
-    [...panelsOnScreen(next)].sort(),
-    ['analysis', 'firstOrder', 'source', 'system'].sort(),
+    panesInOrder(changed).map((found) => found.panel),
+    ['source', 'system', 'firstOrder', 'layout2d', 'layout3d'],
   );
 });
 
-test('a panel nobody has opened is not on screen', () => {
-  // What gates the 3-D trace and the Three.js bundle behind it.
-  assert.equal(panelsOnScreen(DEFAULT_WORKSPACE).has('layout3d'), false);
-});
-
-test('resizing moves space between two neighbours and preserves the total', () => {
-  const total = (workspace: Workspace, column: number): number =>
-    (workspace.columns[column]?.slots ?? []).reduce((sum, slot) => sum + slot.size, 0);
-
-  const before = total(DEFAULT_WORKSPACE, 0);
-  const next = resizeSlots(DEFAULT_WORKSPACE, 'column-a', 0, 0.1);
-  assert.ok(Math.abs(total(next, 0) - before) < 1e-9);
-  assert.ok(
-    (next.columns[0]?.slots[0]?.size ?? 0) > (DEFAULT_WORKSPACE.columns[0]?.slots[0]?.size ?? 0),
+test('the same panel may be open more than once, and the copies are separate panes', () => {
+  const twice = setPanePanel(
+    splitPane(DEFAULT_WORKSPACE, 'pane-analysis', 'row'),
+    'pane-1',
+    'system',
   );
+  const panels = panesInOrder(twice).map((found) => found.panel);
+  assert.equal(panels.filter((panel) => panel === 'system').length, 2);
+  // One panel, two panes: only the key can tell them apart, which is why every
+  // operation names the pane and never the panel.
+  assert.equal(panelsOnScreen(twice).size, 5);
 });
 
-test('resizing columns preserves their total too', () => {
-  const sum = (workspace: Workspace): number =>
-    workspace.columns.reduce((total, column) => total + column.size, 0);
-  const next = resizeColumns(DEFAULT_WORKSPACE, 0, 0.1);
-  assert.ok(Math.abs(sum(next) - sum(DEFAULT_WORKSPACE)) < 1e-9);
+test('a blank pane is on screen but shows nothing', () => {
+  const split = splitPane(DEFAULT_WORKSPACE, 'pane-analysis', 'column');
+  assert.equal(panesInOrder(split).length, 6);
+  assert.equal(panelsOnScreen(split).size, 5);
+  assert.equal(findPane(split, 'pane-1')?.panel, undefined);
 });

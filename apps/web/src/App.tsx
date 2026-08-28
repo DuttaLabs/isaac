@@ -21,7 +21,6 @@ import {
   surfaceColorsBySurface,
   type ElementStyles,
 } from './lib/elements.ts';
-import { trackTemplate } from './lib/split-sizes.ts';
 import { Splitter } from './components/Splitter.tsx';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
@@ -29,22 +28,26 @@ import { TextCell } from './components/TextCell.tsx';
 import { formatMicrons } from './lib/format.ts';
 import { describeError, type Result } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './components/Panel.tsx';
+import {
+  BLANK_PANE_TITLE,
+  BlankPanel,
+  ErrorNote,
+  Panel,
+  type PanelChoice,
+  type PanelDetach,
+} from './components/Panel.tsx';
 import { Placed, type Placement } from './components/Placed.tsx';
-import { PANELS, PANEL_TITLES, type PanelId } from './lib/panels.ts';
+import { PANEL_TITLES, type PanelId } from './lib/panels.ts';
 import {
   DEFAULT_WORKSPACE,
-  addFirstPanel,
-  closeSlot,
-  duplicateSlot,
-  isEmpty,
+  closePane,
   panelsOnScreen,
-  resizeColumns,
-  resizeSlots,
-  setSlotPanel,
-  slotsInOrder,
-  type Column,
-  type Slot,
+  panesInOrder,
+  resizeSplit,
+  setPanePanel,
+  splitPane,
+  type LayoutNode,
+  type Pane,
 } from './lib/workspace.ts';
 import { SecondaryWindow } from './components/SecondaryWindow.tsx';
 import { VIEW_PLANES, VIEW_PLANE_IDS, type ViewPlaneId } from './lib/view-plane.ts';
@@ -162,11 +165,6 @@ export function App() {
   /** Which panels are open at all — what the traces below are gated on. */
   const openPanels = useMemo(() => panelsOnScreen(workspace), [workspace]);
 
-  const share = (sizes: readonly number[], divider: number): number => {
-    const total = sizes.reduce((sum, size) => sum + size, 0);
-    const before = sizes.slice(0, divider + 1).reduce((sum, size) => sum + size, 0);
-    return total > 0 ? before / total : 0;
-  };
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [showFirstOrder, setShowFirstOrder] = useState(false);
@@ -315,7 +313,7 @@ export function App() {
   const placement: Placement = {
     detached,
     container: secondary?.container,
-    order: slotsInOrder(workspace).map((slot) => slot.key),
+    order: panesInOrder(workspace).map((found) => found.key),
     onReturn: toggleDetached,
   };
 
@@ -685,9 +683,9 @@ export function App() {
    * nothing to keep in step. Add a field in one Source object panel and the
    * other shows it because both are rendering one `system`.
    */
-  const renderPanel = (slot: Slot, choice: PanelChoice): ReactNode => {
-    const detach = detachOf(slot.key);
-    switch (slot.panel) {
+  const renderPanel = (found: Pane, choice: PanelChoice): ReactNode => {
+    const detach = detachOf(found.key);
+    switch (found.panel) {
       case 'source':
         return (
           <ErrorBoundary label="Source object">
@@ -933,66 +931,75 @@ export function App() {
     }
   };
 
-  /** Closes a slot, and forgets that it was in the second window. */
-  const closePanel = (slotKey: string): void => {
-    setWorkspace((current) => closeSlot(current, slotKey));
-    setDetached(({ [slotKey]: _gone, ...rest }) => rest);
+  /** Closes a pane, and forgets that it was in the second window. */
+  const closePanel = (paneKey: string): void => {
+    setWorkspace((current) => closePane(current, paneKey));
+    setDetached(({ [paneKey]: _gone, ...rest }) => rest);
   };
 
-  /** The three things that can be done to a slot, as opposed to its panel. */
-  const choiceOf = (slot: Slot): PanelChoice => ({
-    id: slot.panel,
-    onChange: (next) => setWorkspace((current) => setSlotPanel(current, slot.key, next)),
-    onDuplicate: () => setWorkspace((current) => duplicateSlot(current, slot.key)),
-    onClose: () => closePanel(slot.key),
+  /** The three things that can be done to a pane, as opposed to its panel. */
+  const choiceOf = (found: Pane, onlyPane: boolean): PanelChoice => ({
+    id: found.panel,
+    onChange: (next) => setWorkspace((current) => setPanePanel(current, found.key, next)),
+    onSplit: (direction) => setWorkspace((current) => splitPane(current, found.key, direction)),
+    onClose: () => closePanel(found.key),
+    // Closing the last pane blanks it; closing one already blank would do
+    // nothing at all, and a control that does nothing is a puzzle.
+    canClose: !(onlyPane && found.panel === undefined),
   });
 
   /**
-   * One column of slots, with a divider between each neighbouring pair.
+   * One node of the layout tree: a panel, or a split of two smaller nodes.
    *
-   * Panels are keyed by slot and dividers by the slot beneath them, so opening
-   * or closing a panel moves the surviving DOM rather than rebuilding the
-   * column. A divider belongs to the boundary between two slots rather than to
-   * either panel sitting there, and its label names whatever is above it *now*.
+   * Recursive, and that is the whole of the layout — there is no column, no row,
+   * no level. A split is a three-track grid: a child, a divider, the other
+   * child. The divider is a track of its own rather than a border on a panel, so
+   * it has a width to grab that does not depend on either neighbour.
+   *
+   * Everything is keyed by the node's own key, so splitting or closing moves the
+   * surviving DOM rather than rebuilding the branch — a panel that keeps its key
+   * keeps its scroll position and, in the 3-D view, its camera.
    */
-  const renderColumn = (column: Column): ReactNode => {
-    const sizes = column.slots.map((slot) => slot.size);
+  const renderNode = (node: LayoutNode, onlyPane: boolean): ReactNode => {
+    if (node.kind === 'pane') {
+      const choice = choiceOf(node, onlyPane);
+      return (
+        <Placed
+          key={node.key}
+          slotKey={node.key}
+          placement={placement}
+          // The stub says what went across, so it wants the panel's plain name —
+          // not the phrase `nodeName` builds to label a divider with.
+          title={node.panel === undefined ? BLANK_PANE_TITLE : PANEL_TITLES[node.panel]}
+        >
+          {node.panel === undefined ? <BlankPanel choice={choice} /> : renderPanel(node, choice)}
+        </Placed>
+      );
+    }
+
+    const across = node.direction === 'row';
+    const tracks = `minmax(0, ${node.ratio}fr) ${SPLITTER_PX}px minmax(0, ${1 - node.ratio}fr)`;
     return (
       <div
-        key={column.key}
-        className="column"
-        style={{ gridTemplateRows: trackTemplate(sizes, SPLITTER_PX) }}
+        key={node.key}
+        className={`split split-${node.direction}`}
+        style={across ? { gridTemplateColumns: tracks } : { gridTemplateRows: tracks }}
       >
-        {column.slots.flatMap((slot, index) => {
-          const panel = (
-            <Placed key={slot.key} slotKey={slot.key} panel={slot.panel} placement={placement}>
-              {renderPanel(slot, choiceOf(slot))}
-            </Placed>
-          );
-          if (index === 0) {
-            return [panel];
-          }
-          const above = column.slots[index - 1];
-          return [
-            <Splitter
-              key={`divider-${slot.key}`}
-              orientation="horizontal"
-              label={
-                above === undefined
-                  ? 'Resize this panel'
-                  : `Resize the ${PANEL_TITLES[above.panel]} panel`
-              }
-              valueNow={share(sizes, index - 1)}
-              onResize={(delta) =>
-                setWorkspace((current) => resizeSlots(current, column.key, index - 1, delta))
-              }
-            />,
-            panel,
-          ];
-        })}
+        {renderNode(node.first, false)}
+        <Splitter
+          // The divider runs across the direction it moves in, which is the easy
+          // thing to get backwards: side-by-side panels are parted by an upright
+          // bar, and `aria-orientation` names the bar.
+          orientation={across ? 'vertical' : 'horizontal'}
+          label={`Resize ${nodeName(node.first)}`}
+          valueNow={node.ratio}
+          onResize={(delta) => setWorkspace((current) => resizeSplit(current, node.key, delta))}
+        />
+        {renderNode(node.second, false)}
       </div>
     );
   };
+
   return (
     <div className="app">
       <header className="app-bar">
@@ -1133,68 +1140,7 @@ export function App() {
         </div>
       ) : null}
 
-      {isEmpty(workspace) ? (
-        /* Closing the last panel must not be a one-way door. The workspace is
-          the whole window, so an empty one is the only place this can be said. */
-        <div className="workspace workspace-empty">
-          <p className="hint">No panels are open.</p>
-          <label className="inline hint">
-            Open a panel
-            <select
-              value=""
-              aria-label="Open a panel"
-              onChange={(event) =>
-                setWorkspace((current) => addFirstPanel(current, event.target.value as PanelId))
-              }
-            >
-              <option value="" disabled>
-                Choose…
-              </option>
-              {PANELS.map((id) => (
-                <option key={id} value={id}>
-                  {PANEL_TITLES[id]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      ) : (
-        <div
-          className="workspace"
-          style={{
-            gridTemplateColumns: trackTemplate(
-              workspace.columns.map((column) => column.size),
-              SPLITTER_PX,
-            ),
-          }}
-        >
-          {workspace.columns.flatMap((column, index) => {
-            if (index === 0) {
-              return [renderColumn(column)];
-            }
-            const left = workspace.columns[index - 1];
-            return [
-              <Splitter
-                key={`column-divider-${column.key}`}
-                orientation="vertical"
-                label={
-                  left === undefined
-                    ? 'Resize this column'
-                    : `Resize the column holding ${PANEL_TITLES[left.slots[0]?.panel ?? 'source']}`
-                }
-                valueNow={share(
-                  workspace.columns.map((each) => each.size),
-                  index - 1,
-                )}
-                onResize={(delta) =>
-                  setWorkspace((current) => resizeColumns(current, index - 1, delta))
-                }
-              />,
-              renderColumn(column),
-            ];
-          })}
-        </div>
-      )}
+      <div className="workspace">{renderNode(workspace.root, workspace.root.kind === 'pane')}</div>
 
       {secondary ? (
         <SecondaryWindow
@@ -1202,7 +1148,7 @@ export function App() {
           title={`Isaac — ${system.name}`}
           onClose={forgetSecondary}
         >
-          {slotsInOrder(workspace).every((slot) => detached[slot.key] !== true) ? (
+          {panesInOrder(workspace).every((found) => detached[found.key] !== true) ? (
             <p className="hint secondary-empty">
               Send panels here with the ↗ button in each panel's header.
             </p>
@@ -1229,6 +1175,30 @@ export function App() {
  * the pupil it is supposed to define. The exit pupil is scaled by the same
  * fraction, since it is the image of the same aperture.
  */
+/**
+ * What to call a node in a divider's label.
+ *
+ * A divider parts two *subtrees*, not two panels, so naming it after one panel
+ * would be a lie the moment either side is split again. A leaf is named; a
+ * branch says how many panels are on that side of the line.
+ */
+function nodeName(node: LayoutNode): string {
+  if (node.kind === 'pane') {
+    return node.panel === undefined ? BLANK_PANE_TITLE : `the ${PANEL_TITLES[node.panel]} panel`;
+  }
+  let leaves = 0;
+  const count = (child: LayoutNode): void => {
+    if (child.kind === 'pane') {
+      leaves += 1;
+      return;
+    }
+    count(child.first);
+    count(child.second);
+  };
+  count(node);
+  return `these ${leaves} panels`;
+}
+
 function buildFirstOrderOverlay(
   firstOrder: Result<FirstOrder>,
   rays: Result<FirstOrderRays> | undefined,

@@ -282,7 +282,17 @@ body {
   overflow: hidden;
 }
 
-.column {
+/*
+ * One branch of the layout tree: two children with a divider between them, as
+ * three grid tracks. Which axis they run along is the only difference, so both
+ * directions share everything else — and the tracks themselves come from the
+ * node's ratio, written inline, because that is the one number a split has.
+ *
+ * `min-width`/`min-height: 0` at every level, because a grid item's automatic
+ * minimum is its content: without them a wide table deep in the tree would push
+ * its way out through every ancestor and take the window with it.
+ */
+.split {
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -1386,17 +1396,53 @@ input.coefficient {
   border-color: var(--border-strong);
 }
 
-.panel-duplicate {
-  padding: 1px 6px;
-  line-height: 1.2;
+/*
+ * The two split buttons. A drawn rectangle with a rule through it rather than a
+ * glyph: the picture says which way the pane divides without needing a word for
+ * the axis, and "horizontal split" is exactly the word that means opposite
+ * things to different people.
+ */
+.panel-split {
+  padding: 1px 4px;
+  line-height: 0;
   color: var(--text-muted);
   background: transparent;
   border-color: transparent;
 }
 
-.panel-duplicate:hover {
+.panel-split:hover {
   color: var(--text-primary);
   border-color: var(--border-strong);
+}
+
+.panel-split svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+}
+
+/* The new half is the one that opens empty, so it is the half drawn faintly. */
+.panel-split svg line {
+  stroke-width: 1.25;
+}
+
+/* ---------- A pane with nothing in it yet ---------- */
+
+.blank-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+}
+
+.blank-pane-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 /*
@@ -1431,19 +1477,6 @@ input.coefficient {
 .panel-close:hover > span,
 .panel-close:focus-visible > span {
   color: rgba(0, 0, 0, 0.62);
-}
-
-/*
-   The answer to closing the last panel. The workspace is the whole window, so
-   an empty one is the only place left to say that panels can be opened again --
-   a close button with no way back is a trap, not a feature.
-*/
-.workspace-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
 }
 
 /*

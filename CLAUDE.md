@@ -565,36 +565,68 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   size. Panel headers **wrap rather than clip**, because a header is the one part of a panel that
   does not scroll, so in a narrow pane its controls would be unreachable.
 
-- **Panels tile the window, and the dividers between them are draggable.** `lib/split-sizes.ts` holds
-  the sizes as `fr` weights — not pixels, because the workspace is exactly the height of the window,
-  so what a divider does is *move space between two neighbours* rather than make one bigger, and
-  fractions survive a window resize with the proportions the user chose. `resizeTracks` touches only
-  the pair either side of the divider, so dragging one never shuffles panels the user was not
-  touching, and clamps both so neither can be squeezed away — a panel dragged to nothing cannot be
-  dragged back, because there is no edge left to grab. Tracks are `minmax(0, Nfr)`: without the 0 a
-  grid item's automatic minimum is its content, and a wide table would push the column past the
-  window.
+- **The layout is a binary space partition, and that is the whole of it.** `lib/workspace.ts` holds a
+  tree in which a node is either a **pane** — one panel on screen, or a blank one waiting to be told
+  what to show — or a **split** of exactly two nodes, in a `row` (side by side) or a `column`
+  (stacked). Every panel is a leaf, and the leaves tile the window exactly: nothing overlaps, nothing
+  hides behind anything, and there are no gaps.
+
+  It replaced a fixed two-level arrangement of columns holding slots, which could express only one
+  shape — stacks side by side, with no way to add a column and no way to put two panels beside each
+  other inside one. The tree has no such ceiling and is *less* code, not more.
+
+  The one rule buys three properties, and each is a thing the old arrangement got wrong or could not do:
+
+  - **Splitting is local.** `splitPane` replaces one pane with a split of that pane and a new blank
+    one; nothing outside it moves, and the untouched half of the tree comes back as the very same
+    object, so React re-renders only the branch that moved. The pane keeps its key, so it keeps its
+    scroll position and, in the 3-D view, its camera.
+  - **Closing gives the space to the sibling and to nothing else.** `closePane` replaces the split
+    above the pane with its other child, which inherits what the pair held together. Exactly one
+    panel on screen changes size. The old arrangement re-divided the whole column's weights, so
+    closing one panel nudged every panel in that column at once and left the user hunting for what
+    moved.
+  - **A divider is a split's own `ratio`**, one number between 0 and 1. "The two together are exactly
+    the parent" is therefore not an invariant anyone maintains — it is the only thing the type can
+    say. A pair of weights could drift apart; a ratio cannot.
+
+  **The root always exists.** Closing the last pane *blanks* it rather than removing it, so the
+  workspace is never a dead end and there is no separate empty-workspace state to write — a blank pane
+  already offers the panel list. Its close button is hidden, because closing it would do nothing and a
+  control that does nothing is a puzzle.
+
+  **A blank pane is the far half of every split**, never a copy of the panel just split. A split has
+  to put something in its second child, and a blank is the honest something: a duplicate would be a
+  guess, and half of them would be replaced immediately. Duplicating a panel is still one gesture —
+  split, then pick the same panel — and it is chosen rather than assumed.
 
   `components/Splitter.tsx` is the divider — a `role="separator"` with pointer capture (not a window
   listener: the drag leaves the element immediately, and capture also works in the second window,
-  where a listener on the opener's `window` would not) and arrow-key support. It is a **grid track of
-  its own**, so it has a width to grab that does not depend on either neighbour. This is the answer
-  to floating windows: nothing overlaps, nothing hides behind anything, and the pieces always tile
-  the window exactly. **Sizes are view state in `App`** — how big someone likes the layout panel is
-  not a fact about the lens.
+  where a listener on the opener's `window` would not) and arrow-key support. It measures its
+  **parent** to turn pixels into a fraction, and its parent is the split's own grid, so the fraction
+  it reports is already the ratio's units. It is a **grid track of its own**, so it has a width to
+  grab that does not depend on either neighbour. Tracks are `minmax(0, Nfr)`: without the 0 a grid
+  item's automatic minimum is its content, and a wide table would push its way out through every
+  ancestor and take the window with it.
 
   The second window scrolls *at `.secondary-root`*, not at its body: that document is served the same
   stylesheet, so it inherits `body { overflow: hidden }`, which is right here and would silently clip
   it. Its panels keep their natural height, since it holds whatever has been sent to it in no fixed
   number.
 
-- **Any slot can be turned over to any panel**, chosen from the dropdown its header title *is*
+- **Any pane can be turned over to any panel**, chosen from the dropdown its header title *is*
   (`lib/panels.ts` names the panels, `lib/workspace.ts` arranges them, `Panel`'s `PanelChooser` offers
   them). The arrangement is data rather than the shape of the JSX — `App`'s `renderPanel` writes each
-  panel once and `renderColumn` renders it wherever its slots happen to be — which is the whole of what
-  makes the dropdown possible. Blender is the reference for tiling without floating windows, but *not*
-  for how you rearrange it: splitting by dragging a corner is a gesture you enter by accident and
-  cannot discover on purpose, so every operation here is typed and named.
+  panel once and `renderNode` walks the tree rendering it wherever its panes happen to be — which is
+  the whole of what makes the dropdown possible. Blender is the reference for tiling without floating
+  windows, but *not* for how you rearrange it: splitting by dragging a corner is a gesture you enter
+  by accident and cannot discover on purpose, so every operation here is typed and named.
+
+  **The split buttons are drawn, not lettered.** A rectangle with an upright rule for *split right*, a
+  flat one for *split down*. "Horizontal split" means opposite things to different people — the cut,
+  or the arrangement — and a picture cannot be read backwards. The code names the *arrangement* for
+  the same reason (`row`/`column`), never the cut; `aria-orientation` on the divider names the bar,
+  which runs across the direction it moves in and is the easy thing to get wrong.
 
   **The same panel may be open more than once, and the copies are indistinguishable.** That is not a
   tolerated duplicate, it is the feature: a second Source object panel in the second window saves
@@ -604,30 +636,20 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   immutable model. This is also why a panel is *replaced* rather than exchanged when the dropdown
   changes: with duplicates allowed there is no panel to rescue from being displaced.
 
-  **A slot is not a panel, and the distinction is load-bearing.** A `PanelId` no longer identifies
-  anything on screen once the same panel can be open twice, so `Slot.key` does: React keys, which copy
+  **A pane is not a panel, and the distinction is load-bearing.** A `PanelId` no longer identifies
+  anything on screen once the same panel can be open twice, so `Pane.key` does: React keys, which copy
   was sent to the second window (`Placement.detached`, `Placement.order`), and which copy was closed
-  all name the slot, while everything about *what is shown* names the panel. Getting these the wrong
+  all name the pane, while everything about *what is shown* names the panel. Getting these the wrong
   way round would detach both copies of a panel at once, or neither.
 
-  **Closing is a red disc in the header, the Mac's own**, showing its × on hover. A close that can
-  strand the user is a trap, so the reachable states are closed carefully: closing the last slot of a
-  column drops the column rather than leaving a strip that can never be filled, and closing the last
-  panel of all leaves an empty workspace that offers the panel list back. The `+` beside it opens a
-  second copy below, taking half the height of the panel it came from so no neighbour moves.
+  **Closing is a red disc in the header, the Mac's own**, showing its × on hover. `nextKey` lives on
+  the workspace so every operation is a pure function of it, which is what lets the tests check the
+  operations rather than a side effect.
 
-  Sizes moved *into* the arrangement (`Workspace` holds `fr` weights on every slot and column) because
-  opening and closing panels means the sizes and the panels can no longer be separate lists kept in
-  step by hand — a closed panel has to take its weight with it. Nothing needs redistributing when one
-  goes: the weights that remain still divide the same space. `nextKey` lives on the workspace so every
-  operation is a pure function of it, which is what lets the tests check the operations rather than a
-  side effect.
-
-  Two smaller things follow. **Dividers are keyed by the slot beneath them and panels by their slot
-  key**, so opening or closing a panel moves the surviving DOM rather than rebuilding the column, and a
-  divider's label names whatever is above it *now*. And the second window's stacking order is read from
-  the **live arrangement**, not a fixed list: it was documented as "the order they appear in on one
-  screen", which quietly stopped being true the moment slots could be rearranged.
+  One thing to keep straight: a divider parts two **subtrees**, not two panels, so `nodeName` labels
+  it with a panel's name only when that side is a leaf and says how many panels are on that side
+  otherwise. Naming it after one panel would be a lie the moment either side is split again. The
+  second window's stacking order is likewise read from the **live arrangement**, not a fixed list.
 
   The chooser is a **native `select`** — keyboard-navigable and type-ahead searchable for free, drawn
   where the platform draws menus, which matters when a panel has been dragged too small to hang one of

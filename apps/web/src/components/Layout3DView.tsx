@@ -228,7 +228,7 @@ export function Layout3DView({
   defaultSemiDiameter,
   highlightedSurface,
   elementColors,
-  endColors,
+  surfaceColors,
   resetSignal,
 }: {
   system: OpticalSystem;
@@ -238,8 +238,12 @@ export function Layout3DView({
   highlightedSurface?: number;
   /** A color per surface for colored elements, exactly as the 2-D view takes it. */
   elementColors?: ReadonlyMap<number, string>;
-  /** Color for the object and image planes, keyed by surface index. */
-  endColors?: ReadonlyMap<number, string>;
+  /**
+   * Color for whatever is drawn as a single surface rather than as a body: the
+   * object and image planes, and a mirror the user has given a color to. Keyed
+   * by surface index, exactly as the 2-D view takes it.
+   */
+  surfaceColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
 }) {
@@ -343,15 +347,18 @@ export function Layout3DView({
                 color={
                   shell.surfaceIndex === highlightedSurface
                     ? colors.highlight
-                    : shell.isMirror
-                      ? colors.mirror
-                      : shell.isStop
-                        ? colors.stop
-                        : // The ends carry a color of their own, chosen in the
-                          // Element column. Safe to read for every shell: a
-                          // glass body's faces are consumed into the body and
-                          // never appear here, so only the ends can match.
-                          (endColors?.get(shell.surfaceIndex) ?? colors.surface)
+                    : // A color chosen in the Element column wins, which is what
+                      // lets the two mirrors of a Cassegrain be told apart. Read
+                      // before the mirror and stop defaults rather than after, or
+                      // a mirror could never be given one. Safe to read for every
+                      // shell: a glass body's faces are consumed into the body and
+                      // never appear here, so nothing else can match.
+                      (surfaceColors?.get(shell.surfaceIndex) ??
+                      (shell.isMirror
+                        ? colors.mirror
+                        : shell.isStop
+                          ? colors.stop
+                          : colors.surface))
                 }
                 transparent={!shell.isMirror}
                 opacity={

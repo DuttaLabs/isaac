@@ -296,12 +296,42 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   left in the walk it would look like the middle of a piece of glass — but it is still *covered* by
   the span, because a tilted rear face is written exactly that way.
 
+  **A mirror in air is an element too** (`kind: 'MIRROR'`), and comes out of the same walk. It is one
+  surface, one row, no gaps: there is no glass in it and no body to fill, so both views draw it as the
+  surface it is. What decides it is the medium — a reflecting surface with air across it is a mirror
+  on its own, and one with *glass* across it is a **Mangin mirror**, the silvered back of a solid,
+  which goes on being part of the run it reflects in. One test does for both sides, because
+  `OpticalSystem` refuses a mirror that changes medium: the medium after it *is* the medium before it.
+
+  **Lenses and mirrors are numbered apart** — L1, L2 … and M1, M2 … — so dropping a fold mirror
+  between two lenses does not renumber the lenses. `ordinal` is therefore a position among elements
+  *of that kind*, not in the whole list.
+
 - **Every piece of glass has a color from the start**, cycled through `ELEMENT_PALETTE` by its
   position in the whole system so no two open alike. A design therefore arrives with its elements
   already told apart, which is the point of coloring them; the swatch always shows a real color rather
   than a placeholder standing in for one. A user's choice overrides the default and can be dropped
   again. **A crossed element keeps the fault color regardless**, in both views: the fill is the only
   thing saying the solid cannot be made.
+
+  **A mirror's default color is the theme's own `--mirror`**, resolved through `useThemeColors()` and
+  passed in, rather than a palette entry. Three things follow, and all three are the point:
+
+  - A mirror is not glass and should no more wear a glass color than the ends do — and unlike the
+    ends it is already drawn in a token that *moves between themes* (`#5f7180` light, `#9fb4c4`
+    dark), so a fixed hex here would freeze it to one of them.
+  - **Mirrors take no palette slot.** `colorIndex` counts gaps only, so dropping a fold mirror into a
+    design does not repaint every lens behind it.
+  - An untouched mirror is **absent from `surfaceColorsBySurface`**, so both views fall through to
+    the token and resolve it themselves. Only a *chosen* color goes in the map. Getting this backwards
+    would swap a color that follows the theme for one frozen to whichever theme was on when it was
+    read.
+
+  That map is the one both views take for anything drawn as a **single surface rather than a body**:
+  the two ends, and any colored mirror. It stays separate from `elementColorsBySurface`, which is read
+  by body — the 2-D view strokes a profile for every surface including the faces of a lens, so one
+  combined map would quietly paint every lens face in its body's color. In the 3-D view it is read
+  *before* the mirror and stop defaults, not after, or a mirror could never be given a color at all.
 
 - **Element names and colors are view state**, in `App` beside the field checkboxes and the filename,
   keyed by the **id of the front surface** — of the element for a name, of the gap for a color — so

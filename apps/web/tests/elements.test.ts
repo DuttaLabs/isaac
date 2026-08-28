@@ -3,6 +3,8 @@ import test from 'node:test';
 import { AIR, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
 import {
   colorsInUse,
+  hasChosenMirrorColor,
+  mirrorColor,
   defaultGapColor,
   elementAt,
   elementColorsBySurface,
@@ -13,7 +15,7 @@ import {
   hasChosenColor,
   hasChosenEndColor,
   endColor,
-  endColorsBySurface,
+  surfaceColorsBySurface,
   systemEnds,
   ELEMENT_PALETTE,
   IMAGE_END_COLOR,
@@ -106,21 +108,19 @@ test('air gaps and bare surfaces belong to no element', () => {
   assert.equal(elementAt(elements, 4), undefined); // the image surface
 });
 
-test('a mirror in air is not an element', () => {
-  // Its material is the medium before it, which is air; nothing solid here.
-  const elements = findElements(
-    system(
-      new Surface({
-        id: 'm',
-        type: 'STANDARD',
-        radius: -200,
-        thickness: -90,
-        semiDiameter: 20,
-        reflective: true,
-      }),
-    ),
-  );
-  assert.deepStrictEqual(elements, []);
+const mirrorFace = (id: string, radius: number, thickness: number): Surface =>
+  new Surface({ id, type: 'STANDARD', radius, thickness, semiDiameter: 20, reflective: true });
+
+test('a mirror in air is an element of its own, one surface wide', () => {
+  const [element, ...rest] = findElements(system(mirrorFace('m', -200, -90)));
+  assert.equal(rest.length, 0);
+  assert.equal(element?.kind, 'MIRROR');
+  // One row, and no glass in it: there is no body to fill, so no gaps.
+  assert.equal(element?.firstIndex, 1);
+  assert.equal(element?.lastIndex, 1);
+  assert.equal(elementRowSpan(element!), 1);
+  assert.deepEqual(element?.gaps, []);
+  assert.equal(elementLabel(element!, {}), 'M1');
 });
 
 test('a transform between the faces does not break the element in two', () => {
@@ -304,7 +304,7 @@ test('a chosen end color wins, and says it was chosen', () => {
 
 test('end colors are keyed by surface index, for the views', () => {
   const lens = system(glassFace('a', 100, 6), airFace('b', -80, 90));
-  const colors = endColorsBySurface(lens, {});
+  const colors = surfaceColorsBySurface(lens, {});
   assert.deepEqual(
     [...colors.keys()].sort((x, y) => x - y),
     [0, 3],
@@ -401,4 +401,99 @@ test('an element deleted out of the middle renumbers the ones behind it', () => 
     ]),
     [['b1', 1, 0]],
   );
+});
+
+test('lenses and mirrors are numbered apart', () => {
+  const elements = findElements(
+    system(
+      glassFace('l1a', 100, 6),
+      airFace('l1b', -100, 40),
+      mirrorFace('m1', -300, -40),
+      glassFace('l2a', -80, -6, F2),
+      airFace('l2b', 80, -40),
+      mirrorFace('m2', 300, 60),
+    ),
+  );
+  assert.deepEqual(
+    elements.map((element) => [element.kind, elementLabel(element, {})]),
+    [
+      ['LENS', 'L1'],
+      ['MIRROR', 'M1'],
+      ['LENS', 'L2'],
+      ['MIRROR', 'M2'],
+    ],
+  );
+});
+
+test('a mirror inside glass stays part of the solid it is the back of', () => {
+  // A Mangin mirror: glass across the front gap, a silvered rear face, and the
+  // light back out through the same glass. One piece to hold, so one element.
+  const mangin = system(
+    glassFace('front', 100, 8),
+    new Surface({
+      id: 'back',
+      type: 'STANDARD',
+      radius: -120,
+      thickness: -8,
+      semiDiameter: 20,
+      reflective: true,
+      material: N_BK7,
+    }),
+    airFace('out', 100, -60),
+  );
+  const [element, ...rest] = findElements(mangin);
+  assert.equal(rest.length, 0);
+  assert.equal(element?.kind, 'LENS');
+  assert.equal(elementLabel(element!, {}), 'L1');
+});
+
+test('a mirror takes no palette slot, so adding one repaints no lens', () => {
+  const withoutMirror = system(glassFace('a', 100, 6), airFace('b', -80, 90));
+  const withMirror = system(
+    mirrorFace('m', -300, 40),
+    glassFace('a', 100, 6),
+    airFace('b', -80, 90),
+  );
+  const colorOf = (found: ReturnType<typeof findElements>): string | undefined => {
+    const lens = found.find((element) => element.kind === 'LENS');
+    return lens?.gaps[0] === undefined ? undefined : defaultGapColor(lens.gaps[0]);
+  };
+  assert.equal(colorOf(findElements(withMirror)), colorOf(findElements(withoutMirror)));
+  assert.equal(colorOf(findElements(withoutMirror)), ELEMENT_PALETTE[0]);
+});
+
+test("a mirror's default color is the theme's, and only a chosen one reaches the views", () => {
+  const folded = system(mirrorFace('m', -300, 40), glassFace('a', 100, 6), airFace('b', -80, 90));
+  const [mirror] = findElements(folded);
+  assert.equal(mirror?.kind, 'MIRROR');
+  assert.equal(mirrorColor(mirror!, {}, '#9fb4c4'), '#9fb4c4');
+  assert.equal(hasChosenMirrorColor(mirror!, {}), false);
+
+  // Untouched, it is absent from the map: the views resolve the theme token
+  // themselves, and a value here would freeze it to one theme.
+  assert.equal(surfaceColorsBySurface(folded, {}).has(1), false);
+
+  const styles = { [mirror!.key]: { color: '#ff8800' } };
+  assert.equal(mirrorColor(mirror!, styles, '#9fb4c4'), '#ff8800');
+  assert.equal(hasChosenMirrorColor(mirror!, styles), true);
+  assert.equal(surfaceColorsBySurface(folded, styles).get(1), '#ff8800');
+});
+
+test("a mirror's key can never be claimed by a gap or by an end", () => {
+  const folded = system(mirrorFace('m', -300, 40), glassFace('a', 100, 6), airFace('b', -80, 90));
+  const elements = findElements(folded);
+  const mirror = elements.find((element) => element.kind === 'MIRROR')!;
+  const gapKeys = elements.flatMap((element) => element.gaps.map((gap) => gap.key));
+  const endKeys = systemEnds(folded).map((end) => end.key);
+  // A gap's key is the id of a surface with glass after it, and a bare mirror has
+  // air after it; the ends are the object and image planes, which cannot reflect.
+  assert.ok(!gapKeys.includes(mirror.key));
+  assert.ok(!endKeys.includes(mirror.key));
+});
+
+test('a colored mirror is offered for reuse, but only with a theme to read', () => {
+  const folded = system(mirrorFace('m', -300, 40), glassFace('a', 100, 6), airFace('b', -80, 90));
+  const elements = findElements(folded);
+  assert.ok(colorsInUse(elements, {}, [], '#9fb4c4').includes('#9fb4c4'));
+  assert.ok(!colorsInUse(elements, {}, []).includes('#9fb4c4'));
 });

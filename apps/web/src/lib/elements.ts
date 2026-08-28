@@ -20,10 +20,22 @@ import type { Material, OpticalSystem } from '@isaac/optical-core';
  * Nothing here is stored on `OpticalSystem`. Elements are derived on demand, so
  * they cannot fall out of step with the surfaces they are made of.
  */
+export type ElementKind = 'LENS' | 'MIRROR';
+
 export interface OpticalElement {
-  /** Surface index of the front face. */
+  /**
+   * What this element is made of. A `LENS` is a run of glass between two faces;
+   * a `MIRROR` is one reflecting surface with air on both sides of it, which is
+   * a thing you can pick up and mount even though no light passes through it.
+   *
+   * A mirror *inside* glass is not this: it is the back of a solid, so it stays
+   * part of the run it reflects in — a Mangin mirror is one piece of glass with
+   * a coating on its rear face, and both views already draw it as one body.
+   */
+  kind: ElementKind;
+  /** Surface index of the front face. For a mirror, the mirror itself. */
   firstIndex: number;
-  /** Surface index of the back face. */
+  /** Surface index of the back face. For a mirror, the same surface again. */
   lastIndex: number;
   /**
    * A stable name for this element across edits: the id of its front surface.
@@ -31,13 +43,21 @@ export interface OpticalElement {
    * the user chose stays with the element it was chosen for.
    */
   key: string;
-  /** 1-based position in the system, which is the number in the default `L#`. */
+  /**
+   * 1-based position among the elements *of its kind*, which is the number in
+   * the default name: lenses count L1, L2, … and mirrors M1, M2, … separately,
+   * because they are separately what a designer counts.
+   */
   ordinal: number;
   /**
    * The separate pieces of glass inside this element, front to back. A singlet
    * has one; a cemented doublet has two, because the two halves are different
    * glasses even though they are one thing to hold. Both views draw one body per
    * gap, so this is also the list of things that can carry a color.
+   *
+   * **A mirror has none.** There is no glass in it and no body to fill: both
+   * views draw it as the surface it is, so its one color is the element's own
+   * rather than a gap's — see {@link mirrorColor}.
    */
   gaps: ElementGap[];
 }
@@ -68,6 +88,12 @@ export function isGlass(material: Material, wavelengthNm: number): boolean {
  * *inside* an element's span — a tilted rear face is written exactly that way —
  * and the span covers it, because the rows in between belong to the element even
  * though they are not faces of it.
+ *
+ * Two kinds come out of the same walk. A run of glass is a lens. A reflecting
+ * surface with **no glass across it** is a mirror, and an element in its own
+ * right: one surface, one row, one thing to mount. A reflecting surface *with*
+ * glass across it is not — that is a Mangin mirror, the silvered back of a
+ * solid, and it goes on being part of the run it sits in.
  */
 export function findElements(system: OpticalSystem): OpticalElement[] {
   const wavelengthNm = system.primaryWavelengthNm;
@@ -82,12 +108,32 @@ export function findElements(system: OpticalSystem): OpticalElement[] {
 
   const elements: OpticalElement[] = [];
   // Counted across the whole system, not per element, so no two pieces of glass
-  // anywhere in the design open with the same default color.
+  // anywhere in the design open with the same default color. Mirrors are left
+  // out of it deliberately: they wear the theme's mirror color rather than a
+  // palette entry, so adding one does not repaint every lens behind it.
   let colorIndex = 0;
+  // Lenses and mirrors are numbered apart, so a design reads L1 M1 L2 rather
+  // than having its lenses renumbered by a fold mirror dropped between them.
+  let lenses = 0;
+  let mirrors = 0;
   let position = 0;
   while (position < faces.length - 1) {
     const firstIndex = faces[position]!;
     if (!isGlass(system.surfaceAt(firstIndex).material, wavelengthNm)) {
+      // Air on the far side, and — because the model refuses a mirror that
+      // changes medium — air on the near side too, so one test is both. A
+      // reflecting surface here is a mirror on its own, not the back of a solid.
+      if (system.surfaceAt(firstIndex).reflective) {
+        mirrors += 1;
+        elements.push({
+          kind: 'MIRROR',
+          firstIndex,
+          lastIndex: firstIndex,
+          key: system.surfaceAt(firstIndex).id,
+          ordinal: mirrors,
+          gaps: [],
+        });
+      }
       position += 1;
       continue;
     }
@@ -112,11 +158,13 @@ export function findElements(system: OpticalSystem): OpticalElement[] {
       isGlass(system.surfaceAt(faces[end]!).material, wavelengthNm)
     );
 
+    lenses += 1;
     elements.push({
+      kind: 'LENS',
       firstIndex,
       lastIndex: faces[end]!,
       key: system.surfaceAt(firstIndex).id,
-      ordinal: elements.length + 1,
+      ordinal: lenses,
       gaps,
     });
     // The back face of one element can be the front of the next only if the
@@ -157,10 +205,12 @@ export interface ElementStyle {
 
 export type ElementStyles = Readonly<Record<string, ElementStyle>>;
 
-/** `L1`, `L2`, … unless the user has renamed it. */
+/** `L1`, `L2`, … for lenses and `M1`, `M2`, … for mirrors, unless renamed. */
 export function elementLabel(element: OpticalElement, styles: ElementStyles): string {
   const chosen = styles[element.key]?.label?.trim();
-  return chosen !== undefined && chosen !== '' ? chosen : `L${element.ordinal}`;
+  return chosen !== undefined && chosen !== ''
+    ? chosen
+    : `${element.kind === 'MIRROR' ? 'M' : 'L'}${element.ordinal}`;
 }
 
 /**
@@ -184,6 +234,30 @@ export function defaultGapColor(gap: ElementGap): string {
 /** True when the user has overridden this gap's color. */
 export function hasChosenColor(gap: ElementGap, styles: ElementStyles): boolean {
   return styles[gap.key]?.color !== undefined;
+}
+
+/**
+ * The color one mirror is drawn in.
+ *
+ * Its default is **the theme's own `--mirror`**, passed in resolved, not a fixed
+ * hex from the palette. Two reasons, and they point the same way. A mirror is
+ * not glass, so it should no more wear a glass color than the ends do — and
+ * unlike the ends it is already drawn in a token that *moves between themes*
+ * (`#5f7180` light, `#9fb4c4` dark), so pinning a hex here would freeze it to
+ * one of them. The swatch therefore shows exactly what is on screen, in either
+ * theme, which is the whole point of the swatch.
+ */
+export function mirrorColor(
+  element: OpticalElement,
+  styles: ElementStyles,
+  themeMirror: string,
+): string {
+  return styles[element.key]?.color ?? themeMirror;
+}
+
+/** True when the user has overridden a mirror's color. */
+export function hasChosenMirrorColor(element: OpticalElement, styles: ElementStyles): boolean {
+  return styles[element.key]?.color !== undefined;
 }
 
 /**
@@ -269,19 +343,33 @@ export function hasChosenEndColor(end: SystemEnd, styles: ElementStyles): boolea
 }
 
 /**
- * The color of each end, keyed by its surface index — what both layout views
- * take. Kept apart from {@link elementColorsBySurface} rather than merged into
- * it: that map is read by *body*, and the 2-D view strokes a profile for every
+ * The color of everything drawn as a *single surface* rather than as a body:
+ * the two ends, and any mirror the user has given a color to. Keyed by surface
+ * index, and what both layout views take.
+ *
+ * Kept apart from {@link elementColorsBySurface} rather than merged into it:
+ * that map is read by *body*, and the 2-D view strokes a profile for every
  * surface including the faces of a lens, so one combined map would quietly paint
  * every lens face in its body's color too.
+ *
+ * A mirror appears **only once its color has been chosen**. Its default is a
+ * theme token, and the views already resolve that token themselves — putting a
+ * value here for an untouched mirror would swap a color that follows the theme
+ * for one frozen to whichever theme was on when it was read.
  */
-export function endColorsBySurface(
+export function surfaceColorsBySurface(
   system: OpticalSystem,
   styles: ElementStyles,
 ): ReadonlyMap<number, string> {
   const colors = new Map<number, string>();
   for (const end of systemEnds(system)) {
     colors.set(end.index, endColor(end, styles));
+  }
+  for (const element of findElements(system)) {
+    const chosen = element.kind === 'MIRROR' ? styles[element.key]?.color : undefined;
+    if (chosen !== undefined) {
+      colors.set(element.firstIndex, chosen);
+    }
   }
   return colors;
 }
@@ -299,6 +387,7 @@ export function colorsInUse(
   elements: readonly OpticalElement[],
   styles: ElementStyles,
   ends: readonly SystemEnd[] = [],
+  themeMirror?: string,
 ): string[] {
   const seen = new Set<string>();
   const used: string[] = [];
@@ -311,6 +400,16 @@ export function colorsInUse(
     used.push(key);
   };
   for (const element of elements) {
+    if (element.kind === 'MIRROR') {
+      // Only when the theme's value is to hand: without it there is no color to
+      // name, and offering a mirror's default under some other theme's hex would
+      // be offering a color nothing on screen is drawn in.
+      const color = themeMirror ?? styles[element.key]?.color;
+      if (color !== undefined) {
+        add(mirrorColor(element, styles, color));
+      }
+      continue;
+    }
     for (const gap of element.gaps) {
       add(gapColor(gap, styles));
     }

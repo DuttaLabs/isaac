@@ -48,9 +48,12 @@ import {
   gapColor,
   hasChosenColor,
   hasChosenEndColor,
+  hasChosenMirrorColor,
+  mirrorColor,
   systemEnds,
   type ElementStyles,
 } from '../lib/elements.ts';
+import { useThemeColors } from '../lib/theme-colors.ts';
 
 /**
  * One thing in the Element column that can be given a color — a piece of glass
@@ -107,6 +110,9 @@ export function LensDataEditor({
   const [menu, setMenu] = useState<{ at: MenuPoint; index: number } | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
+  // A mirror's default color is the theme's own, resolved, so its swatch shows
+  // what is actually drawn in whichever theme is on.
+  const { mirror: themeMirror } = useThemeColors();
 
   /*
    * Where the frozen Element column has to sit: the rendered width of the
@@ -183,18 +189,28 @@ export function LensDataEditor({
    */
   const colorTargets: ColorTarget[] = [
     ...elements.flatMap((element) =>
-      element.gaps.map((gap) => ({
-        key: gap.key,
-        // A doublet's two halves share the element's name, so the picker says
-        // which half by counting them: `L1 · 1 of 2`.
-        label:
-          element.gaps.length > 1
-            ? `${elementLabel(element, elementStyles)} · ${element.gaps.indexOf(gap) + 1} of ${element.gaps.length}`
-            : elementLabel(element, elementStyles),
-        color: gapColor(gap, elementStyles),
-        defaultColor: defaultGapColor(gap),
-        isDefault: !hasChosenColor(gap, elementStyles),
-      })),
+      element.kind === 'MIRROR'
+        ? [
+            {
+              key: element.key,
+              label: elementLabel(element, elementStyles),
+              color: mirrorColor(element, elementStyles, themeMirror),
+              defaultColor: themeMirror,
+              isDefault: !hasChosenMirrorColor(element, elementStyles),
+            },
+          ]
+        : element.gaps.map((gap) => ({
+            key: gap.key,
+            // A doublet's two halves share the element's name, so the picker says
+            // which half by counting them: `L1 · 1 of 2`.
+            label:
+              element.gaps.length > 1
+                ? `${elementLabel(element, elementStyles)} · ${element.gaps.indexOf(gap) + 1} of ${element.gaps.length}`
+                : elementLabel(element, elementStyles),
+            color: gapColor(gap, elementStyles),
+            defaultColor: defaultGapColor(gap),
+            isDefault: !hasChosenColor(gap, elementStyles),
+          })),
     ),
     ...ends.map((end) => ({
       key: end.key,
@@ -260,32 +276,45 @@ export function LensDataEditor({
       return <td className="element-cell is-empty" />;
     }
     const name = elementLabel(element, elementStyles);
+    const isMirror = element.kind === 'MIRROR';
     return (
       <td className="element-cell" rowSpan={elementRowSpan(element)}>
         <TextCell
           value={name}
           ariaLabel={`Name of element ${name}`}
-          title="What this element is called. A name of your own, or L1, L2, … in order."
+          title={
+            isMirror
+              ? 'What this mirror is called. A name of your own, or M1, M2, … in order.'
+              : 'What this element is called. A name of your own, or L1, L2, … in order.'
+          }
           onCommit={(next) => onElementStyle(element.key, { label: next })}
         />
         {/* One swatch per piece of glass, so the two halves of a cemented
             doublet can be told apart — they are different glasses, and both
-            views already draw them as two bodies. */}
+            views already draw them as two bodies. A mirror has no glass in it
+            and no body to fill, so its one color belongs to the element itself. */}
         <div className="element-swatches">
-          {element.gaps.map((gap, gapIndex) => {
-            const which =
-              element.gaps.length > 1 ? `${name}, glass ${gapIndex + 1}` : `element ${name}`;
-            return (
-              <span key={gap.key}>
-                {swatch(
-                  gap.key,
-                  gapColor(gap, elementStyles),
-                  !hasChosenColor(gap, elementStyles),
-                  which,
-                )}
-              </span>
-            );
-          })}
+          {isMirror
+            ? swatch(
+                element.key,
+                mirrorColor(element, elementStyles, themeMirror),
+                !hasChosenMirrorColor(element, elementStyles),
+                `mirror ${name}`,
+              )
+            : element.gaps.map((gap, gapIndex) => {
+                const which =
+                  element.gaps.length > 1 ? `${name}, glass ${gapIndex + 1}` : `element ${name}`;
+                return (
+                  <span key={gap.key}>
+                    {swatch(
+                      gap.key,
+                      gapColor(gap, elementStyles),
+                      !hasChosenColor(gap, elementStyles),
+                      which,
+                    )}
+                  </span>
+                );
+              })}
         </div>
       </td>
     );
@@ -894,7 +923,7 @@ export function LensDataEditor({
           color={openTarget.color}
           isDefault={openTarget.isDefault}
           defaultColor={openTarget.defaultColor}
-          inUse={colorsInUse(elements, elementStyles, ends)}
+          inUse={colorsInUse(elements, elementStyles, ends, themeMirror)}
           onPick={(color) => onElementStyle(openTarget.key, { color })}
           onReset={() => onElementStyle(openTarget.key, { color: undefined })}
           onClose={() => setColorGap(undefined)}

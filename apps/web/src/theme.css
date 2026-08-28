@@ -1530,6 +1530,21 @@ input.coefficient {
  * table hands it that much however narrow the column is asked to be. Pinning the
  * pixels is what actually makes the column narrow.
  */
+/*
+ * The two ends. Their names are what those surfaces *are* rather than something
+ * chosen, so they are text where an element has an input — sized and spaced to
+ * sit where that input sits, so the column does not jog at the top and bottom of
+ * the table.
+ */
+.element-cell.is-end .end-label {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  padding: 2px 2px 3px;
+}
+
 .element-cell .text-input {
   text-align: center;
   width: 52px;

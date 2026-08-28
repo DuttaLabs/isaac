@@ -203,8 +203,13 @@ export function buildOpticalScene(
   }
 
   const surfaces: SurfaceShellGeometry[] = [];
-  for (let index = 1; index < system.surfaces.length; index += 1) {
+  // From 0, so a finite object plane is drawn like the image plane at the other
+  // end. An object at infinity has no pose to build one on, and no plane either.
+  for (let index = 0; index < system.surfaces.length; index += 1) {
     if (consumed.has(index)) {
+      continue;
+    }
+    if (index === 0 && !Number.isFinite(system.vertexZAt(0))) {
       continue;
     }
     const surface = system.surfaceAt(index);

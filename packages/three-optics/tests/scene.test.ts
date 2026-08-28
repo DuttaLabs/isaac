@@ -266,3 +266,47 @@ test('a revolved profile carries the conic and the aspheric terms', () => {
       1e-12,
   );
 });
+
+/** The same singlet, but with the object a finite distance in front of it. */
+function singletWithFiniteObject(objectDistance: number): OpticalSystem {
+  return new OpticalSystem({
+    name: 'finite',
+    wavelengthsNm: [587.5618],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    fields: [{ objectHeight: 0 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: objectDistance, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 6,
+        semiDiameter: 10,
+        material: N_BK7,
+      }),
+      new Surface({ id: 's2', type: 'STANDARD', radius: -50, thickness: 90, semiDiameter: 10 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+}
+
+test('an object at infinity contributes no shell — there is nowhere to put one', () => {
+  const scene = buildOpticalScene(singlet(), [], { defaultSemiDiameter: 10 });
+  assert.ok(!scene.surfaces.some((shell) => shell.surfaceIndex === 0));
+  scene.dispose();
+});
+
+test('a finite object plane is built, like the image plane at the other end', () => {
+  const scene = buildOpticalScene(singletWithFiniteObject(200), [], { defaultSemiDiameter: 10 });
+  const object = scene.surfaces.find((shell) => shell.surfaceIndex === 0);
+  assert.ok(object !== undefined, 'the object plane should be built');
+  assert.equal(object.isImage, false);
+  assert.equal(object.isMirror, false);
+  // Its geometry sits at the object's own place on the axis, one object
+  // distance behind surface 1, which is at z = 0.
+  const zs = vertices(object.geometry).map(([, , z]) => z);
+  for (const z of zs) {
+    assert.ok(Math.abs(z - -200) < 1e-6, `expected z = -200, got ${z}`);
+  }
+  scene.dispose();
+});

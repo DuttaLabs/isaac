@@ -65,6 +65,7 @@ export function LayoutView({
   defaultSemiDiameter,
   highlightedSurface,
   elementColors,
+  endColors,
   resetSignal,
   firstOrder,
 }: {
@@ -83,6 +84,8 @@ export function LayoutView({
    * same answer or the doublet comes out in two colors.
    */
   elementColors?: ReadonlyMap<number, string>;
+  /** Color for the object and image planes, keyed by surface index. */
+  endColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
   /** The first-order construction to draw over the design, when it is asked for. */
@@ -218,11 +221,11 @@ export function LayoutView({
         // because it is the one surface nothing passes through, and reading it
         // as a lens face makes the whole ray path look wrong.
         const highlighted = profile.surfaceIndex === highlightedSurface;
+        // The two ends carry a color of their own, chosen in the Element column.
         const stroke = highlighted
           ? 'var(--surface-highlight)'
-          : profile.isMirror
-            ? 'var(--mirror)'
-            : 'var(--glass-stroke)';
+          : (endColors?.get(profile.surfaceIndex) ??
+            (profile.isMirror ? 'var(--mirror)' : 'var(--glass-stroke)'));
         return (
           <path
             key={`surface-${profile.surfaceIndex}`}

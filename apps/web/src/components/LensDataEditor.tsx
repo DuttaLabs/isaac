@@ -40,12 +40,27 @@ import {
   defaultGapColor,
   elementLabel,
   elementRowSpan,
+  endColor,
   findElements,
   gapColor,
   hasChosenColor,
-  type ElementGap,
+  hasChosenEndColor,
+  systemEnds,
   type ElementStyles,
 } from '../lib/elements.ts';
+
+/**
+ * One thing in the Element column that can be given a color — a piece of glass
+ * or an end of the system — flattened so the picker need not know which it was
+ * opened on.
+ */
+interface ColorTarget {
+  key: string;
+  label: string;
+  color: string;
+  defaultColor: string;
+  isDefault: boolean;
+}
 
 const MATERIAL_LIST_ID = 'material-names';
 
@@ -153,19 +168,38 @@ export function LensDataEditor({
     }
     return covered;
   }, [elements]);
-  const openGap: { gap: ElementGap; label: string } | undefined = elements
-    .flatMap((element) =>
+  const ends = useMemo(() => systemEnds(system), [system]);
+  const endAt = useMemo(() => new Map(ends.map((end) => [end.index, end])), [ends]);
+
+  /**
+   * Everything in this column that carries a color, flattened to one shape so
+   * the picker does not have to know whether it was opened on a piece of glass
+   * or on an end of the system.
+   */
+  const colorTargets: ColorTarget[] = [
+    ...elements.flatMap((element) =>
       element.gaps.map((gap) => ({
-        gap,
+        key: gap.key,
         // A doublet's two halves share the element's name, so the picker says
         // which half by counting them: `L1 · 1 of 2`.
         label:
           element.gaps.length > 1
             ? `${elementLabel(element, elementStyles)} · ${element.gaps.indexOf(gap) + 1} of ${element.gaps.length}`
             : elementLabel(element, elementStyles),
+        color: gapColor(gap, elementStyles),
+        defaultColor: defaultGapColor(gap),
+        isDefault: !hasChosenColor(gap, elementStyles),
       })),
-    )
-    .find((entry) => entry.gap.key === colorGap);
+    ),
+    ...ends.map((end) => ({
+      key: end.key,
+      label: end.label,
+      color: endColor(end, elementStyles),
+      defaultColor: end.defaultColor,
+      isDefault: !hasChosenEndColor(end, elementStyles),
+    })),
+  ];
+  const openTarget = colorTargets.find((target) => target.key === colorGap);
 
   /**
    * The Element cell for one row: the spanning cell on an element's first row,
@@ -175,10 +209,47 @@ export function LensDataEditor({
    * the picker. Both are view state — a `.zmx` has nowhere to put either — so
    * neither touches the system or the undo stack.
    */
+  const swatch = (key: string, color: string, isDefault: boolean, what: string) => (
+    <button
+      type="button"
+      className="element-swatch"
+      style={{ background: color }}
+      aria-label={`Color of ${what}`}
+      title={`${what}: ${color}${isDefault ? ' (default)' : ''}. Click to change.`}
+      onClick={() => setColorGap(key)}
+    />
+  );
+
   const renderElementCell = (index: number) => {
+    // The span wins over everything, because it is what keeps the column's cell
+    // count right. It can reach the image row — a lens whose rear face *is* the
+    // image plane is a system the model allows — and IMG then has no cell of its
+    // own rather than a second one fighting for the same square.
     if (coveredRows.has(index)) {
       return null; // the cell above spans this row
     }
+
+    // The ends are not elements and cannot start one: `findElements` begins past
+    // the object, and the last surface can only ever be a gap's *back* face.
+    const end = endAt.get(index);
+    if (end !== undefined) {
+      return (
+        <td className="element-cell is-end">
+          <span className="end-label" title={`Surface ${index} is the ${end.label} plane.`}>
+            {end.label}
+          </span>
+          <div className="element-swatches">
+            {swatch(
+              end.key,
+              endColor(end, elementStyles),
+              !hasChosenEndColor(end, elementStyles),
+              `the ${end.label} plane`,
+            )}
+          </div>
+        </td>
+      );
+    }
+
     const element = elementStart.get(index);
     if (element === undefined) {
       return <td className="element-cell is-empty" />;
@@ -197,19 +268,17 @@ export function LensDataEditor({
             views already draw them as two bodies. */}
         <div className="element-swatches">
           {element.gaps.map((gap, gapIndex) => {
-            const color = gapColor(gap, elementStyles);
             const which =
               element.gaps.length > 1 ? `${name}, glass ${gapIndex + 1}` : `element ${name}`;
             return (
-              <button
-                key={gap.key}
-                type="button"
-                className="element-swatch"
-                style={{ background: color }}
-                aria-label={`Color of ${which}`}
-                title={`${which}: ${color}${hasChosenColor(gap, elementStyles) ? '' : ' (default)'}. Click to change.`}
-                onClick={() => setColorGap(gap.key)}
-              />
+              <span key={gap.key}>
+                {swatch(
+                  gap.key,
+                  gapColor(gap, elementStyles),
+                  !hasChosenColor(gap, elementStyles),
+                  which,
+                )}
+              </span>
             );
           })}
         </div>
@@ -731,16 +800,16 @@ export function LensDataEditor({
         </p>
       ) : null}
 
-      {openGap !== undefined ? (
+      {openTarget !== undefined ? (
         <ElementColorPicker
-          key={openGap.gap.key}
-          label={openGap.label}
-          color={gapColor(openGap.gap, elementStyles)}
-          isDefault={!hasChosenColor(openGap.gap, elementStyles)}
-          defaultColor={defaultGapColor(openGap.gap)}
-          inUse={colorsInUse(elements, elementStyles)}
-          onPick={(color) => onElementStyle(openGap.gap.key, { color })}
-          onReset={() => onElementStyle(openGap.gap.key, { color: undefined })}
+          key={openTarget.key}
+          label={openTarget.label}
+          color={openTarget.color}
+          isDefault={openTarget.isDefault}
+          defaultColor={openTarget.defaultColor}
+          inUse={colorsInUse(elements, elementStyles, ends)}
+          onPick={(color) => onElementStyle(openTarget.key, { color })}
+          onReset={() => onElementStyle(openTarget.key, { color: undefined })}
           onClose={() => setColorGap(undefined)}
         />
       ) : null}

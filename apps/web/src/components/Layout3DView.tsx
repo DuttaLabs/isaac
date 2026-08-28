@@ -228,6 +228,7 @@ export function Layout3DView({
   defaultSemiDiameter,
   highlightedSurface,
   elementColors,
+  endColors,
   resetSignal,
 }: {
   system: OpticalSystem;
@@ -237,6 +238,8 @@ export function Layout3DView({
   highlightedSurface?: number;
   /** A color per surface for colored elements, exactly as the 2-D view takes it. */
   elementColors?: ReadonlyMap<number, string>;
+  /** Color for the object and image planes, keyed by surface index. */
+  endColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
 }) {
@@ -344,7 +347,11 @@ export function Layout3DView({
                       ? colors.mirror
                       : shell.isStop
                         ? colors.stop
-                        : colors.surface
+                        : // The ends carry a color of their own, chosen in the
+                          // Element column. Safe to read for every shell: a
+                          // glass body's faces are consumed into the body and
+                          // never appear here, so only the ends can match.
+                          (endColors?.get(shell.surfaceIndex) ?? colors.surface)
                 }
                 transparent={!shell.isMirror}
                 opacity={

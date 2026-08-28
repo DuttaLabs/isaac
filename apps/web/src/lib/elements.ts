@@ -204,6 +204,89 @@ export const ELEMENT_PALETTE: readonly string[] = [
 ];
 
 /**
+ * The two ends of the system — the object plane and the image plane.
+ *
+ * Neither is a piece of glass, so neither is an element: they are single
+ * surfaces, and the walk in `findElements` starts past the object and can never
+ * make the image a *front* face. They are still two of the things a layout
+ * draws and two of the rows a designer looks for, so they get a name and a color
+ * in the Element column like everything else, and they share `ElementStyles`
+ * because that is already keyed by surface id and their ids are ones no gap can
+ * claim.
+ *
+ * Their names are fixed rather than editable. `L1` is a name for a lens that
+ * happens to be first; OBJ and IMG are what these surfaces *are*, decided by
+ * position, and there would be nowhere to put a different one.
+ */
+export interface SystemEnd {
+  /** Surface index: 0, or the last surface. */
+  index: number;
+  /** Stable key across edits, and the `ElementStyles` key — the surface's id. */
+  key: string;
+  label: string;
+  defaultColor: string;
+}
+
+export const OBJECT_END_LABEL = 'OBJ';
+export const IMAGE_END_LABEL = 'IMG';
+
+/**
+ * Deliberately outside `ELEMENT_PALETTE`, and deliberately not theme tokens.
+ * These are not glass, so they should not be handed a glass color, and a chosen
+ * color is a decision about *this design* that must not move when the theme does
+ * — the same reasoning the palette already carries. Grey for the image because
+ * it is where light stops rather than something light passes through.
+ */
+export const OBJECT_END_COLOR = '#8fa3b8';
+export const IMAGE_END_COLOR = '#8c8c8c';
+
+export function systemEnds(system: OpticalSystem): readonly SystemEnd[] {
+  const last = system.surfaces.length - 1;
+  return [
+    {
+      index: 0,
+      key: system.surfaceAt(0).id,
+      label: OBJECT_END_LABEL,
+      defaultColor: OBJECT_END_COLOR,
+    },
+    {
+      index: last,
+      key: system.surfaceAt(last).id,
+      label: IMAGE_END_LABEL,
+      defaultColor: IMAGE_END_COLOR,
+    },
+  ];
+}
+
+/** The color an end is drawn in: the user's choice if there is one. */
+export function endColor(end: SystemEnd, styles: ElementStyles): string {
+  return styles[end.key]?.color ?? end.defaultColor;
+}
+
+/** True when the user has overridden this end's color. */
+export function hasChosenEndColor(end: SystemEnd, styles: ElementStyles): boolean {
+  return styles[end.key]?.color !== undefined;
+}
+
+/**
+ * The color of each end, keyed by its surface index — what both layout views
+ * take. Kept apart from {@link elementColorsBySurface} rather than merged into
+ * it: that map is read by *body*, and the 2-D view strokes a profile for every
+ * surface including the faces of a lens, so one combined map would quietly paint
+ * every lens face in its body's color too.
+ */
+export function endColorsBySurface(
+  system: OpticalSystem,
+  styles: ElementStyles,
+): ReadonlyMap<number, string> {
+  const colors = new Map<number, string>();
+  for (const end of systemEnds(system)) {
+    colors.set(end.index, endColor(end, styles));
+  }
+  return colors;
+}
+
+/**
  * Colors this design already uses, so a second piece of glass can be given the
  * same one without matching a hex by eye. In system order and de-duplicated.
  *
@@ -212,18 +295,28 @@ export const ELEMENT_PALETTE: readonly string[] = [
  * the row answers "what is already here", the palette below answers "what else
  * could I use", and dropping the overlap would empty the row almost always.
  */
-export function colorsInUse(elements: readonly OpticalElement[], styles: ElementStyles): string[] {
+export function colorsInUse(
+  elements: readonly OpticalElement[],
+  styles: ElementStyles,
+  ends: readonly SystemEnd[] = [],
+): string[] {
   const seen = new Set<string>();
   const used: string[] = [];
+  const add = (color: string): void => {
+    const key = color.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    used.push(key);
+  };
   for (const element of elements) {
     for (const gap of element.gaps) {
-      const color = gapColor(gap, styles).toLowerCase();
-      if (seen.has(color)) {
-        continue;
-      }
-      seen.add(color);
-      used.push(color);
+      add(gapColor(gap, styles));
     }
+  }
+  for (const end of ends) {
+    add(endColor(end, styles));
   }
   return used;
 }

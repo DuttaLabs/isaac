@@ -379,3 +379,59 @@ test('an element behind a mirror is not condemned as self-intersecting', () => {
   assert.equal(build(true).profiles[0]!.isMirror, true);
   assert.equal(build(false).profiles[0]!.isMirror, false);
 });
+
+/** The same one-element system, but with the object a finite distance away. */
+function finiteObject(objectDistance: number): OpticalSystem {
+  return new OpticalSystem({
+    name: 'finite',
+    wavelengthsNm: [WAVELENGTH_NM],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    fields: [{ objectHeight: 0 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: objectDistance, material: AIR }),
+      new Surface({
+        id: 'front',
+        type: 'STANDARD',
+        radius: 100,
+        thickness: 6,
+        semiDiameter: 10,
+        material: N_BK7,
+      }),
+      new Surface({ id: 'back', type: 'STANDARD', radius: -100, thickness: 90, semiDiameter: 10 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+}
+
+test('an object at infinity is not drawn — it is nowhere to draw', () => {
+  const layout = buildLayout(
+    element({ frontRadius: 100, backRadius: -100, thickness: 6, frontSemiDiameter: 10 }),
+    [],
+    DEFAULT_SEMI_DIAMETER,
+  );
+  assert.ok(!layout.profiles.some((profile) => profile.surfaceIndex === 0));
+});
+
+test('an object at a finite distance is drawn, at its own place on the axis', () => {
+  const distance = 200;
+  const layout = buildLayout(finiteObject(distance), [], DEFAULT_SEMI_DIAMETER);
+  const object = layout.profiles.find((profile) => profile.surfaceIndex === 0);
+  assert.ok(object !== undefined, 'the object plane should be drawn');
+  // Surface 1 sits at z = 0, so the object is one object-distance behind it.
+  for (const point of object.points) {
+    assert.ok(Math.abs(point.h - -distance) < 1e-9, `expected h = ${-distance}, got ${point.h}`);
+  }
+});
+
+test('drawing the object plane does not invent an element out of it', () => {
+  // Bodies are glass runs, and the object is not one. Adding its profile must
+  // not give the walk a new front face to close a body on.
+  const withInfinity = buildLayout(
+    element({ frontRadius: 100, backRadius: -100, thickness: 6, frontSemiDiameter: 10 }),
+    [],
+    DEFAULT_SEMI_DIAMETER,
+  );
+  const withFinite = buildLayout(finiteObject(200), [], DEFAULT_SEMI_DIAMETER);
+  assert.equal(withFinite.bodies.length, withInfinity.bodies.length);
+  assert.ok(!withFinite.bodies.some((body) => body.frontIndex === 0));
+});

@@ -11,7 +11,13 @@ import {
   findElements,
   gapColor,
   hasChosenColor,
+  hasChosenEndColor,
+  endColor,
+  endColorsBySurface,
+  systemEnds,
   ELEMENT_PALETTE,
+  IMAGE_END_COLOR,
+  OBJECT_END_COLOR,
 } from '../src/lib/elements.ts';
 import { GLASS_CATALOG } from '../src/lib/materials.ts';
 import { defaultSystem } from '../src/lib/default-system.ts';
@@ -245,4 +251,72 @@ test('the colors on offer for reuse are the ones actually on screen', () => {
     colorsInUse(elements, { a: { color: '#123456' }, b: { color: '#123456' } }),
     ['#123456'],
   );
+});
+
+test('the ends of the system are the object and image surfaces', () => {
+  const doublet = system(glassFace('a', 100, 6), glassFace('b', -50, 3, F2), airFace('c', -80, 90));
+  const ends = systemEnds(doublet);
+  assert.equal(ends.length, 2);
+  assert.deepEqual(
+    ends.map((end) => [end.index, end.key, end.label]),
+    [
+      [0, 'obj', 'OBJ'],
+      [4, 'img', 'IMG'],
+    ],
+  );
+});
+
+test('an end key can never collide with a piece of glass', () => {
+  // The walk starts past the object, and the last surface can only ever be a
+  // gap's back face — so neither end's id is ever a gap key, which is what lets
+  // both share one `ElementStyles` map.
+  const doublet = system(glassFace('a', 100, 6), glassFace('b', -50, 3, F2), airFace('c', -80, 90));
+  const gapKeys = new Set(findElements(doublet).flatMap((el) => el.gaps.map((gap) => gap.key)));
+  for (const end of systemEnds(doublet)) {
+    assert.ok(!gapKeys.has(end.key), `${end.label} collided with a gap`);
+  }
+});
+
+test('the ends start with their own colors, outside the glass palette', () => {
+  const ends = systemEnds(system(airFace('a', 100, 90)));
+  assert.equal(endColor(ends[0]!, {}), OBJECT_END_COLOR);
+  assert.equal(endColor(ends[1]!, {}), IMAGE_END_COLOR);
+  for (const end of ends) {
+    assert.ok(
+      !ELEMENT_PALETTE.includes(end.defaultColor),
+      'an end is not glass and should not wear a glass color',
+    );
+  }
+  assert.notEqual(OBJECT_END_COLOR, IMAGE_END_COLOR);
+});
+
+test('a chosen end color wins, and says it was chosen', () => {
+  const ends = systemEnds(system(airFace('a', 100, 90)));
+  const image = ends[1]!;
+  assert.equal(hasChosenEndColor(image, {}), false);
+  const styles = { [image.key]: { color: '#ff0000' } };
+  assert.equal(endColor(image, styles), '#ff0000');
+  assert.equal(hasChosenEndColor(image, styles), true);
+  // The other end is untouched.
+  assert.equal(endColor(ends[0]!, styles), OBJECT_END_COLOR);
+});
+
+test('end colors are keyed by surface index, for the views', () => {
+  const lens = system(glassFace('a', 100, 6), airFace('b', -80, 90));
+  const colors = endColorsBySurface(lens, {});
+  assert.deepEqual(
+    [...colors.keys()].sort((x, y) => x - y),
+    [0, 3],
+  );
+  assert.equal(colors.get(3), IMAGE_END_COLOR);
+});
+
+test('colors already in the design include the ends when asked', () => {
+  const lens = system(glassFace('a', 100, 6), airFace('b', -80, 90));
+  const elements = findElements(lens);
+  const withoutEnds = colorsInUse(elements, {});
+  const withEnds = colorsInUse(elements, {}, systemEnds(lens));
+  assert.ok(!withoutEnds.includes(IMAGE_END_COLOR.toLowerCase()));
+  assert.ok(withEnds.includes(IMAGE_END_COLOR.toLowerCase()));
+  assert.ok(withEnds.includes(OBJECT_END_COLOR.toLowerCase()));
 });

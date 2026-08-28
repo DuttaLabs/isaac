@@ -15,7 +15,7 @@ import {
 } from './lib/analysis.ts';
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
-import { elementColorsBySurface, type ElementStyles } from './lib/elements.ts';
+import { elementColorsBySurface, endColorsBySurface, type ElementStyles } from './lib/elements.ts';
 import { trackTemplate } from './lib/split-sizes.ts';
 import { Splitter } from './components/Splitter.tsx';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
@@ -340,6 +340,12 @@ export function App() {
   // one element; keying by surface is what makes both halves come out alike.
   const elementColors = useMemo(
     () => elementColorsBySurface(system, elementStyles),
+    [system, elementStyles],
+  );
+  // The object and image planes, which are surfaces rather than pieces of glass
+  // and so are kept in their own map — see `endColorsBySurface`.
+  const endColors = useMemo(
+    () => endColorsBySurface(system, elementStyles),
     [system, elementStyles],
   );
 
@@ -772,6 +778,7 @@ export function App() {
                     defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                     highlightedSurface={highlightedSurface}
                     elementColors={elementColors}
+                    endColors={endColors}
                     resetSignal={reset2d}
                     firstOrder={firstOrderOverlay}
                   />
@@ -839,6 +846,7 @@ export function App() {
                       defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                       highlightedSurface={highlightedSurface}
                       elementColors={elementColors}
+                      endColors={endColors}
                       resetSignal={reset3d}
                     />
                   </Suspense>

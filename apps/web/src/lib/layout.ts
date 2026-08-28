@@ -172,8 +172,15 @@ export function buildLayout(
   const media = signedMediaIndices(system, system.primaryWavelengthNm);
   const travelAfter = (index: number): number => Math.sign(media[index] ?? 1);
 
-  // Surface 0 is the object, which sits at −∞ for a distant object; never drawn.
-  for (let index = 1; index < system.surfaces.length; index += 1) {
+  // Surface 0 is the object, and it is drawn only when it is somewhere: at
+  // infinity it has no pose and no plane to draw, while at a finite conjugate it
+  // is as much a part of the layout as the image plane at the other end — and
+  // the rays already start there, so the plane they leave was the one thing
+  // missing from the picture.
+  for (let index = 0; index < system.surfaces.length; index += 1) {
+    if (index === 0 && !Number.isFinite(system.vertexZAt(0))) {
+      continue;
+    }
     const surface = system.surfaceAt(index);
     // A coordinate transform has no shape and no aperture: there is nothing to draw,
     // and drawing it would put a full-height plane across the fold. Its effect

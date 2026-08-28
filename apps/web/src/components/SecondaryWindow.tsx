@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { suppressNativeContextMenu } from '../lib/context-menu.ts';
 import { adoptStyles, mirrorTheme, type SecondaryWindowHandle } from '../lib/secondary-window.ts';
 
 /**
@@ -33,6 +34,10 @@ export function SecondaryWindow({
 
   useEffect(() => adoptStyles(handle.window.document), [handle]);
   useEffect(() => mirrorTheme(handle.window.document), [handle]);
+  // In its own right, not through the opener: the window's background is a plain
+  // element made outside React, so nothing that happens on it bubbles into the
+  // app's tree and the platform menu would still come up there.
+  useEffect(() => suppressNativeContextMenu(handle.window.document), [handle]);
 
   useEffect(() => {
     const opened = handle.window;

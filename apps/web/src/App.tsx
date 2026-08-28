@@ -13,6 +13,7 @@ import {
   type FirstOrder,
   type FirstOrderRays,
 } from './lib/analysis.ts';
+import { suppressNativeContextMenu } from './lib/context-menu.ts';
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
 import { elementColorsBySurface, endColorsBySurface, type ElementStyles } from './lib/elements.ts';
@@ -322,6 +323,12 @@ export function App() {
   useEffect(() => {
     void screenPlacementState().then(setDisplayAccess);
   }, []);
+
+  // Right-click belongs to the panel under the pointer. Turned off for the whole
+  // document rather than panel by panel, so a panel that has no menu of its own
+  // yet does nothing rather than falling back to Back / Reload / View source —
+  // which is not an answer to any question this app can be asked.
+  useEffect(() => suppressNativeContextMenu(document), []);
 
   useEffect(() => {
     const root = document.documentElement;

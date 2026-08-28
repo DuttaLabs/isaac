@@ -1692,3 +1692,60 @@ input.coefficient {
 .splitter:focus-visible {
   outline: none;
 }
+
+/*
+ * The panel's own right-click menu, in place of the browser's.
+ *
+ * `position: fixed`, so it is placed in viewport coordinates — the same ones
+ * `clientX`/`clientY` are already in, and the same ones in whichever window the
+ * panel is in. Nothing in the app makes a containing block (no transform, no
+ * filter, no `contain`), so it also escapes the lens table's own scrolling box
+ * rather than being clipped by it.
+ */
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  /* Dark in both themes: a menu floats above the page, and what says so is a
+     shadow under it rather than a lighter fill. */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.context-menu-heading {
+  padding: 5px 10px 6px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px;
+  font-size: 13px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+}
+
+.context-menu-item:hover:not([aria-disabled='true']),
+.context-menu-item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+/* Ghosted, not hidden: the item stays where it is so the menu keeps its shape,
+   and its tooltip says which rule it ran into. `aria-disabled` rather than
+   `disabled`, so the arrow keys still reach it to be told. */
+.context-menu-item[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}

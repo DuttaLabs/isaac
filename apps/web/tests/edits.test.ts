@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AIR, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
-import { renameSystem, setMirror, setSurfaceType, updateSurface } from '../src/lib/edits.ts';
+import {
+  insertSurfaceAfter,
+  insertSurfaceBefore,
+  renameSystem,
+  setMirror,
+  setSurfaceType,
+  updateSurface,
+} from '../src/lib/edits.ts';
 
 function singlet(front: Surface): OpticalSystem {
   return new OpticalSystem({
@@ -159,4 +166,62 @@ test('renaming touches the name and nothing else', () => {
   assert.deepStrictEqual(after.value.aperture, before.aperture);
   assert.deepStrictEqual([...after.value.fields], [...before.fields]);
   assert.equal(before.name, 'singlet'); // the original is untouched
+});
+
+test('a surface can be inserted above a row and below it', () => {
+  const system = singlet(spherical);
+
+  const above = insertSurfaceBefore(system, 2);
+  assert.ok(above.ok);
+  assert.equal(above.value.surfaces.length, 5);
+  // The new plane lands *at* the index it was inserted before, pushing that
+  // surface down; nothing else about the design moves.
+  assert.equal(above.value.surfaceAt(2).radius, Infinity);
+  assert.equal(above.value.surfaceAt(3).radius, -60);
+  assert.equal(above.value.surfaceAt(1).radius, 40);
+
+  const below = insertSurfaceAfter(system, 1);
+  assert.ok(below.ok);
+  assert.equal(below.value.surfaceAt(2).radius, Infinity);
+  assert.equal(below.value.surfaceAt(3).radius, -60);
+});
+
+test('inserting above surface 1 and below surface 0 are the same insert', () => {
+  const system = singlet(spherical);
+  const above = insertSurfaceBefore(system, 1);
+  const below = insertSurfaceAfter(system, 0);
+  assert.ok(above.ok);
+  assert.ok(below.ok);
+  // Only the ids differ — each insert makes its own surface.
+  assert.deepEqual(
+    above.value.surfaces.map((surface) => [surface.type, surface.radius, surface.thickness]),
+    below.value.surfaces.map((surface) => [surface.type, surface.radius, surface.thickness]),
+  );
+});
+
+test('nothing goes above the object plane or below the image plane', () => {
+  const system = singlet(spherical);
+
+  const aboveObject = insertSurfaceBefore(system, 0);
+  assert.equal(aboveObject.ok, false);
+  assert.match(aboveObject.ok ? '' : aboveObject.error, /object/i);
+
+  const belowImage = insertSurfaceAfter(system, system.surfaces.length - 1);
+  assert.equal(belowImage.ok, false);
+  assert.match(belowImage.ok ? '' : belowImage.error, /image/i);
+
+  // Refused, not merely rejected by the model afterwards: the design is untouched.
+  assert.equal(system.surfaces.length, 4);
+});
+
+test('an inserted surface is a plane in air, so it bends no ray', () => {
+  const result = insertSurfaceBefore(singlet(spherical), 2);
+  assert.ok(result.ok);
+  const inserted = result.value.surfaceAt(2);
+  assert.equal(inserted.type, 'STANDARD');
+  assert.equal(inserted.radius, Infinity);
+  assert.equal(inserted.conic, 0);
+  assert.equal(inserted.material.name, AIR.name);
+  // Sized like the surface it went under rather than left unapertured.
+  assert.equal(inserted.semiDiameter, 8);
 });

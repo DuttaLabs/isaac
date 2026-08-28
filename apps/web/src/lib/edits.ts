@@ -202,24 +202,59 @@ export function setStop(system: OpticalSystem, index: number): Result<OpticalSys
   );
 }
 
-/** Inserts a plane air surface after `index`, splitting nothing else. */
+/**
+ * Inserts a plane air surface after `index`, splitting nothing else.
+ *
+ * Refused on the last surface. The model would refuse it too — the image plane
+ * has to be last — but by then the message is about an invariant rather than
+ * about what the user just asked for, and the two ends of the system are the
+ * one place this is worth saying in their own words.
+ */
 export function insertSurfaceAfter(system: OpticalSystem, index: number): Result<OpticalSystem> {
   return attempt(() => {
-    const surfaces = [...system.surfaces];
-    surfaces.splice(
-      index + 1,
-      0,
-      new Surface({
-        id: newSurfaceId(),
-        type: 'STANDARD',
-        radius: Infinity,
-        thickness: 5,
-        semiDiameter: nearbySemiDiameter(system, index),
-        material: AIR,
-      }),
-    );
-    return system.with({ surfaces });
+    if (index >= system.surfaces.length - 1) {
+      throw new RangeError(
+        'Nothing can go below the image surface: the image plane has to be the last one.',
+      );
+    }
+    return insertSurfaceAt(system, index + 1);
   });
+}
+
+/** Inserts a plane air surface before `index`; the mirror image of the above. */
+export function insertSurfaceBefore(system: OpticalSystem, index: number): Result<OpticalSystem> {
+  return attempt(() => {
+    if (index <= 0) {
+      throw new RangeError(
+        'Nothing can go above the object surface: the object has to be the first one.',
+      );
+    }
+    return insertSurfaceAt(system, index);
+  });
+}
+
+/**
+ * The new surface, and where it lands. A plane in air, because that is the one
+ * shape that changes no ray: an inserted surface should leave the design tracing
+ * exactly as it did until the user gives it a radius.
+ */
+function insertSurfaceAt(system: OpticalSystem, at: number): OpticalSystem {
+  const surfaces = [...system.surfaces];
+  surfaces.splice(
+    at,
+    0,
+    new Surface({
+      id: newSurfaceId(),
+      type: 'STANDARD',
+      radius: Infinity,
+      thickness: 5,
+      // The surface it is going under, whichever end the insert came from, so a
+      // new row is the size of its neighbours rather than of the whole system.
+      semiDiameter: nearbySemiDiameter(system, at - 1),
+      material: AIR,
+    }),
+  );
+  return system.with({ surfaces });
 }
 
 export function removeSurface(system: OpticalSystem, index: number): Result<OpticalSystem> {

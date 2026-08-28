@@ -351,6 +351,51 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   is live. And **the Element cell is absent from rows inside a span**, so these rules key off
   `.row-label` and `.element-cell` rather than `nth-child`, which would land on Surface Type.
 
+- **Right-click belongs to the panel under the pointer, not to the browser.** Isaac is an
+  application, not a document: the useful answer to a right-click on a lens row is what can be done
+  to that surface, and Back / Reload / View source is noise in front of it. So
+  `suppressNativeContextMenu` (`lib/context-menu.ts`) turns the platform menu off for a whole
+  document, and each panel offers its own. It is called **twice** — once on `document` in `App`, and
+  once on the second window's document in `SecondaryWindow` — because that window's background is a
+  plain element made outside React: nothing that happens on it bubbles into the app's tree, so a
+  handler on the app's own root would leave the platform menu live everywhere but the panels. A panel
+  with no menu of its own does nothing on a right-click, which is the honest state of "not yet".
+
+  The cost, said out loud rather than discovered: **a text cell loses the native cut/copy/paste
+  menu.** The keyboard shortcuts are untouched, and an edit menu on the inputs is the obvious thing
+  to add next.
+
+  `ContextMenu.tsx` is the menu, and it needs nothing special to work in either window: `clientX`/
+  `clientY` and `position: fixed` are both in the viewport of whatever window the event happened in,
+  and everything it listens to comes from `element.ownerDocument`. Nothing in the app makes a
+  containing block — no `transform`, no `filter`, no `contain` — so it also escapes the lens table's
+  own scrolling box instead of being clipped inside it.
+
+  Three decisions in it:
+
+  - **A menu near an edge flips to the other side of the pointer**, rather than sliding back onto
+    the screen. Sliding leaves the pointer in the middle of the menu, hovering an item nobody aimed
+    at and one twitch from choosing it. `placeMenu` in `lib/context-menu.ts` is that arithmetic,
+    unit-tested for the same reason `camera-fit.ts` is: every wrong placement still draws *a* menu.
+    Sliding is the fallback for a menu with nowhere to flip to — taller than the window it is in.
+  - **An unavailable item is ghosted, not hidden.** A menu whose items come and go teaches nobody
+    what the panel can do, and the item that vanished is the one the user was reaching for. It
+    carries `aria-disabled` rather than `disabled`, so the arrow keys still reach it and its tooltip
+    can say which rule it ran into; clicking it does nothing *and leaves the menu open*.
+  - **It closes on anything that moves what it points at** — Escape, a click outside, a scroll, a
+    resize, the window losing focus. The menu is fixed to the viewport and the row it names is not,
+    so a scroll would leave it offering to insert beside a different surface.
+
+  In the lens grid the two items are **Insert surface above** and **Insert surface below**, in that
+  order, because the row is between them and the menu reads down the page in the direction it acts.
+  Below is what the `+` in the last column already does. Each is ghosted at the end it cannot reach:
+  nothing goes above the object plane, nothing below the image plane. The **same two guards are in
+  `edits.ts`** (`insertSurfaceBefore`, and `insertSurfaceAfter` on the last surface), so a caller that
+  never saw this menu gets the same answer in its own words — the model would refuse it anyway, but by
+  then the message is about an invariant rather than about what the user just asked for. The menu also
+  **names the row in its heading**, because the pointer leaves the row on the way to the menu and takes
+  the highlight with it.
+
 - **The lens name is editable in the app bar**, because it is written into the file and has to be
   settable somewhere — and the app bar is where it was already shown, so the thing you see is the
   thing you edit. It reuses `TextCell` (draft on focus, commit on blur or Enter, Escape restores), so

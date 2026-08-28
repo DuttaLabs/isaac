@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Material, OpticalSystem } from '@isaac/optical-core';
 import {
   GLASS_CATALOG,
@@ -13,6 +13,7 @@ import {
 } from '../lib/materials.ts';
 import {
   insertSurfaceAfter,
+  insertSurfaceBefore,
   normalizeRadius,
   normalizeSemiDiameter,
   removeSurface,
@@ -31,6 +32,8 @@ import {
   CoordinateTransformDialog,
   CoordinateTransformSummaryButton,
 } from './CoordinateTransformEditor.tsx';
+import { ContextMenu, type MenuItem } from './ContextMenu.tsx';
+import type { MenuPoint } from '../lib/context-menu.ts';
 import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
@@ -100,6 +103,8 @@ export function LensDataEditor({
   const [transformSurface, setTransformSurface] = useState<number | undefined>(undefined);
   /** The piece of glass whose color picker is open, by its key, if any. */
   const [colorGap, setColorGap] = useState<string | undefined>(undefined);
+  /** Where the right-click menu is up, and which row it was opened on. */
+  const [menu, setMenu] = useState<{ at: MenuPoint; index: number } | undefined>(undefined);
   const rows = useRef<(HTMLTableRowElement | null)[]>([]);
   const table = useRef<HTMLDivElement>(null);
 
@@ -299,6 +304,44 @@ export function LensDataEditor({
     } else {
       setError(result.error);
     }
+  };
+
+  const closeMenu = useCallback(() => setMenu(undefined), []);
+
+  /**
+   * What right-clicking a row offers.
+   *
+   * Above and below, in that order, because the row is between them and the
+   * menu reads down the page in the direction it acts. Both are ghosted at the
+   * end they cannot reach — nothing goes above the object plane and nothing
+   * below the image plane — rather than left to fail on the click, and the
+   * tooltip says which rule it ran into. The same two guards are in `edits.ts`,
+   * so a caller that never saw this menu gets the same answer.
+   */
+  const rowMenu = (index: number): MenuItem[] => {
+    const last = system.surfaces.length - 1;
+    return [
+      {
+        key: 'insert-above',
+        label: 'Insert surface above',
+        disabled: index === 0,
+        hint:
+          index === 0
+            ? 'The object plane has to be the first surface, so nothing can go above it.'
+            : `A plane air surface, which becomes surface ${index}.`,
+        onSelect: () => apply(insertSurfaceBefore(system, index)),
+      },
+      {
+        key: 'insert-below',
+        label: 'Insert surface below',
+        disabled: index === last,
+        hint:
+          index === last
+            ? 'The image plane has to be the last surface, so nothing can go below it.'
+            : `A plane air surface, which becomes surface ${index + 1}.`,
+        onSelect: () => apply(insertSurfaceAfter(system, index)),
+      },
+    ];
   };
 
   /**
@@ -545,6 +588,15 @@ export function LensDataEditor({
                   className={index === highlightedSurface ? 'row-highlight' : undefined}
                   onMouseEnter={() => onHighlight(index)}
                   onMouseLeave={() => onHighlight(undefined)}
+                  // The panel's own menu in place of the browser's. The row is
+                  // named in the menu's heading because the pointer leaves it on
+                  // the way there, taking the highlight with it — and a menu that
+                  // inserts a surface has to say which surface it means.
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    onHighlight(index);
+                    setMenu({ at: { x: event.clientX, y: event.clientY }, index });
+                  }}
                   onFocus={() => onHighlight(index)}
                   onBlur={(event) => {
                     // Moving between cells of the same row must not blink the
@@ -801,6 +853,19 @@ export function LensDataEditor({
           {status}
         </p>
       ) : null}
+
+      {menu === undefined ? null : (
+        <ContextMenu
+          // Keyed on the row, so right-clicking a second row while the first
+          // menu is still up re-measures and re-places it rather than leaving it
+          // where the last one was.
+          key={menu.index}
+          at={menu.at}
+          heading={`Surface ${menu.index}`}
+          items={rowMenu(menu.index)}
+          onClose={closeMenu}
+        />
+      )}
 
       {openTarget !== undefined ? (
         <ElementColorPicker

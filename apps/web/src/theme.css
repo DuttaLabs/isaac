@@ -6,7 +6,16 @@
 :root {
   color-scheme: light;
 
-  --surface-0: #f4f4f2;
+  /*
+   * `--surface-0` is the ground the panels sit on and `--surface-1` is a panel.
+   * The step between them is wide on purpose: a panel whose content does not
+   * fill it — a short lens table, an empty analysis — is otherwise
+   * indistinguishable from bare workspace, so growing a panel to absorb a closed
+   * neighbour looks like leaving a hole. The panel edge alone is too quiet to
+   * carry that on its own, in either theme.
+   */
+
+  --surface-0: #e8e8e4;
   --surface-1: #fcfcfb;
   --surface-2: #efefec;
   --border: #d9d8d2;
@@ -69,7 +78,7 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --surface-0: #121211;
+    --surface-0: #0b0b0a;
     --surface-1: #1a1a19;
     --surface-2: #232322;
     --border: #35342f;
@@ -120,7 +129,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --surface-0: #121211;
+  --surface-0: #0b0b0a;
   --surface-1: #1a1a19;
   --surface-2: #232322;
   --border: #35342f;

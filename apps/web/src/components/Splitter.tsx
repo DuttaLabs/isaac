@@ -1,4 +1,5 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, type CSSProperties } from 'react';
+import { type Extent } from '../lib/tiling.ts';
 
 /** How far one arrow-key press moves a divider, as a fraction of the whole. */
 const KEY_STEP = 0.02;
@@ -27,6 +28,8 @@ export function Splitter({
   onResize,
   label,
   valueNow,
+  span,
+  style,
 }: {
   /**
    * Which way the divider *runs*: `vertical` is an upright bar between two
@@ -39,6 +42,18 @@ export function Splitter({
   label: string;
   /** Share of the container the panel before the divider currently has, 0–1. */
   valueNow: number;
+  /**
+   * How long this divider's own split is, along the direction it moves in.
+   *
+   * It used to measure its parent element, which was the split's grid; drawn
+   * flat, every divider's parent is the whole workspace, so the split it belongs
+   * to is no longer anything the DOM can be asked about. The tiling knows it, so
+   * it is passed — resolved against the workspace at the moment of the drag,
+   * because that is the only part of it that can change under the pointer.
+   */
+  span: Extent;
+  /** Where it sits: the workspace is drawn flat, so every box is positioned. */
+  style: CSSProperties;
 }) {
   const dragging = useRef<{ start: number; extent: number } | null>(null);
   const vertical = orientation === 'vertical';
@@ -50,12 +65,13 @@ export function Splitter({
       if (event.button !== 0) {
         return;
       }
-      const parent = event.currentTarget.parentElement;
-      if (parent === null) {
+      // The workspace: what this divider's fractions are fractions *of*.
+      const container = event.currentTarget.offsetParent;
+      if (container === null) {
         return;
       }
-      const box = parent.getBoundingClientRect();
-      const extent = vertical ? box.width : box.height;
+      const box = container.getBoundingClientRect();
+      const extent = span.fraction * (vertical ? box.width : box.height) + span.pixels;
       if (extent <= 0) {
         return;
       }
@@ -63,7 +79,7 @@ export function Splitter({
       event.currentTarget.setPointerCapture(event.pointerId);
       event.preventDefault();
     },
-    [vertical],
+    [vertical, span],
   );
 
   const move = useCallback(
@@ -96,6 +112,7 @@ export function Splitter({
   return (
     <div
       className={`splitter splitter-${orientation}`}
+      style={style}
       role="separator"
       aria-orientation={orientation}
       aria-label={label}

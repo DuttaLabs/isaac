@@ -282,30 +282,42 @@ body {
  * lens grid would fit at once; now the table scrolls inside its own panel, which
  * is the trade that lets the window be any size at all.
  */
+/*
+ * The workspace is a positioning container and nothing else: every pane and
+ * every divider is an absolutely positioned box inside it, at a rectangle
+ * `lib/tiling.ts` computed from the layout tree.
+ *
+ * Flat, rather than nested boxes mirroring the tree, and the reason is React
+ * rather than CSS. A component's state belongs to its *position* in the React
+ * tree, and closing a pane moves its sibling up a level — so drawn as nested
+ * boxes, closing one panel silently rebuilt the one beside it, losing its scroll
+ * position, its pan and zoom, and its camera. Flat, a pane is a direct child of
+ * this box however the tree above it is rearranged.
+ *
+ * There is no padding here. The margin around the workspace is in the rectangles
+ * themselves, because an absolutely positioned box resolves its percentages
+ * against the padding box and would ignore it.
+ */
 .workspace {
-  display: grid;
-  padding: 12px;
-  gap: 0;
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
 
-/*
- * One branch of the layout tree: two children with a divider between them, as
- * three grid tracks. Which axis they run along is the only difference, so both
- * directions share everything else — and the tracks themselves come from the
- * node's ratio, written inline, because that is the one number a split has.
- *
- * `min-width`/`min-height: 0` at every level, because a grid item's automatic
- * minimum is its content: without them a wide table deep in the tree would push
- * its way out through every ancestor and take the window with it.
- */
-.split {
-  display: grid;
+/* One pane. The panel inside fills it, and clips rather than escaping it. */
+.pane {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.pane > * {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ---------- Panels ---------- */
@@ -1623,10 +1635,11 @@ input.coefficient {
  * padding with the rule drawn down the middle of it.
  */
 .splitter {
-  position: relative;
+  position: absolute;
   background: none;
   border: none;
   padding: 0;
+  z-index: 1;
 }
 
 .splitter::before {

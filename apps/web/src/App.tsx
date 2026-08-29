@@ -1,4 +1,4 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { exportZmx, importZmx } from '@isaac/zemax-io';
@@ -12,6 +12,7 @@ import {
   type ElementStyles,
 } from './lib/elements.ts';
 import { Splitter } from './components/Splitter.tsx';
+import { cssRect, tile } from './lib/tiling.ts';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
 import { TextCell } from './components/TextCell.tsx';
@@ -65,8 +66,10 @@ import { SpotPanel } from './components/SpotPanel.tsx';
 const TweakPanel = import.meta.env.DEV ? lazy(() => import('./dev/TweakPanel.tsx')) : undefined;
 
 const HISTORY_LIMIT = 50;
-/** Width of a divider track. Wide enough to hit; the rule drawn in it is 2px. */
+/** Width of a divider. Wide enough to hit; the rule drawn in it is 2px. */
 const SPLITTER_PX = 10;
+/** The margin around the whole workspace, in pixels, so it does not scale. */
+const WORKSPACE_INSET = 12;
 type Theme = 'system' | 'light' | 'dark';
 
 interface Notice {
@@ -637,43 +640,55 @@ export function App() {
    * surviving DOM rather than rebuilding the branch — a panel that keeps its key
    * keeps its scroll position and, in the 3-D view, its camera.
    */
-  const renderNode = (
-    node: LayoutNode,
+  /**
+   * The whole workspace, as a flat list of absolutely positioned boxes.
+   *
+   * **Flat is the point.** Drawn as nested boxes, a pane's position in the React
+   * tree was its depth in the layout tree — and closing a pane moves its sibling
+   * up a level, which React answers by throwing the panel away and building a new
+   * one. Every panel rebuilt that way came back blank: the lens table at the top
+   * of its scroll, the 2-D view refitted, the 3-D camera back at its default.
+   * Here every pane is a direct child of the workspace however the tree is
+   * rearranged above it, so a pane that survives an operation is *moved*, never
+   * rebuilt — and because splitting and closing preserve the order of the
+   * survivors, React does not even have to move it.
+   *
+   * `lib/tiling.ts` does the arithmetic; this only turns rectangles into boxes.
+   */
+  const renderWorkspace = (
+    tree: Workspace,
     update: Dispatch<SetStateAction<Workspace>>,
-    onlyPane: boolean,
   ): ReactNode => {
-    if (node.kind === 'pane') {
-      const choice = choiceOf(node, update, onlyPane);
-      return (
-        <Fragment key={node.key}>
-          {node.panel === undefined ? (
-            <BlankPanel choice={choice} />
-          ) : (
-            renderPanel(node, choice, update)
-          )}
-        </Fragment>
-      );
-    }
-
-    const across = node.direction === 'row';
-    const tracks = `minmax(0, ${node.ratio}fr) ${SPLITTER_PX}px minmax(0, ${1 - node.ratio}fr)`;
+    const { panes, splitters } = tile(tree.root, SPLITTER_PX, WORKSPACE_INSET);
+    const onlyPane = tree.root.kind === 'pane';
     return (
-      <div
-        key={node.key}
-        className={`split split-${node.direction}`}
-        style={across ? { gridTemplateColumns: tracks } : { gridTemplateRows: tracks }}
-      >
-        {renderNode(node.first, update, false)}
-        <Splitter
-          // The divider runs across the direction it moves in, which is the easy
-          // thing to get backwards: side-by-side panels are parted by an upright
-          // bar, and `aria-orientation` names the bar.
-          orientation={across ? 'vertical' : 'horizontal'}
-          label={`Resize ${nodeName(node.first)}`}
-          valueNow={node.ratio}
-          onResize={(delta) => update((current) => resizeSplit(current, node.key, delta))}
-        />
-        {renderNode(node.second, update, false)}
+      <div className="workspace">
+        {panes.map(({ pane, rect }) => {
+          const choice = choiceOf(pane, update, onlyPane);
+          return (
+            <div key={pane.key} className="pane" style={cssRect(rect)}>
+              {pane.panel === undefined ? (
+                <BlankPanel choice={choice} />
+              ) : (
+                renderPanel(pane, choice, update)
+              )}
+            </div>
+          );
+        })}
+        {splitters.map((divider) => (
+          <Splitter
+            key={divider.key}
+            style={cssRect(divider.rect)}
+            // The divider runs across the direction it moves in, which is the
+            // easy thing to get backwards: side-by-side panels are parted by an
+            // upright bar, and `aria-orientation` names the bar.
+            orientation={divider.direction === 'row' ? 'vertical' : 'horizontal'}
+            label={`Resize ${nodeName(divider.first)}`}
+            valueNow={divider.ratio}
+            span={divider.span}
+            onResize={(delta) => update((current) => resizeSplit(current, divider.key, delta))}
+          />
+        ))}
       </div>
     );
   };
@@ -818,9 +833,7 @@ export function App() {
         </div>
       ) : null}
 
-      <div className="workspace">
-        {renderNode(workspace.root, setWorkspace, workspace.root.kind === 'pane')}
-      </div>
+      {renderWorkspace(workspace, setWorkspace)}
 
       {secondary ? (
         <SecondaryWindow
@@ -828,13 +841,7 @@ export function App() {
           title={`Isaac — ${system.name}`}
           onClose={forgetSecondary}
         >
-          <div className="workspace">
-            {renderNode(
-              secondaryWorkspace.root,
-              setSecondaryWorkspace,
-              secondaryWorkspace.root.kind === 'pane',
-            )}
-          </div>
+          {renderWorkspace(secondaryWorkspace, setSecondaryWorkspace)}
         </SecondaryWindow>
       ) : null}
 

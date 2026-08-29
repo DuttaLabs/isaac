@@ -641,23 +641,16 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   - **Splitting is local.** `splitPane` replaces one pane with a split of that pane and a new blank
     one; nothing outside it moves, and the untouched half of the tree comes back as the very same
-    object, so React re-renders only the branch that moved. The pane keeps its key, so it keeps its
-    scroll position and, in the 3-D view, its camera.
+    object, so React re-renders only the branch that moved. The pane keeps its key *and its place in
+    the flat list*, so it keeps its scroll position and, in the 3-D view, its camera.
   - **Closing gives the space to the sibling and to nothing else.** `closePane` replaces the split
     above the pane with its other child, which inherits what the pair held together. Exactly one
     panel on screen changes size. The old arrangement re-divided the whole column's weights, so
     closing one panel nudged every panel in that column at once and left the user hunting for what
     moved.
 
-    **The survivor is remounted, though**, and this is worth knowing because it is invisible until
-    it costs something. The sibling moves *up a level* in the tree, and React ties component state
-    to a position, not to a key — so closing a neighbour throws away everything the surviving panel
-    was holding: the lens table's scroll position, the 2-D view's pan and zoom, the 3-D camera.
-    Splitting is safe because the pane stays where it is; closing is not. Anything that must
-    survive it therefore has to live *above* the panel — which is what `Pane.settings` is, and why
-    the 3-D camera is one. Curing this at the root means rendering the panes as a flat list
-    positioned from computed rectangles, so a pane's place in the React tree never changes; that is
-    a real change to `renderNode` and has not been made.
+    Closing used to **rebuild the survivor**, which is why the workspace is now drawn flat — see
+    the next point.
   - **A divider is a split's own `ratio`**, one number between 0 and 1. "The two together are exactly
     the parent" is therefore not an invariant anyone maintains — it is the only thing the type can
     say. A pair of weights could drift apart; a ratio cannot.
@@ -672,14 +665,34 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   guess, and half of them would be replaced immediately. Duplicating a panel is still one gesture —
   split, then pick the same panel — and it is chosen rather than assumed.
 
+  **The tree says how the panes are arranged; `lib/tiling.ts` says where each one lands, and the
+  workspace is drawn *flat*.** Every pane and every divider is an absolutely positioned child of
+  `.workspace`, at a rectangle computed by walking the tree — no nested boxes mirroring it.
+
+  The reason is React, not CSS. A component's state belongs to its **position in the React tree**,
+  not to its key, and closing a pane moves its sibling *up a level*. Drawn as nested boxes, closing
+  one panel therefore threw the one beside it away and built a new one: the lens table came back at
+  the top of its scroll, the 2-D view refitted, the 3-D camera returned to its default. It looked
+  like three unrelated bugs and was one. Drawn flat, a pane is a direct child of the workspace
+  however the tree above it is rearranged, so a survivor is never rebuilt — and because splitting and
+  closing preserve the *order* of the survivors, React never even has to move one, which matters
+  because moving a DOM node loses its scroll position too and a moved canvas can lose its WebGL
+  context. `tests/tiling.test.ts` pins that ordering along with the geometry.
+
+  A position is an `Extent` — **a fraction plus a pixel correction**, rendered as a `calc()`. Neither
+  half alone will do: the shares are proportions of a container whose size is unknown at that point,
+  and the dividers are a fixed thickness that must not scale with the window. The margin around the
+  workspace is in the rectangles too, because an absolutely positioned box resolves percentages
+  against the padding box and would ignore a `padding` on `.workspace`.
+
   `components/Splitter.tsx` is the divider — a `role="separator"` with pointer capture (not a window
   listener: the drag leaves the element immediately, and capture also works in the second window,
-  where a listener on the opener's `window` would not) and arrow-key support. It measures its
-  **parent** to turn pixels into a fraction, and its parent is the split's own grid, so the fraction
-  it reports is already the ratio's units. It is a **grid track of its own**, so it has a width to
-  grab that does not depend on either neighbour. Tracks are `minmax(0, Nfr)`: without the 0 a grid
-  item's automatic minimum is its content, and a wide table would push its way out through every
-  ancestor and take the window with it.
+  where a listener on the opener's `window` would not) and arrow-key support. It used to measure its
+  **parent** to turn pixels into a fraction; drawn flat, every divider's parent is the whole
+  workspace, so the split it belongs to is no longer something the DOM can be asked about and the
+  tiling passes it down. What it is passed is the length the two children **share** — the split minus
+  the divider itself — because that is what the ratio divides. Measuring against the whole split made
+  the divider lag the pointer by about a percent, which the grid version did too and nobody noticed.
 
   The second window's root sizes and clips itself, exactly as the main workspace does — see below.
 

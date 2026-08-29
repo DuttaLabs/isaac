@@ -6,16 +6,6 @@ import type { SplitDirection } from '../lib/workspace.ts';
 export const BLANK_PANE_TITLE = 'Empty';
 
 /**
- * Whether this panel is in the second window, and how to send it there or
- * fetch it back. A panel that cannot move — or an app with no second window
- * open — simply leaves it off.
- */
-export interface PanelDetach {
-  detached: boolean;
-  onToggle: () => void;
-}
-
-/**
  * What this pane is showing, and the three things that can be done to the pane
  * itself: point it at another panel, split it in two, or close it.
  *
@@ -37,14 +27,12 @@ export interface PanelChoice {
 export function Panel({
   title,
   actions,
-  detach,
   choice,
   children,
   flush = false,
 }: {
   title: string;
   actions?: ReactNode;
-  detach?: PanelDetach;
   choice?: PanelChoice;
   children: ReactNode;
   flush?: boolean;
@@ -56,10 +44,9 @@ export function Panel({
           `select` is phrasing content, so this is the same document outline it
           always was, and the heading's accessible name is the panel on screen. */}
         <h2 className="panel-title">{choice ? <PanelChooser choice={choice} /> : title}</h2>
-        {actions || detach || choice ? (
+        {actions || choice ? (
           <div className="panel-actions">
             {actions}
-            {detach ? <DetachButton title={title} detach={detach} /> : null}
             {choice ? <PaneButtons title={title} choice={choice} /> : null}
           </div>
         ) : null}
@@ -166,9 +153,9 @@ function PaneButtons({ title, choice }: { title: string; choice: PanelChoice }) 
  * one click is the whole of that. It looks like a panel rather than like a hole,
  * so a split reads as two panels from the moment it happens.
  */
-export function BlankPanel({ choice, detach }: { choice: PanelChoice; detach?: PanelDetach }) {
+export function BlankPanel({ choice }: { choice: PanelChoice }) {
   return (
-    <Panel title={BLANK_PANE_TITLE} choice={choice} detach={detach}>
+    <Panel title={BLANK_PANE_TITLE} choice={choice}>
       <div className="blank-pane">
         <p className="hint">Choose what to show here.</p>
         <div className="blank-pane-choices">
@@ -180,49 +167,6 @@ export function BlankPanel({ choice, detach }: { choice: PanelChoice; detach?: P
         </div>
       </div>
     </Panel>
-  );
-}
-
-/**
- * Sends the panel to the second window, or brings it back.
- *
- * Both labels are one glyph wide, so the header does not shift when it is
- * pressed — the same reason the full-screen and plane buttons hold their width.
- * The arrows point the way the panel is about to go.
- */
-function DetachButton({ title, detach }: { title: string; detach: PanelDetach }) {
-  const label = detach.detached
-    ? `Bring ${title} back to this window`
-    : `Show ${title} in the second window`;
-  return (
-    <button
-      className="panel-detach"
-      onClick={detach.onToggle}
-      aria-pressed={detach.detached}
-      aria-label={label}
-      title={label}
-    >
-      {detach.detached ? '↙' : '↗'}
-    </button>
-  );
-}
-
-/**
- * What is left in place of a panel that has moved to the second window.
- *
- * A gap would be tidier and worse: the second window may be behind this one or
- * on a display the user is not looking at, so a panel that simply vanished
- * would read as a panel that broke. This says where it went and offers it back.
- */
-export function PanelStub({ title, onReturn }: { title: string; onReturn: () => void }) {
-  return (
-    <section className="panel panel-stub">
-      <h2 className="panel-title">{title}</h2>
-      <span className="hint">in the second window</span>
-      <button className="subtle" onClick={onReturn}>
-        bring back
-      </button>
-    </section>
   );
 }
 

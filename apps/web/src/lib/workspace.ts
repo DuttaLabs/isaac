@@ -125,6 +125,27 @@ export const DEFAULT_WORKSPACE: Workspace = {
   nextKey: 1,
 };
 
+/**
+ * What the second window opens with: the lens grid over the layout.
+ *
+ * A window of its own rather than a place panels are *sent* to, and this is what
+ * makes that worth having — a second display is wide, so the grid gets every
+ * column at once without scrolling sideways, and the layout below it is what a
+ * designer watches while editing. It is a starting point, not a fixture: the
+ * same split, close and choose controls work there, so it is rearranged exactly
+ * like the first window.
+ */
+export const DEFAULT_SECONDARY_WORKSPACE: Workspace = {
+  root: split(
+    'split-second-root',
+    'column',
+    0.5,
+    pane('pane-second-system', 'system'),
+    pane('pane-second-layout', 'layout2d'),
+  ),
+  nextKey: 1,
+};
+
 /** Every pane, left to right and top to bottom — the order they are arranged in. */
 export function panesInOrder(workspace: Workspace): Pane[] {
   const found: Pane[] = [];

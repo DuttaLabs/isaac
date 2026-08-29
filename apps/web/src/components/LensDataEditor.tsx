@@ -34,7 +34,7 @@ import {
 } from './CoordinateTransformEditor.tsx';
 import { ContextMenu, type MenuItem } from './ContextMenu.tsx';
 import type { MenuPoint } from '../lib/context-menu.ts';
-import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './Panel.tsx';
+import { ErrorNote, Panel, type PanelChoice } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
 import { ElementColorPicker } from './ElementColorPicker.tsx';
@@ -83,7 +83,6 @@ export function LensDataEditor({
   elementStyles,
   onElementStyle,
   choice,
-  detach,
 }: {
   system: OpticalSystem;
   onChange: (system: OpticalSystem) => void;
@@ -96,7 +95,6 @@ export function LensDataEditor({
   /** The surface currently pointed out, which the arrow keys step through. */
   highlightedSurface: number | undefined;
   choice?: PanelChoice;
-  detach?: PanelDetach;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string | undefined>(undefined);
@@ -512,7 +510,6 @@ export function LensDataEditor({
     <Panel
       title="Optical system"
       flush
-      detach={detach}
       choice={choice}
       actions={
         <>

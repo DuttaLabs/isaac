@@ -609,10 +609,7 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   item's automatic minimum is its content, and a wide table would push its way out through every
   ancestor and take the window with it.
 
-  The second window scrolls *at `.secondary-root`*, not at its body: that document is served the same
-  stylesheet, so it inherits `body { overflow: hidden }`, which is right here and would silently clip
-  it. Its panels keep their natural height, since it holds whatever has been sent to it in no fixed
-  number.
+  The second window's root sizes and clips itself, exactly as the main workspace does — see below.
 
 - **Any pane can be turned over to any panel**, chosen from the dropdown its header title *is*
   (`lib/panels.ts` names the panels, `lib/workspace.ts` arranges them, `Panel`'s `PanelChooser` offers
@@ -637,10 +634,11 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   changes: with duplicates allowed there is no panel to rescue from being displaced.
 
   **A pane is not a panel, and the distinction is load-bearing.** A `PanelId` no longer identifies
-  anything on screen once the same panel can be open twice, so `Pane.key` does: React keys, which copy
-  was sent to the second window (`Placement.detached`, `Placement.order`), and which copy was closed
-  all name the pane, while everything about *what is shown* names the panel. Getting these the wrong
-  way round would detach both copies of a panel at once, or neither.
+  anything on screen once the same panel can be open twice — in one window or across both — so
+  `Pane.key` does: React keys, and which copy was split or closed, all name the pane, while everything
+  about *what is shown* names the panel. Keys need only be unique within one tree, since the two
+  windows are separate React subtrees; both defaults therefore start their counters at 1 without
+  colliding.
 
   **Closing is a red disc in the header, the Mac's own**, showing its × on hover. `nextKey` lives on
   the workspace so every operation is a pure function of it, which is what lets the tests check the
@@ -648,23 +646,55 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   One thing to keep straight: a divider parts two **subtrees**, not two panels, so `nodeName` labels
   it with a panel's name only when that side is a leaf and says how many panels are on that side
-  otherwise. Naming it after one panel would be a lie the moment either side is split again. The
-  second window's stacking order is likewise read from the **live arrangement**, not a fixed list.
+  otherwise. Naming it after one panel would be a lie the moment either side is split again.
 
   The chooser is a **native `select`** — keyboard-navigable and type-ahead searchable for free, drawn
   where the platform draws menus, which matters when a panel has been dragged too small to hang one of
   our own inside it. It stays inside the `h2`, so the document outline is what it always was and the
   heading's accessible name is the panel on screen.
 
-- **Any panel can be sent to a second browser window** (the ↗ in its header, or the app bar's *Second window* to open an empty one), so a design with more panels than one display has room for can spread across two. This is a `createPortal` into the popup's document (`components/Placed.tsx`), *not* a second React root, and that is the whole reason it needs no synchronization: a detached panel stays in the one React tree, reads the same `system`, and is traced once. A second *tab* over a `BroadcastChannel` would have to be sent the design, and `OpticalSystem`/`Surface`/`Material` are class instances — `structuredClone` delivers their numbers without their prototypes, so the far side would be rebuilding the model and re-tracing it, and the two copies could disagree. Which panels are out there is a *view* setting and lives in `App` state beside the field checkboxes, never on `OpticalSystem`.
+- **The second window has a layout of its own.** The app bar's *Second window* opens a popup that
+  starts with the lens grid over the 2-D layout (`DEFAULT_SECONDARY_WORKSPACE`) and is rearranged
+  there exactly like the first: the same split, close and choose controls, its own tree, its own
+  dividers. A second display is a second place to *lay panels out*, not a shelf to send them to.
 
-  Portals work across documents only because React attaches its event system to a portal's *container* and not merely to the root (`HostPortal` → `listenToAllSupportedEvents`); the popup's DOM events never reach the opener's root, so without that every control out there would be inert. Three consequences worth knowing:
+  It replaced a per-panel ↗ button that detached one pane at a time and left a stub behind. Two trees
+  is both less machinery and more capability — the stub, the detached map, the ordering list and
+  `Placed.tsx` all went, and in exchange the second window can hold an arrangement rather than a
+  stack. The default is chosen for what a second display is good for: the grid gets **every column at
+  once** without scrolling sideways, and the layout below it is what a designer watches while editing.
+
+  Still `createPortal` into the popup's document, *not* a second React root, and that is the whole
+  reason it needs no synchronization: a panel out there stays in the one React tree, reads the same
+  `system`, and is traced once. A second *tab* over a `BroadcastChannel` would have to be sent the
+  design, and `OpticalSystem`/`Surface`/`Material` are class instances — `structuredClone` delivers
+  their numbers without their prototypes, so the far side would be rebuilding the model and re-tracing
+  it, and the two copies could disagree.
+
+  Because there are now two trees, **every workspace operation has to name one**. `renderNode` takes
+  the setter for the window it is drawing, and `choiceOf` passes it to each pane's controls — which is
+  what keeps a pane in the second window from editing the first window's layout. The panel gate that
+  the analyses hang off is the **union** of both, since a Layout 3D opened only on the second display
+  still needs its pupil grid and still has to fetch Three.js.
+
+  The second window's arrangement is kept while it is shut, so reopening brings back what was set up
+  there rather than starting over. Both it and the handle are *view* settings in `App`, never on
+  `OpticalSystem`.
+
+  Portals work across documents only because React attaches its event system to a portal's *container*
+  and not merely to the root (`HostPortal` → `listenToAllSupportedEvents`); the popup's DOM events never
+  reach the opener's root, so without that every control out there would be inert. Three consequences
+  worth knowing:
 
   - **The window is opened by the click and closed by the caller**, never in an effect (`lib/secondary-window.ts`). A popup is only permitted while the user's activation is live, and an effect under StrictMode runs twice — which would open a window, close it, and open another; closing on unmount would leave the second pass portalling into a closed one. The window must also be closed when the *opener* unloads, or a dev reload leaves one stranded on the other monitor.
   - **The second document needs the CSS and the theme copied into it.** `<link>` elements are cloned once; `<style>` elements are re-copied whenever the opener's head changes, because that is how Vite serves CSS in development and a one-off copy goes stale on the first edit. `data-theme` is mirrored, which is what `theme.css` switches palettes on — the SVG views hand `var(--wave-blue)` to an attribute and it resolves in *that* document.
   - **Moving the window to the other display needs its own click.** Chrome's Window Management API is the only way a page can place a window, and `getScreenDetails()` raises its permission prompt only while the user's activation is live — which `window.open` has just consumed. So asking on the way to opening the window fails silently every time, having spent the very gesture the prompt needed. `screenPlacementState()` is queried up front; a *granted* permission needs no activation and rides along with the open, while an unasked one puts a **Move to other display** button in the app bar so the request gets a gesture of its own. Failures are reported, not swallowed: the first version caught everything on the grounds that the window was open and usable either way, and what that bought was a feature that did nothing and gave no reason.
 
-  - **Anything reaching for `document` or `window` must take the one it is in.** Four places did: the lens table's keydown listener, the transform dialog's resize listener, and, in the 3-D view, both `devicePixelRatio` and — the subtle one — R3F's `ResizeObserver`. An observer belongs to the document of the realm that made it, so the one R3F takes from the global `window` never reports on an element in the second window, and the canvas sits at its untouched 300 × 150 default while its container is a thousand pixels wide. `resize.polyfill` hands `useMeasure` the right constructor; in the main window it is the very same one. Portals sharing a container also append in mount order rather than written order, so each slot carries its own flex `order`.
+  - **Anything reaching for `document` or `window` must take the one it is in.** Four places did: the lens table's keydown listener, the transform dialog's resize listener, and, in the 3-D view, both `devicePixelRatio` and — the subtle one — R3F's `ResizeObserver`. An observer belongs to the document of the realm that made it, so the one R3F takes from the global `window` never reports on an element in the second window, and the canvas sits at its untouched 300 × 150 default while its container is a thousand pixels wide. `resize.polyfill` hands `useMeasure` the right constructor; in the main window it is the very same one.
+
+  `.secondary-root` sets its own height and hides its own overflow, exactly like the main workspace.
+  That document is served the same stylesheet, so it inherits `body { overflow: hidden }` — right, but
+  nothing else sizes its root, and a grid with nothing to fill would collapse to its content.
 
 - **Colors for WebGL are resolved from `theme.css` at runtime** (`lib/theme-colors.ts`), and re-read when the theme changes — the SVG views hand `var(--wave-blue)` to an attribute and let CSS do it, but a material needs a real value. Don't start a second palette in TypeScript.
 

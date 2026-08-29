@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ApertureType, Field, OpticalSystem } from '@isaac/optical-core';
 import { attempt, type Result } from '../lib/result.ts';
-import { ErrorNote, Panel, type PanelChoice, type PanelDetach } from './Panel.tsx';
+import { ErrorNote, Panel, type PanelChoice } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 
 const APERTURE_LABELS: Record<ApertureType, string> = {
@@ -24,7 +24,6 @@ export function SourcePanel({
   onToggleFieldCycling,
   onFieldVisibilityChange,
   choice,
-  detach,
 }: {
   system: OpticalSystem;
   onChange: (system: OpticalSystem) => void;
@@ -40,7 +39,6 @@ export function SourcePanel({
   onToggleFieldCycling: () => void;
   onFieldVisibilityChange: (next: boolean[]) => void;
   choice?: PanelChoice;
-  detach?: PanelDetach;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -58,7 +56,7 @@ export function SourcePanel({
   const aperture = system.aperture;
 
   return (
-    <Panel title="Source object" detach={detach} choice={choice}>
+    <Panel title="Source object" choice={choice}>
       <div className="field-row">
         <label htmlFor="object-conjugate">Object</label>
         <div className="inline">

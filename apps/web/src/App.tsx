@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { exportZmx, importZmx } from '@isaac/zemax-io';
@@ -28,17 +28,10 @@ import { TextCell } from './components/TextCell.tsx';
 import { formatMicrons } from './lib/format.ts';
 import { describeError, type Result } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import {
-  BLANK_PANE_TITLE,
-  BlankPanel,
-  ErrorNote,
-  Panel,
-  type PanelChoice,
-  type PanelDetach,
-} from './components/Panel.tsx';
-import { Placed, type Placement } from './components/Placed.tsx';
+import { BlankPanel, ErrorNote, Panel, type PanelChoice } from './components/Panel.tsx';
 import { PANEL_TITLES, type PanelId } from './lib/panels.ts';
 import {
+  DEFAULT_SECONDARY_WORKSPACE,
   DEFAULT_WORKSPACE,
   closePane,
   panelsOnScreen,
@@ -48,6 +41,7 @@ import {
   splitPane,
   type LayoutNode,
   type Pane,
+  type Workspace,
 } from './lib/workspace.ts';
 import { SecondaryWindow } from './components/SecondaryWindow.tsx';
 import { VIEW_PLANES, VIEW_PLANE_IDS, type ViewPlaneId } from './lib/view-plane.ts';
@@ -162,9 +156,6 @@ export function App() {
   /** Development only: whether the tweak panel is showing. See `dev/tweaks.ts`. */
   const [showTweaks, setShowTweaks] = useState(false);
 
-  /** Which panels are open at all — what the traces below are gated on. */
-  const openPanels = useMemo(() => panelsOnScreen(workspace), [workspace]);
-
   const [fieldIndex, setFieldIndex] = useState(0);
   const [raysPerFan, setRaysPerFan] = useState(9);
   const [showFirstOrder, setShowFirstOrder] = useState(false);
@@ -197,13 +188,32 @@ export function App() {
   const [reset3d, setReset3d] = useState(0);
   const [notice, setNotice] = useState<Notice | undefined>();
   /**
-   * The second window, and which panels have been sent to it. Both are view
-   * settings and live here rather than on `OpticalSystem`, for the same reason
-   * the field checkboxes do: where a panel is shown is not part of the design,
-   * and moving one must not land on the undo stack.
+   * The second window itself. A view setting, living here rather than on
+   * `OpticalSystem` for the same reason the field checkboxes do: where a panel is
+   * shown is not part of the design, and opening one must not land on the undo
+   * stack.
    */
   const [secondary, setSecondary] = useState<SecondaryWindowHandle | undefined>();
-  const [detached, setDetached] = useState<Record<string, boolean>>({});
+  /**
+   * The second window's own arrangement.
+   *
+   * Two trees, not one: a second display is a second place to *lay panels out*,
+   * not a shelf to send them to. Kept while the window is shut so reopening
+   * brings back whatever was arranged there, rather than starting over.
+   */
+  const [secondaryWorkspace, setSecondaryWorkspace] = useState(DEFAULT_SECONDARY_WORKSPACE);
+
+  /**
+   * Which panels are open at all — what the traces below are gated on.
+   *
+   * Both windows, because a Layout 3D opened only on the second display still
+   * needs its pupil grid and still has to fetch Three.js. The gate asks whether
+   * anything is showing it, not where.
+   */
+  const openPanels = useMemo(
+    () => new Set([...panelsOnScreen(workspace), ...panelsOnScreen(secondaryWorkspace)]),
+    [workspace, secondaryWorkspace],
+  );
   /**
    * Whether the browser will place a window on a chosen display. Asked once, up
    * front, because the answer decides whether opening the window can move it
@@ -255,10 +265,7 @@ export function App() {
    * closes it from the app bar and when they close the window itself, so it
    * does not close anything — by the second route it has already gone.
    */
-  const forgetSecondary = useCallback(() => {
-    setSecondary(undefined);
-    setDetached({});
-  }, []);
+  const forgetSecondary = useCallback(() => setSecondary(undefined), []);
 
   /**
    * Opens the second window, reporting a blocked pop-up rather than leaving a
@@ -297,30 +304,6 @@ export function App() {
       },
     );
   };
-
-  /** Sends a panel to the second window, opening one if there is not one yet. */
-  const toggleDetached = (slotKey: string): void => {
-    if (detached[slotKey] === true) {
-      setDetached(({ [slotKey]: _gone, ...rest }) => rest);
-      return;
-    }
-    if ((secondary === undefined || secondary.window.closed) && openSecondary() === undefined) {
-      return; // blocked, and the notice says so — leave the panel where it is
-    }
-    setDetached((current) => ({ ...current, [slotKey]: true }));
-  };
-
-  const placement: Placement = {
-    detached,
-    container: secondary?.container,
-    order: panesInOrder(workspace).map((found) => found.key),
-    onReturn: toggleDetached,
-  };
-
-  const detachOf = (slotKey: string): PanelDetach => ({
-    detached: detached[slotKey] === true,
-    onToggle: () => toggleDetached(slotKey),
-  });
 
   useEffect(() => {
     void screenPlacementState().then(setDisplayAccess);
@@ -684,7 +667,6 @@ export function App() {
    * other shows it because both are rendering one `system`.
    */
   const renderPanel = (found: Pane, choice: PanelChoice): ReactNode => {
-    const detach = detachOf(found.key);
     switch (found.panel) {
       case 'source':
         return (
@@ -696,7 +678,6 @@ export function App() {
               onFieldVisibilityChange={changeFieldVisibility}
               cyclingFields={cycleBase !== undefined}
               onToggleFieldCycling={toggleFieldCycling}
-              detach={detach}
               choice={choice}
             />
           </ErrorBoundary>
@@ -711,7 +692,6 @@ export function App() {
               highlightedSurface={highlightedSurface}
               elementStyles={elementStyles}
               onElementStyle={setElementStyle}
-              detach={detach}
               choice={choice}
             />
           </ErrorBoundary>
@@ -719,12 +699,7 @@ export function App() {
       case 'firstOrder':
         return (
           <ErrorBoundary label="First order">
-            <FirstOrderPanel
-              system={system}
-              firstOrder={firstOrder}
-              detach={detach}
-              choice={choice}
-            />
+            <FirstOrderPanel system={system} firstOrder={firstOrder} choice={choice} />
           </ErrorBoundary>
         );
       case 'layout2d':
@@ -732,7 +707,6 @@ export function App() {
           <Panel
             title="Layout 2D"
             flush
-            detach={detach}
             choice={choice}
             actions={
               <>
@@ -825,7 +799,6 @@ export function App() {
           <Panel
             title="Layout 3D"
             flush
-            detach={detach}
             choice={choice}
             actions={
               <>
@@ -879,7 +852,6 @@ export function App() {
           <Panel
             title="Analysis"
             flush
-            detach={detach}
             choice={choice}
             actions={
               <label className="inline hint">
@@ -931,18 +903,23 @@ export function App() {
     }
   };
 
-  /** Closes a pane, and forgets that it was in the second window. */
-  const closePanel = (paneKey: string): void => {
-    setWorkspace((current) => closePane(current, paneKey));
-    setDetached(({ [paneKey]: _gone, ...rest }) => rest);
-  };
-
-  /** The three things that can be done to a pane, as opposed to its panel. */
-  const choiceOf = (found: Pane, onlyPane: boolean): PanelChoice => ({
+  /**
+   * The three things that can be done to a pane, as opposed to its panel.
+   *
+   * `update` is the setter for whichever window's arrangement this pane is in.
+   * There are two trees now, and every operation has to name one — passing the
+   * setter down is what keeps a pane in the second window from editing the
+   * first window's layout.
+   */
+  const choiceOf = (
+    found: Pane,
+    update: Dispatch<SetStateAction<Workspace>>,
+    onlyPane: boolean,
+  ): PanelChoice => ({
     id: found.panel,
-    onChange: (next) => setWorkspace((current) => setPanePanel(current, found.key, next)),
-    onSplit: (direction) => setWorkspace((current) => splitPane(current, found.key, direction)),
-    onClose: () => closePanel(found.key),
+    onChange: (next) => update((current) => setPanePanel(current, found.key, next)),
+    onSplit: (direction) => update((current) => splitPane(current, found.key, direction)),
+    onClose: () => update((current) => closePane(current, found.key)),
     // Closing the last pane blanks it; closing one already blank would do
     // nothing at all, and a control that does nothing is a puzzle.
     canClose: !(onlyPane && found.panel === undefined),
@@ -960,20 +937,17 @@ export function App() {
    * surviving DOM rather than rebuilding the branch — a panel that keeps its key
    * keeps its scroll position and, in the 3-D view, its camera.
    */
-  const renderNode = (node: LayoutNode, onlyPane: boolean): ReactNode => {
+  const renderNode = (
+    node: LayoutNode,
+    update: Dispatch<SetStateAction<Workspace>>,
+    onlyPane: boolean,
+  ): ReactNode => {
     if (node.kind === 'pane') {
-      const choice = choiceOf(node, onlyPane);
+      const choice = choiceOf(node, update, onlyPane);
       return (
-        <Placed
-          key={node.key}
-          slotKey={node.key}
-          placement={placement}
-          // The stub says what went across, so it wants the panel's plain name —
-          // not the phrase `nodeName` builds to label a divider with.
-          title={node.panel === undefined ? BLANK_PANE_TITLE : PANEL_TITLES[node.panel]}
-        >
+        <Fragment key={node.key}>
           {node.panel === undefined ? <BlankPanel choice={choice} /> : renderPanel(node, choice)}
-        </Placed>
+        </Fragment>
       );
     }
 
@@ -985,7 +959,7 @@ export function App() {
         className={`split split-${node.direction}`}
         style={across ? { gridTemplateColumns: tracks } : { gridTemplateRows: tracks }}
       >
-        {renderNode(node.first, false)}
+        {renderNode(node.first, update, false)}
         <Splitter
           // The divider runs across the direction it moves in, which is the easy
           // thing to get backwards: side-by-side panels are parted by an upright
@@ -993,9 +967,9 @@ export function App() {
           orientation={across ? 'vertical' : 'horizontal'}
           label={`Resize ${nodeName(node.first)}`}
           valueNow={node.ratio}
-          onResize={(delta) => setWorkspace((current) => resizeSplit(current, node.key, delta))}
+          onResize={(delta) => update((current) => resizeSplit(current, node.key, delta))}
         />
-        {renderNode(node.second, false)}
+        {renderNode(node.second, update, false)}
       </div>
     );
   };
@@ -1095,8 +1069,8 @@ export function App() {
           aria-pressed={secondary !== undefined}
           title={
             secondary
-              ? 'Close the second window and bring every panel back'
-              : 'Open a window to drag onto another display, then send panels to it with ↗'
+              ? 'Close the second window. Its layout is kept for the next time.'
+              : 'Open a second window, with its own layout, to drag onto another display'
           }
         >
           <span className="label-swap">
@@ -1140,7 +1114,9 @@ export function App() {
         </div>
       ) : null}
 
-      <div className="workspace">{renderNode(workspace.root, workspace.root.kind === 'pane')}</div>
+      <div className="workspace">
+        {renderNode(workspace.root, setWorkspace, workspace.root.kind === 'pane')}
+      </div>
 
       {secondary ? (
         <SecondaryWindow
@@ -1148,11 +1124,13 @@ export function App() {
           title={`Isaac — ${system.name}`}
           onClose={forgetSecondary}
         >
-          {panesInOrder(workspace).every((found) => detached[found.key] !== true) ? (
-            <p className="hint secondary-empty">
-              Send panels here with the ↗ button in each panel's header.
-            </p>
-          ) : null}
+          <div className="workspace">
+            {renderNode(
+              secondaryWorkspace.root,
+              setSecondaryWorkspace,
+              secondaryWorkspace.root.kind === 'pane',
+            )}
+          </div>
         </SecondaryWindow>
       ) : null}
 
@@ -1184,7 +1162,7 @@ export function App() {
  */
 function nodeName(node: LayoutNode): string {
   if (node.kind === 'pane') {
-    return node.panel === undefined ? BLANK_PANE_TITLE : `the ${PANEL_TITLES[node.panel]} panel`;
+    return node.panel === undefined ? 'the empty pane' : `the ${PANEL_TITLES[node.panel]} panel`;
   }
   let leaves = 0;
   const count = (child: LayoutNode): void => {

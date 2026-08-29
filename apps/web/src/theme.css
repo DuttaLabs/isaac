@@ -940,11 +940,10 @@ td select {
 
 /* ---------- Plots ---------- */
 
-.plot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
-}
+/* The grid that put the ray fan beside the spot diagram inside one Analysis
+   panel is gone: they are two panels now, and two panes side by side is the
+   arrangement it was imitating -- resizable against each other, closable
+   separately, and replaceable one at a time. */
 
 svg.plot,
 /*
@@ -1733,4 +1732,92 @@ input.coefficient {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
+}
+
+/* ---------- Plot overlays ---------- */
+
+/*
+   The 2-D drawing and anything laid over it. Only the picture is in here: the
+   legends below are read alongside it rather than on top of it, and a control
+   floating over a legend would cover the very thing it names.
+
+   The 3-D view needs no equivalent -- `.layout-3d` is already the positioned box
+   its orientation gizmo hangs in, and a wrapper around it would be fatal: it is
+   `flex: 1 1 0` precisely so R3F measures the panel, and an intervening box
+   sized by its content puts the canvas back at its untouched 300 x 150.
+*/
+.plot-stage {
+  position: relative;
+  flex: none;
+  min-height: 0;
+}
+
+/*
+   Which fields this one plot draws, in the corner opposite the orientation
+   gizmo — the one place a lens layout reliably has room, since the drawing is
+   wide and centered on an axis across the middle.
+
+   Shut by default, unlike the gizmo beside it: that one takes no pointer events
+   because the corner of a picture is as good a place as any to start a drag,
+   and a checkbox cannot ignore the pointer. Closed it is a stamp; open it is
+   only in the way while it is being used.
+*/
+.plot-filter {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.plot-filter-toggle {
+  padding: 2px 7px;
+  font-size: 12px;
+  background: var(--surface-1);
+  border-color: var(--border);
+  opacity: 0.85;
+}
+
+.plot-filter-toggle:hover {
+  opacity: 1;
+}
+
+.plot-filter-list {
+  margin: 0;
+  padding: 6px 8px;
+  list-style: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-menu, 0 4px 14px rgb(0 0 0 / 0.28));
+  max-height: 220px;
+  overflow: auto;
+}
+
+.plot-filter-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Switched off for the whole system in Source: ghosted, not hidden — a list
+   whose entries come and go teaches nobody what it can do, and the row that
+   vanished is the one being looked for. */
+.plot-filter-off {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.plot-filter-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
 }

@@ -34,7 +34,7 @@ const keys = (workspace: Workspace): string[] => panesInOrder(workspace).map((fo
 test('the default layout is the arrangement Isaac has always opened with', () => {
   assert.deepEqual(
     panesInOrder(DEFAULT_WORKSPACE).map((found) => found.panel),
-    ['source', 'system', 'firstOrder', 'layout2d', 'analysis'],
+    ['source', 'system', 'firstOrder', 'layout2d', 'rayFan', 'spot'],
   );
   assert.equal(isEmpty(DEFAULT_WORKSPACE), false);
 });
@@ -68,7 +68,7 @@ test('splitting a pane that is not there changes nothing at all', () => {
 
 test('nothing outside a split moves', () => {
   const before = DEFAULT_WORKSPACE;
-  const after = splitPane(before, 'pane-analysis', 'row');
+  const after = splitPane(before, 'pane-spot', 'row');
   // The whole left branch is the very same object, so React re-renders only the
   // branch that actually moved.
   assert.equal(
@@ -155,30 +155,26 @@ test('a divider leaves every other split where it was', () => {
 });
 
 test('a pane can be turned over to another panel, and its neighbours are untouched', () => {
-  const changed = setPanePanel(DEFAULT_WORKSPACE, 'pane-analysis', 'layout3d');
-  assert.equal(findPane(changed, 'pane-analysis')?.panel, 'layout3d');
+  const changed = setPanePanel(DEFAULT_WORKSPACE, 'pane-spot', 'layout3d');
+  assert.equal(findPane(changed, 'pane-spot')?.panel, 'layout3d');
   assert.deepEqual(
     panesInOrder(changed).map((found) => found.panel),
-    ['source', 'system', 'firstOrder', 'layout2d', 'layout3d'],
+    ['source', 'system', 'firstOrder', 'layout2d', 'rayFan', 'layout3d'],
   );
 });
 
 test('the same panel may be open more than once, and the copies are separate panes', () => {
-  const twice = setPanePanel(
-    splitPane(DEFAULT_WORKSPACE, 'pane-analysis', 'row'),
-    'pane-1',
-    'system',
-  );
+  const twice = setPanePanel(splitPane(DEFAULT_WORKSPACE, 'pane-spot', 'row'), 'pane-1', 'system');
   const panels = panesInOrder(twice).map((found) => found.panel);
   assert.equal(panels.filter((panel) => panel === 'system').length, 2);
   // One panel, two panes: only the key can tell them apart, which is why every
   // operation names the pane and never the panel.
-  assert.equal(panelsOnScreen(twice).size, 5);
+  assert.equal(panelsOnScreen(twice).size, 6);
 });
 
 test('a blank pane is on screen but shows nothing', () => {
-  const split = splitPane(DEFAULT_WORKSPACE, 'pane-analysis', 'column');
-  assert.equal(panesInOrder(split).length, 6);
-  assert.equal(panelsOnScreen(split).size, 5);
+  const split = splitPane(DEFAULT_WORKSPACE, 'pane-spot', 'column');
+  assert.equal(panesInOrder(split).length, 7);
+  assert.equal(panelsOnScreen(split).size, 6);
   assert.equal(findPane(split, 'pane-1')?.panel, undefined);
 });

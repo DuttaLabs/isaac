@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Canvas, extend, useFrame, useThree, type ThreeElement } from '@react-three/fiber';
 import {
   Box3,
@@ -230,6 +238,7 @@ export function Layout3DView({
   elementColors,
   surfaceColors,
   resetSignal,
+  overlay,
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
@@ -246,6 +255,12 @@ export function Layout3DView({
   surfaceColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
+  /**
+   * Controls drawn over the picture — the per-plot field filter. Taken as a
+   * prop rather than wrapped around this component from outside, because a box
+   * around `.layout-3d` is what puts the canvas back at 300 x 150.
+   */
+  overlay?: ReactNode;
 }) {
   const colors = useThemeColors();
   const tweaks = useTweaks();
@@ -398,6 +413,13 @@ export function Layout3DView({
         </Canvas>
       ) : null}
       <OrientationGizmo register={publishAxes} />
+      {/* Laid over the canvas in the container that already positions the
+        gizmo, rather than in a wrapper of its own. A box put *around* this one
+        breaks the flex chain the canvas takes its height from — `.layout-3d` is
+        `flex: 1 1 0` precisely so R3F measures the panel rather than the
+        canvas's untouched 300 x 150 default, and an intervening box sized by
+        its content restores exactly that loop. */}
+      {overlay}
     </div>
   );
 }

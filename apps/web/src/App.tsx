@@ -2,17 +2,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } f
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { exportZmx, importZmx } from '@isaac/zemax-io';
-import {
-  computeFirstOrder,
-  computeFirstOrderRays,
-  computeLayoutTraces,
-  computeRayFan,
-  computeSpot,
-  computeVolumeTraces,
-  allFieldIndices,
-  type FirstOrder,
-  type FirstOrderRays,
-} from './lib/analysis.ts';
+import { computeFirstOrder } from './lib/analysis.ts';
 import { suppressNativeContextMenu } from './lib/context-menu.ts';
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
@@ -25,26 +15,31 @@ import { Splitter } from './components/Splitter.tsx';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
 import { TextCell } from './components/TextCell.tsx';
-import { formatMicrons } from './lib/format.ts';
-import { describeError, type Result } from './lib/result.ts';
+import { describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
-import { BlankPanel, ErrorNote, Panel, type PanelChoice } from './components/Panel.tsx';
-import { PANEL_TITLES, type PanelId } from './lib/panels.ts';
+import { BlankPanel, ErrorNote, type PanelChoice } from './components/Panel.tsx';
+import { PANEL_TITLES } from './lib/panels.ts';
+import {
+  DEFAULT_LAYOUT_2D,
+  DEFAULT_LAYOUT_3D,
+  DEFAULT_RAY_FAN,
+  DEFAULT_SPOT,
+  settingsOf,
+  type PanelSettings,
+} from './lib/panel-settings.ts';
 import {
   DEFAULT_SECONDARY_WORKSPACE,
   DEFAULT_WORKSPACE,
   closePane,
-  panelsOnScreen,
-  panesInOrder,
   resizeSplit,
   setPanePanel,
+  setPaneSettings,
   splitPane,
   type LayoutNode,
   type Pane,
   type Workspace,
 } from './lib/workspace.ts';
 import { SecondaryWindow } from './components/SecondaryWindow.tsx';
-import { VIEW_PLANES, VIEW_PLANE_IDS, type ViewPlaneId } from './lib/view-plane.ts';
 import {
   moveToOtherScreen,
   openSecondaryWindow,
@@ -54,20 +49,12 @@ import {
 } from './lib/secondary-window.ts';
 import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
 import { FullScreenButton } from './components/FullScreenButton.tsx';
-import { LayoutView, type FirstOrderOverlay } from './components/LayoutView.tsx';
-import { FirstOrderLegend } from './components/FirstOrderLegend.tsx';
 import { LensDataEditor } from './components/LensDataEditor.tsx';
-import { RayFanPlot } from './components/RayFanPlot.tsx';
+import { Layout2DPanel } from './components/Layout2DPanel.tsx';
+import { Layout3DPanel } from './components/Layout3DPanel.tsx';
+import { RayFanPanel } from './components/RayFanPanel.tsx';
 import { SourcePanel } from './components/SourcePanel.tsx';
-import { SpotDiagram } from './components/SpotDiagram.tsx';
-import { WavelengthLegend } from './components/WavelengthLegend.tsx';
-import { FieldLegend } from './components/FieldLegend.tsx';
-
-// Three.js and its React bindings are most of the bundle, and a session that
-// never opens the 3-D view should never download them. Loaded on first use.
-const Layout3DView = lazy(() =>
-  import('./components/Layout3DView.tsx').then((module) => ({ default: module.Layout3DView })),
-);
+import { SpotPanel } from './components/SpotPanel.tsx';
 
 /**
  * The development tweak panel, and `lil-gui` behind it. `import.meta.env.DEV` is
@@ -100,15 +87,6 @@ interface Notice {
  * enough that a six-field design comes round in under five seconds.
  */
 const FIELD_CYCLE_MS = 750;
-
-/**
- * Grid density from the rays-per-fan control, so one number drives both: a grid
- * of n across the pupil is the same sampling as a fan of n. Floored so a
- * three-ray fan still fills a picture, capped because a grid is n² rays.
- */
-function gridAcrossPupil(raysPerFan: number): number {
-  return Math.max(3, Math.min(raysPerFan, 15));
-}
 
 export function App() {
   const [history, setHistory] = useState(() => ({ stack: [defaultSystem()], index: 0 }));
@@ -156,9 +134,6 @@ export function App() {
   /** Development only: whether the tweak panel is showing. See `dev/tweaks.ts`. */
   const [showTweaks, setShowTweaks] = useState(false);
 
-  const [fieldIndex, setFieldIndex] = useState(0);
-  const [raysPerFan, setRaysPerFan] = useState(9);
-  const [showFirstOrder, setShowFirstOrder] = useState(false);
   /**
    * Which fields the layout draws. A view setting, not part of the design, so it
    * is kept here rather than on `OpticalSystem`: switching a field off to see
@@ -172,20 +147,6 @@ export function App() {
    * somewhere — losing it to a visual aid would be a poor trade.
    */
   const [cycleBase, setCycleBase] = useState<boolean[] | undefined>(undefined);
-  const [allWavelengths, setAllWavelengths] = useState(false);
-  /**
-   * Which plane the 2-D view is drawn in. A view setting like the rest of them:
-   * turning a design round to look at it from the side is not an edit, so it
-   * never reaches `OpticalSystem` or the undo stack.
-   */
-  const [planeId, setPlaneId] = useState<ViewPlaneId>('YZ');
-  /**
-   * Bumped by each view's reset button. One counter per view rather than one
-   * shared: the two layouts can now be on screen together, and re-fitting the
-   * cross-section must not throw away the camera angle set up beside it.
-   */
-  const [reset2d, setReset2d] = useState(0);
-  const [reset3d, setReset3d] = useState(0);
   const [notice, setNotice] = useState<Notice | undefined>();
   /**
    * The second window itself. A view setting, living here rather than on
@@ -203,17 +164,6 @@ export function App() {
    */
   const [secondaryWorkspace, setSecondaryWorkspace] = useState(DEFAULT_SECONDARY_WORKSPACE);
 
-  /**
-   * Which panels are open at all — what the traces below are gated on.
-   *
-   * Both windows, because a Layout 3D opened only on the second display still
-   * needs its pupil grid and still has to fetch Three.js. The gate asks whether
-   * anything is showing it, not where.
-   */
-  const openPanels = useMemo(
-    () => new Set([...panelsOnScreen(workspace), ...panelsOnScreen(secondaryWorkspace)]),
-    [workspace, secondaryWorkspace],
-  );
   /**
    * Whether the browser will place a window on a chosen display. Asked once, up
    * front, because the answer decides whether opening the window can move it
@@ -324,9 +274,6 @@ export function App() {
     }
   }, [theme]);
 
-  // Keep the selected field valid when the field list shrinks.
-  const activeField = Math.min(fieldIndex, Math.max(system.fields.length - 1, 0));
-
   // One color per surface of an element, so a view can look one up by the index
   // it already has on a body or a solid. A cemented pair is two bodies inside
   // one element; keying by surface is what makes both halves come out alike.
@@ -344,14 +291,6 @@ export function App() {
 
   const firstOrder = useMemo(() => computeFirstOrder(system), [system]);
   const pupilRadius = firstOrder.ok ? firstOrder.value.entrancePupilRadius : 10;
-
-  const wavelengthIndices = useMemo(
-    () =>
-      allWavelengths
-        ? system.wavelengthsNm.map((_, index) => index)
-        : [system.primaryWavelengthIndex],
-    [allWavelengths, system],
-  );
 
   // Padded rather than required to match: a system arriving from a file, an
   // undo, or the reset button brings its own field list, and anything the flags
@@ -415,91 +354,12 @@ export function App() {
     setFieldVisibility(next);
   };
 
-  const visibleFieldIndices = useMemo(
-    () => allFieldIndices(system).filter((index) => fieldVisibility[index] ?? true),
-    [system, fieldVisibility],
-  );
-
-  const plane = VIEW_PLANES[planeId];
-  /**
-   * Whether the first-order construction can be drawn. The marginal and chief
-   * rays are defined through the fields, and the fields are y heights and y
-   * angles, so both rays lie in the y–z plane: anywhere else they are a line on
-   * the axis or a single point, which would be an overlay that draws something
-   * and says nothing.
-   */
-  const meridional = planeId === 'YZ';
-
-  // The rays the 2-D view draws, spread so that they lie in the plane it is
-  // drawing. A fan is a flat sheet, and seen edge-on it is a line: the sagittal
-  // view needs its fan spread in x or it draws a lens with one ray through it,
-  // and end-on no fan works at all, so there the picture is filled with the same
-  // pupil grid the 3-D view uses — which is what an end-on view wants anyway,
-  // being a footprint.
-  const layout = useMemo(
-    () =>
-      !openPanels.has('layout2d')
-        ? undefined
-        : plane.fanAxis === undefined
-          ? computeVolumeTraces(system, {
-              gridCount: gridAcrossPupil(raysPerFan),
-              wavelengthIndices,
-              fieldIndices: visibleFieldIndices,
-            })
-          : computeLayoutTraces(system, {
-              raysPerFan,
-              fanAxis: plane.fanAxis ?? 'y',
-              wavelengthIndices,
-              fieldIndices: visibleFieldIndices,
-            }),
-    [openPanels, plane, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
-  );
-
-  // The first-order construction: the two rays it is built from, plus the two
-  // pupil planes, which the first-order summary has already solved. Computed
-  // only while it is on screen — it is a separate pair of traces, and it can
-  // fail on its own (no aperture, a telecentric pupil) without touching the
-  // ray bundle beside it.
-  const firstOrderRays = useMemo(
-    () =>
-      showFirstOrder && meridional && openPanels.has('layout2d') && visibleFieldIndices.length > 0
-        ? computeFirstOrderRays(system, visibleFieldIndices)
-        : undefined,
-    [showFirstOrder, meridional, openPanels, system, visibleFieldIndices],
-  );
-  // With every field switched off there is nothing for a construction ray to
-  // belong to, so the overlay goes with them rather than quietly falling back to
-  // a field that is not being drawn.
-  const firstOrderOverlay =
-    showFirstOrder && openPanels.has('layout2d') && meridional && visibleFieldIndices.length > 0
-      ? buildFirstOrderOverlay(firstOrder, firstOrderRays)
-      : undefined;
-
-  // The 3-D view wants rays that fill the cone rather than a fan lying in one
-  // plane, and it is the only thing that needs them, so they are not traced
-  // until it is on screen. The grid is derived from the same rays-per-fan
-  // control: a grid of n across the pupil is the same density as a fan of n.
-  const volume = useMemo(
-    () =>
-      openPanels.has('layout3d')
-        ? computeVolumeTraces(system, {
-            gridCount: gridAcrossPupil(raysPerFan),
-            fieldIndices: visibleFieldIndices,
-            wavelengthIndices,
-          })
-        : undefined,
-    [openPanels, system, raysPerFan, wavelengthIndices, visibleFieldIndices],
-  );
-  const fan = useMemo(() => computeRayFan(system, activeField, 21), [system, activeField]);
-  const spot = useMemo(() => computeSpot(system, activeField, 15), [system, activeField]);
-
   const loadFile = async (file: File): Promise<void> => {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
       pushSystem(result.system);
       setFileName(file.name);
-      setFieldIndex(0);
       // A different design brings different elements; see `startFrom`.
       setElementStyles({});
       // A file brings its own field list, so flags set against the previous
@@ -628,45 +488,37 @@ export function App() {
    * screen is a difference of panel, and that is exactly why the 2-D/3-D switch
    * is gone: it is now the panel chooser.
    */
-  const raysControl = (
-    <label className="inline hint">
-      rays
-      <input
-        type="number"
-        min={1}
-        max={31}
-        step={2}
-        value={raysPerFan}
-        style={{ width: 56 }}
-        onChange={(event) =>
-          setRaysPerFan(Math.max(1, Math.min(31, Number(event.target.value) || 1)))
-        }
-      />
-    </label>
-  );
 
-  const wavelengthsControl = (
-    <label className="inline hint">
-      <input
-        type="checkbox"
-        checked={allWavelengths}
-        onChange={(event) => setAllWavelengths(event.target.checked)}
-      />
-      all wavelengths
-    </label>
-  );
+  /** Writes one pane's settings back into whichever window's tree it is in. */
+  const writeSettings = (
+    found: Pane,
+    update: Dispatch<SetStateAction<Workspace>>,
+    next: PanelSettings,
+  ): void => update((current) => setPaneSettings(current, found.key, next));
 
   /**
-   * The panel a slot has been turned over to.
+   * The panel a pane has been turned over to.
    *
-   * Every panel is written once here and rendered wherever its slots happen to
-   * be — slot*s*, because the same panel may be open several times. Two copies
-   * are this same JSX reading this same state, which is the whole of why they
-   * mirror each other: there is nothing keeping them in step because there is
-   * nothing to keep in step. Add a field in one Source object panel and the
-   * other shows it because both are rendering one `system`.
+   * Every panel is written once here and rendered wherever its panes happen to
+   * be — pane*s*, because the same panel may be open several times, and the two
+   * kinds of panel behave differently when it is:
+   *
+   * - An **input** panel — the source object, the lens grid — takes no settings
+   *   and reads `system` directly, so every copy shows the same thing because
+   *   every copy is the same JSX over the same immutable model. There is nothing
+   *   keeping them in step because there is nothing to keep in step.
+   * - An **output** panel takes its settings from its own pane and writes them
+   *   back there, so two copies are independent: one Layout 2D can be turned to
+   *   X–Z while another shows Y–Z, which is the whole reason to open a second.
+   *
+   * That is why `update` is threaded down here — a pane in the second window
+   * must write to the second window's tree.
    */
-  const renderPanel = (found: Pane, choice: PanelChoice): ReactNode => {
+  const renderPanel = (
+    found: Pane,
+    choice: PanelChoice,
+    update: Dispatch<SetStateAction<Workspace>>,
+  ): ReactNode => {
     switch (found.panel) {
       case 'source':
         return (
@@ -704,201 +556,49 @@ export function App() {
         );
       case 'layout2d':
         return (
-          <Panel
-            title="Layout 2D"
-            flush
+          <Layout2DPanel
+            system={system}
+            settings={settingsOf(found.settings, DEFAULT_LAYOUT_2D)}
+            onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
-            actions={
-              <>
-                {raysControl}
-                {wavelengthsControl}
-                {/* Only offered on the meridional cross-section: these are
-                  construction lines through that one plane, and neither the
-                  3-D view nor the other two planes draw them, so the control
-                  would otherwise promise something that does not happen. */}
-                {meridional ? (
-                  <label
-                    className="inline hint"
-                    title="Draw the marginal and chief rays and the entrance and exit pupils — the four things first-order optics is built from"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showFirstOrder}
-                      onChange={(event) => setShowFirstOrder(event.target.checked)}
-                    />
-                    first-order rays
-                  </label>
-                ) : null}
-                <label className="inline hint" title={plane.description}>
-                  plane
-                  <select
-                    value={planeId}
-                    aria-label="Layout plane"
-                    onChange={(event) => setPlaneId(event.target.value as ViewPlaneId)}
-                  >
-                    {VIEW_PLANE_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {VIEW_PLANES[id].label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  title="Fit the drawing to the panel again"
-                  onClick={() => setReset2d((count) => count + 1)}
-                >
-                  Reset view
-                </button>
-              </>
-            }
-          >
-            <ErrorBoundary label="Layout 2D">
-              {layout?.ok ? (
-                <>
-                  <LayoutView
-                    system={system}
-                    traces={layout.value}
-                    plane={plane}
-                    defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
-                    highlightedSurface={highlightedSurface}
-                    elementColors={elementColors}
-                    surfaceColors={surfaceColors}
-                    resetSignal={reset2d}
-                    firstOrder={firstOrderOverlay}
-                  />
-                  <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
-                  {/* Dash-only. Color belongs to the field now, so a colored
-                    wavelength swatch would name a mapping that is not on screen. */}
-                  {allWavelengths ? <WavelengthLegend system={system} pattern /> : null}
-                  {firstOrderOverlay ? (
-                    <FirstOrderLegend
-                      rays={firstOrderOverlay.rays}
-                      entrance={firstOrderOverlay.entrance}
-                      exit={firstOrderOverlay.exit}
-                      principal={firstOrderOverlay.principal}
-                      units={system.units}
-                    />
-                  ) : null}
-                  {showFirstOrder && meridional && firstOrderRays?.ok === false ? (
-                    <p className="hint" style={{ padding: '0 12px 10px' }}>
-                      No first-order rays: {firstOrderRays.error}
-                    </p>
-                  ) : null}
-                  <p className="hint view-hint">Wheel zooms · drag pans</p>
-                </>
-              ) : (
-                <div style={{ padding: 12 }}>
-                  <ErrorNote message={layout?.ok === false ? layout.error : 'No rays to draw.'} />
-                </div>
-              )}
-            </ErrorBoundary>
-          </Panel>
+            sourceFields={fieldVisibility}
+            firstOrder={firstOrder}
+            elementColors={elementColors}
+            surfaceColors={surfaceColors}
+            highlightedSurface={highlightedSurface}
+          />
         );
       case 'layout3d':
         return (
-          <Panel
-            title="Layout 3D"
-            flush
+          <Layout3DPanel
+            system={system}
+            settings={settingsOf(found.settings, DEFAULT_LAYOUT_3D)}
+            onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
-            actions={
-              <>
-                {raysControl}
-                {wavelengthsControl}
-                <button
-                  title="Put the camera back where it started"
-                  onClick={() => setReset3d((count) => count + 1)}
-                >
-                  Reset view
-                </button>
-              </>
-            }
-          >
-            <ErrorBoundary label="Layout 3D">
-              {volume?.ok ? (
-                <>
-                  <Suspense
-                    fallback={
-                      <p className="hint" style={{ padding: 12 }}>
-                        Loading the 3D view…
-                      </p>
-                    }
-                  >
-                    <Layout3DView
-                      system={system}
-                      traces={volume.value}
-                      defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
-                      highlightedSurface={highlightedSurface}
-                      elementColors={elementColors}
-                      surfaceColors={surfaceColors}
-                      resetSignal={reset3d}
-                    />
-                  </Suspense>
-                  <FieldLegend system={system} fieldIndices={visibleFieldIndices} />
-                  {/* No wavelength legend here: a line material has no dash to
-                    offer, so in 3-D the wavelengths are drawn but not
-                    distinguished, and a legend would name a cue that is absent. */}
-                  <p className="hint view-hint">Wheel zooms · drag pans · wheel-drag orbits</p>
-                </>
-              ) : (
-                <div style={{ padding: 12 }}>
-                  <ErrorNote message={volume?.ok === false ? volume.error : 'No rays to draw.'} />
-                </div>
-              )}
-            </ErrorBoundary>
-          </Panel>
+            sourceFields={fieldVisibility}
+            firstOrder={firstOrder}
+            elementColors={elementColors}
+            surfaceColors={surfaceColors}
+            highlightedSurface={highlightedSurface}
+          />
         );
-      case 'analysis':
+      case 'rayFan':
         return (
-          <Panel
-            title="Analysis"
-            flush
+          <RayFanPanel
+            system={system}
+            settings={settingsOf(found.settings, DEFAULT_RAY_FAN)}
+            onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
-            actions={
-              <label className="inline hint">
-                field
-                <select
-                  value={activeField}
-                  onChange={(event) => setFieldIndex(Number(event.target.value))}
-                  disabled={system.fields.length === 0}
-                >
-                  {(system.fields.length > 0 ? system.fields : [null]).map((_, index) => (
-                    <option value={index} key={index}>
-                      {fieldLabel(index)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            }
-          >
-            <ErrorBoundary label="Analysis">
-              <div className="plot-grid" style={{ padding: 12 }}>
-                <div>
-                  <h3 className="stat-label">Ray fan — tangential</h3>
-                  {fan.ok ? (
-                    <RayFanPlot data={fan.value} title={`Ray fan at ${fieldLabel(activeField)}`} />
-                  ) : (
-                    <ErrorNote message={fan.error} />
-                  )}
-                </div>
-                <div>
-                  <h3 className="stat-label">Spot diagram</h3>
-                  {spot.ok ? (
-                    <>
-                      <SpotDiagram data={spot.value} title={`Spot at ${fieldLabel(activeField)}`} />
-                      <p className="hint" style={{ margin: '4px 0 0' }}>
-                        RMS radius {formatMicrons(spot.value.rmsRadius)} · max{' '}
-                        {formatMicrons(spot.value.maxRadius)} · {spot.value.traced} rays
-                        {spot.value.blocked > 0 ? `, ${spot.value.blocked} blocked` : ''}
-                      </p>
-                    </>
-                  ) : (
-                    <ErrorNote message={spot.error} />
-                  )}
-                </div>
-              </div>
-              <WavelengthLegend system={system} />
-            </ErrorBoundary>
-          </Panel>
+          />
+        );
+      case 'spot':
+        return (
+          <SpotPanel
+            system={system}
+            settings={settingsOf(found.settings, DEFAULT_SPOT)}
+            onSettings={(next) => writeSettings(found, update, next)}
+            choice={choice}
+          />
         );
     }
   };
@@ -946,7 +646,11 @@ export function App() {
       const choice = choiceOf(node, update, onlyPane);
       return (
         <Fragment key={node.key}>
-          {node.panel === undefined ? <BlankPanel choice={choice} /> : renderPanel(node, choice)}
+          {node.panel === undefined ? (
+            <BlankPanel choice={choice} />
+          ) : (
+            renderPanel(node, choice, update)
+          )}
         </Fragment>
       );
     }
@@ -1175,28 +879,4 @@ function nodeName(node: LayoutNode): string {
   };
   count(node);
   return `these ${leaves} panels`;
-}
-
-function buildFirstOrderOverlay(
-  firstOrder: Result<FirstOrder>,
-  rays: Result<FirstOrderRays> | undefined,
-): FirstOrderOverlay {
-  if (!firstOrder.ok) {
-    return { rays: undefined, entrance: undefined, exit: undefined, principal: undefined };
-  }
-  const { entrance, exit, entrancePupilRadius: beamRadius, properties } = firstOrder.value;
-  const fill = entrance && entrance.radius > 0 ? beamRadius / entrance.radius : 1;
-  const { frontPrincipalPlaneZ, rearPrincipalPlaneZ } = properties;
-  return {
-    rays: rays?.ok ? rays.value : undefined,
-    entrance: entrance ? { z: entrance.z, radius: beamRadius } : undefined,
-    exit: exit ? { z: exit.z, radius: exit.radius * fill } : undefined,
-    // Drawn to the beam's height, like the pupils: the incoming ray and the
-    // outgoing one meet on a principal plane at the height they came in at, so
-    // the beam radius is the extent that construction actually spans.
-    principal:
-      Number.isFinite(frontPrincipalPlaneZ) || Number.isFinite(rearPrincipalPlaneZ)
-        ? { frontZ: frontPrincipalPlaneZ, rearZ: rearPrincipalPlaneZ, radius: beamRadius }
-        : undefined,
-  };
 }

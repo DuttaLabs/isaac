@@ -240,6 +240,49 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   In 2-D the gizmo is pinned to the corner of the *visible* area, computed from the `viewBox` because that is what panning moves, and scaled by the zoom — a legend that grows when you zoom in has stopped being one. In 3-D it is an SVG laid over the canvas rather than geometry inside it: it is a legend, so it belongs in the same medium as the 2-D one, and ⊙/⊗ is a 2-D symbol that would have to be faked in three dimensions. It is fed by a `useFrame` inside the canvas that publishes through a **ref to the gizmo's own setState**, not up through props — a setter called on the parent would re-render the whole scene on every frame of an orbit, and what actually changed is nine SVG elements. It takes no pointer events: the corner of the canvas is as good a place to start an orbit as any other, and a small dead patch there would be a puzzle.
 
+- **A panel's settings live on its pane** (`lib/panel-settings.ts`), and `Pane.settings` is where they
+  sit in the tree. Three things follow, and each is why it is done this way:
+
+  - Two copies of an output panel are independent **without anything keeping them apart**, because
+    they are reading different objects. There is no synchronization to write and none to get wrong.
+  - Saving the arrangement saves them **for free**, since they are inside the tree that gets saved. A
+    layout reopening with its panels in the right places but every plot back at its default would not
+    be the layout that was saved.
+  - Each panel derives what it draws **inside itself**, keyed on its own settings. `App` used to hold
+    one `useMemo` per trace for the whole app, which is why every copy drew the same picture; it also
+    had to gate each on whether the panel was on screen anywhere, and a component that exists only
+    while its pane does answers that by existing. So `openPanels` is gone.
+
+  A **setting** is something worth reopening with. A *signal* is not — a Reset-view counter is local
+  state in the panel, and writing one to disk would mean nothing on the way back in.
+
+  `settingsOf(stored, defaults)` merges rather than trusting, which is what will make a stored layout
+  survive Isaac growing a setting: an older one lacks the key and takes the default. Settings whose
+  `panel` does not match are discarded outright.
+
+- **Fields are filtered at two levels, and they answer different questions.** The Source panel's
+  Display column says which fields are in play **for the whole system** — it is an input panel, so
+  every copy of it agrees. `PlotFieldFilter`, laid over each layout's top-left corner, **narrows** that
+  for one picture, so two layouts side by side can show one field each and be read against each other.
+  It cannot widen: a field off in Source is off everywhere.
+
+  Top-left because the orientation gizmo has the top-right in both views. **Collapsed by default**,
+  unlike the gizmo, and the difference is instructive: the gizmo takes no pointer events because the
+  corner of a picture is as good a place as any to start a drag, and a checkbox cannot ignore the
+  pointer. A field Source has switched off is **ghosted rather than dropped**, the same rule the
+  context menus follow.
+
+  The 2-D view gets a `.plot-stage` wrapper to position the overlay in; **the 3-D view must not**. Its
+  `.layout-3d` is already the positioned box the gizmo hangs in, and it is `flex: 1 1 0` precisely so
+  R3F measures the panel — a box around it, sized by its content, restores exactly the loop that
+  leaves the canvas at its untouched 300 × 150. So `Layout3DView` takes an `overlay` prop instead.
+
+- **Every analysis is a panel of its own.** The ray fan and the spot diagram were one Analysis panel
+  drawing both in a grid, which meant two fans at different fields — the arrangement a fan is actually
+  read in — were impossible. As panes they resize against each other, close separately, and can each
+  be turned over to something else. It is also what makes the analyses still to come cheap: a new plot
+  type is another entry in `PANELS`, and the dropdown offers it with nothing else changed.
+
 - **Every row is numbered, with no exceptions.** The Surface column shows a surface's own number —
   the object is 0 and the image is whatever the last one comes to, which is how a `.zmx` refers to
   them and how Zemax numbers them. Zemax also *names* three of those rows in that column, `OBJ`,
@@ -487,14 +530,12 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   write *is* a failure and swallowing it would report a save that did not happen.
 
 - **The layout is two panels, not one panel with a switch.** `Layout 2D` and `Layout 3D` are separate
-  entries in `PANELS`, so both can be on screen at once. They were one panel with a 2D/3D button until
-  panels could be opened twice: two copies of a panel are meant to behave identically, so a duplicated
-  Layout would have mirrored its own toggle and both copies would have shown the same view — which is
-  the one thing the duplicate was opened to avoid. **Anything two copies must be able to differ in has
-  to be a difference of panel.** Each has its own `resetSignal` counter for the same reason: re-fitting
-  the cross-section must not throw away the camera angle set up beside it. The *plane* (Y–Z, X–Z, X–Y)
-  is still a control inside Layout 2D, so two Layout 2D panels necessarily show the same plane — by the
-  rule above, planes would have to become panel types before they could differ.
+  entries in `PANELS`, so both can be on screen at once. They were one panel with a 2D/3D button, and
+  splitting them survived the arrival of per-pane settings for a different reason than the one it was
+  done for: the dropdown then says what you are about to get, and the panel id is what the Three.js
+  chunk is gated on. `resetSignal` is now **local state in each panel component**, which is stronger
+  than the counter-per-panel-type it replaced — two Layout 3D panels used to refit together, because
+  the counter belonged to the type rather than to the copy.
 
   Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which
   is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture
@@ -625,13 +666,25 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   the same reason (`row`/`column`), never the cut; `aria-orientation` on the divider names the bar,
   which runs across the direction it moves in and is the easy thing to get wrong.
 
-  **The same panel may be open more than once, and the copies are indistinguishable.** That is not a
-  tolerated duplicate, it is the feature: a second Source object panel in the second window saves
-  crossing back to the first, and two copies of anything stay in step because they are the same JSX
-  reading the same `system` and the same view state. Nothing keeps them synchronized because there is
-  nothing to synchronize — add a field in one and the other shows it, because both are rendering one
-  immutable model. This is also why a panel is *replaced* rather than exchanged when the dropdown
-  changes: with duplicates allowed there is no panel to rescue from being displaced.
+  **The same panel may be open more than once, and what happens then depends on what it shows.** The
+  rule is **input mirrors, output differs**, and it is the whole of `lib/panel-settings.ts`:
+
+  - An **input** panel — Source object, Optical system — takes no settings and reads `system`
+    directly, so every copy shows the same thing. Nothing keeps them synchronized because there is
+    nothing to synchronize: add a field in one and the other shows it, because both are rendering one
+    immutable model. There is one design, and two views of it disagreeing about it would be a lie.
+  - An **output** panel — the layouts and the analyses — keeps its settings on **its own pane**, so
+    two copies are independent. One Layout 2D on X–Z beside another on Y–Z is the point of opening a
+    second, and a single app-wide "which plane" is exactly what used to prevent it.
+
+  An earlier version of this file said copies were *indistinguishable*, and that anything two copies
+  must differ in has to be a difference of panel. That was the rule until settings moved onto the
+  pane, and it is now true only of the input panels.
+
+  This is also why a panel is *replaced* rather than exchanged when the dropdown changes: with
+  duplicates allowed there is no panel to rescue from being displaced. Its settings go with it —
+  they describe the panel that has gone, and carrying them across is how a Layout 2D's plane ends up
+  half-applied to a spot diagram.
 
   **A pane is not a panel, and the distinction is load-bearing.** A `PanelId` no longer identifies
   anything on screen once the same panel can be open twice — in one window or across both — so

@@ -163,6 +163,15 @@ function describeField(field: Field | undefined): string {
  * Every field a system has, as indices. A system with no field list still draws
  * one bundle — the on-axis one — so the count is never zero.
  */
+/**
+ * Grid density from a rays-per-fan setting, so one number drives both: a grid of
+ * n across the pupil is the same sampling as a fan of n. Floored so a three-ray
+ * fan still fills a picture, capped because a grid is n^2 rays.
+ */
+export function gridAcrossPupil(raysPerFan: number): number {
+  return Math.max(3, Math.min(raysPerFan, 15));
+}
+
 export function allFieldIndices(system: OpticalSystem): number[] {
   return Array.from({ length: Math.max(system.fields.length, 1) }, (_, index) => index);
 }

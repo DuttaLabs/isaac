@@ -1,4 +1,5 @@
 import { type PanelId } from './panels.ts';
+import { defaultSettings, type PanelSettings } from './panel-settings.ts';
 
 /**
  * The arrangement of panels, as a binary space partition.
@@ -37,6 +38,23 @@ export interface Pane {
    * immediately replaced.
    */
   readonly panel: PanelId | undefined;
+  /**
+   * What this copy of the panel is set to — which plane a Layout 2D is drawn
+   * in, how many rays it traces, which fields it narrows to.
+   *
+   * On the pane rather than on `App` because **output panels are allowed to
+   * differ**: two Layout 2D panels exist so that one can show X–Z while the
+   * other shows Y–Z, and a single app-wide "which plane" is exactly what
+   * prevented that. Input panels — the source object, the lens grid — have no
+   * settings here and mirror each other as they always did, because there is one
+   * design and two views of it disagreeing would be a lie.
+   *
+   * Being *inside* the tree is also what makes a saved arrangement worth
+   * saving: the panels come back in their places with their plots still set the
+   * way they were left. `undefined` means untouched defaults, which is what a
+   * blank pane and every input panel carry.
+   */
+  readonly settings?: PanelSettings;
 }
 
 /** A branch: two panes, in some direction, sharing the space they were given. */
@@ -119,7 +137,11 @@ export const DEFAULT_WORKSPACE: Workspace = {
       'column',
       0.6,
       pane('pane-layout-2d', 'layout2d'),
-      pane('pane-analysis', 'analysis'),
+      // The two analyses side by side, which is the arrangement the old combined
+      // Analysis panel was imitating with a grid inside one panel. As panes they
+      // can be resized against each other, closed separately, or turned over to
+      // something else — none of which a grid inside a panel could do.
+      split('split-plots', 'row', 0.5, pane('pane-ray-fan', 'rayFan'), pane('pane-spot', 'spot')),
     ),
   ),
   nextKey: 1,
@@ -183,12 +205,43 @@ export function isEmpty(workspace: Workspace): boolean {
   return workspace.root.kind === 'pane' && workspace.root.panel === undefined;
 }
 
-/** Turns one pane over to a different panel, leaving every other pane alone. */
+/**
+ * Turns one pane over to a different panel, leaving every other pane alone.
+ *
+ * The settings go with the old panel rather than being kept: they describe that
+ * panel and mean nothing to the new one, and carrying them across is how a
+ * Layout 2D's plane ends up half-applied to a spot diagram. A pane turned back
+ * again therefore starts fresh, which is the honest reading of having replaced
+ * what was there.
+ */
 export function setPanePanel(workspace: Workspace, key: string, panel: PanelId): Workspace {
   return {
     ...workspace,
     root: mapNode(workspace.root, (node) =>
-      node.kind === 'pane' && node.key === key ? { ...node, panel } : node,
+      node.kind === 'pane' && node.key === key
+        ? { ...node, panel, settings: defaultSettings(panel) }
+        : node,
+    ),
+  };
+}
+
+/**
+ * Changes what one pane is set to.
+ *
+ * Takes the settings rather than a change to them so that it stays a pure
+ * function of the workspace, like every other operation here — the caller reads
+ * the pane's current settings through `settingsOf`, which is where the defaults
+ * for anything missing are filled in.
+ */
+export function setPaneSettings(
+  workspace: Workspace,
+  key: string,
+  settings: PanelSettings,
+): Workspace {
+  return {
+    ...workspace,
+    root: mapNode(workspace.root, (node) =>
+      node.kind === 'pane' && node.key === key ? { ...node, settings } : node,
     ),
   };
 }
@@ -262,7 +315,7 @@ export function resizeSplit(workspace: Workspace, key: string, delta: number): W
 /** Opens a panel in a blank pane — how an emptied workspace is recovered. */
 export function addFirstPanel(workspace: Workspace, panel: PanelId): Workspace {
   return workspace.root.kind === 'pane'
-    ? { ...workspace, root: { ...workspace.root, panel } }
+    ? { ...workspace, root: { ...workspace.root, panel, settings: defaultSettings(panel) } }
     : workspace;
 }
 

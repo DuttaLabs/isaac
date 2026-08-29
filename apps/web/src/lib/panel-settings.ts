@@ -66,8 +66,31 @@ export interface Layout2DSettings extends PlotSettings {
   readonly showFirstOrder: boolean;
 }
 
+/**
+ * Where the camera stands, once the user has put it somewhere.
+ *
+ * A *setting*, not a signal, and the distinction earns its keep here: an
+ * orientation someone set up by hand is exactly the kind of thing that should
+ * still be there when they come back, and keeping it on the pane is what makes
+ * it survive both a re-render and — the case that actually bit — closing the
+ * panel next door, which remounts this one and takes every scrap of component
+ * state with it.
+ *
+ * Written on the *end* of a drag rather than per frame: an orbit is one gesture
+ * however many frames it takes, and a write per frame would re-render the app
+ * sixty times a second to record something nobody has finished doing.
+ */
+export interface CameraState {
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+  /** Orthographic size, and 1 on a perspective camera that has not been zoomed. */
+  readonly zoom: number;
+}
+
 export interface Layout3DSettings extends PlotSettings {
   readonly panel: 'layout3d';
+  /** Undefined until the view has been framed by hand; Reset view clears it. */
+  readonly camera?: CameraState;
 }
 
 /**

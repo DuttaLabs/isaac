@@ -21,6 +21,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { buildOpticalScene, type OpticalScene } from '@isaac/three-optics';
 import type { LayoutTrace } from '../lib/analysis.ts';
+import type { CameraState } from '../lib/panel-settings.ts';
 import { fieldStyle } from '../lib/fields.ts';
 import { useThemeColors } from '../lib/theme-colors.ts';
 import { AxisTriad } from './AxisTriad.tsx';
@@ -239,6 +240,8 @@ export function Layout3DView({
   surfaceColors,
   resetSignal,
   overlay,
+  camera: savedCamera,
+  onCamera,
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
@@ -261,6 +264,10 @@ export function Layout3DView({
    * around `.layout-3d` is what puts the canvas back at 300 x 150.
    */
   overlay?: ReactNode;
+  /** Where the camera was left, if it has been framed by hand. */
+  camera?: CameraState;
+  /** Reports a new one at the end of a gesture, and `undefined` on a reset. */
+  onCamera?: (state: CameraState | undefined) => void;
 }) {
   const colors = useThemeColors();
   const tweaks = useTweaks();
@@ -321,7 +328,14 @@ export function Layout3DView({
           <directionalLight position={[1, 1.4, -1]} intensity={1.6} />
           <directionalLight position={[-1, -0.6, 0.8]} intensity={0.5} />
 
-          <Controls framing={framing} tweaks={tweaks} resetSignal={resetSignal} />
+          <Controls
+            framing={framing}
+            tweaks={tweaks}
+            resetSignal={resetSignal}
+            subject={system}
+            saved={savedCamera}
+            onCamera={onCamera}
+          />
           <CameraOrientation publish={publishAxes} />
 
           <AxisLine
@@ -470,22 +484,54 @@ function Controls({
   framing,
   tweaks,
   resetSignal,
+  subject,
+  saved,
+  onCamera,
 }: {
   framing: Framing;
   tweaks: Tweaks;
   resetSignal: number;
+  /**
+   * What is being looked at. The *system*, deliberately, and not `framing`:
+   * framing is measured from the scene, so it is a new object every time the ray
+   * count or the field selection changes, and depending on it here meant that
+   * turning the rays from 9 to 11 threw away an orbit the user had set up. The
+   * subject of the picture has not changed, so the camera should not move.
+   */
+  subject: OpticalSystem;
+  saved: CameraState | undefined;
+  onCamera: ((state: CameraState | undefined) => void) | undefined;
 }) {
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
   const domElement = useThree((state) => state.gl.domElement);
   const controls = useRef<OrbitControls>(null);
-  /** Whether the user has moved the camera since the last deliberate reframe. */
+  /** Whether the user has framed something since the last deliberate reframe. */
   const touched = useRef(false);
+  /** Whether a view has been applied at all — false until the canvas is measured. */
+  const settled = useRef(false);
   const lastFov = useRef(tweaks.fieldOfView);
   const lastDistance = useRef(tweaks.cameraDistance);
   const { projection, fieldOfView, fitMargin, cameraDistance } = tweaks;
 
-  const fit = (): void => {
+  // Read through a ref so the listener below can be attached once. An inline
+  // callback is a new function every render, and a listener taking it as a
+  // dependency would be torn down and rebuilt on each one.
+  const report = useRef(onCamera);
+  useLayoutEffect(() => {
+    report.current = onCamera;
+  });
+
+  /**
+   * Put the camera somewhere: back where the user left it if they left it
+   * anywhere, and otherwise around the whole system.
+   *
+   * Near and far come from the fit either way, because they are clipping planes
+   * for *this* scene — a remembered position says where to stand, not what to
+   * be able to see, and a system that has grown since would be sliced by the
+   * old ones.
+   */
+  const applyView = (): void => {
     // Nothing to fit against yet. The measurement effect will call back.
     if (size.width === 0 || size.height === 0) {
       return;
@@ -493,43 +539,70 @@ function Controls({
     const placed = placeCamera(framing, tweaks, HOME_TUPLE, size.width, size.height);
     camera.near = placed.near;
     camera.far = placed.far;
-    camera.zoom = placed.zoom;
-    camera.position.set(...placed.position);
+
+    const restoring = !settled.current && saved !== undefined;
+    settled.current = true;
+    // A remembered view is one the user framed, so it counts as having framed
+    // one: a later resize widens the picture and leaves their angle alone.
+    touched.current = restoring || touched.current;
+
+    camera.zoom = restoring ? saved.zoom : placed.zoom;
+    camera.position.set(...(restoring ? saved.position : placed.position));
     camera.updateProjectionMatrix();
 
     const orbit = controls.current;
     if (orbit) {
-      orbit.target.set(...framing.target);
+      orbit.target.set(...(restoring ? saved.target : framing.target));
       orbit.update();
     }
   };
 
-  // The latest `fit`, so the two effects below can call it without taking every
-  // value it closes over as a dependency of their own — a field of view change
-  // would otherwise refit, which is precisely what the dolly below exists to
-  // avoid. Declared first, so it is current by the time either of them runs.
-  const latestFit = useRef(fit);
+  // The latest `applyView`, so the effects below can call it without taking
+  // every value it closes over as a dependency of their own — a field of view
+  // change would otherwise refit, which is precisely what the dolly below exists
+  // to avoid. Declared first, so it is current by the time any of them runs.
+  const latestFit = useRef(applyView);
   useLayoutEffect(() => {
-    latestFit.current = fit;
+    latestFit.current = applyView;
   });
 
-  // A new system reframes the scene, and the reset button restores that framing
-  // — one effect, because they are the same operation asked for two ways. Both
-  // hand the view back, so both clear the record of the user having set one up.
+  /**
+   * The canvas being measured: once on mount, and again whenever a divider is
+   * dragged or a neighbouring panel is closed.
+   *
+   * The mount is also where a remembered view is put back, which is why this is
+   * the effect that runs on both — the fit is *deferred until the canvas has a
+   * size*, because R3F renders this subtree while the canvas is still at its
+   * untouched 300 x 150 and reports zero, and a fit against a zero aspect puts
+   * the camera at infinity.
+   *
+   * Refitting on a later measurement is right up until the user has framed
+   * something themselves; after that a resize widens the picture and leaves
+   * their angle alone, as it does in every other 3-D application.
+   */
   useLayoutEffect(() => {
-    touched.current = false;
-    latestFit.current();
-  }, [camera, framing, resetSignal, projection, fitMargin]);
+    if (!settled.current || !touched.current) {
+      latestFit.current();
+    }
+  }, [camera, size.width, size.height]);
 
-  // The canvas being measured, which happens once on mount and again whenever a
-  // divider is dragged. Refitting is right up until the user has framed
-  // something themselves; after that a resize widens the frame and leaves their
-  // view alone, as it does in every other 3-D application.
-  useLayoutEffect(() => {
+  // A different system is a different subject, so it is framed afresh — unless
+  // the user has framed it themselves, in which case Reset view is one click and
+  // taking their view away is not.
+  useAfterFirst(() => {
     if (!touched.current) {
       latestFit.current();
     }
-  }, [size.width, size.height]);
+  }, [subject]);
+
+  // Reset view, and the two tweaks that change what a fit even means. These hand
+  // the view back deliberately, so they drop the remembered one and clear the
+  // record of the user having set anything up.
+  useAfterFirst(() => {
+    touched.current = false;
+    report.current?.(undefined);
+    latestFit.current();
+  }, [resetSignal, projection, fitMargin]);
 
   // What counts as the user framing something: `start` fires on a drag or a
   // wheel, and not on our own `update()`.
@@ -541,8 +614,22 @@ function Controls({
     const onStart = (): void => {
       touched.current = true;
     };
+    // The *end* of the gesture is when it is worth recording: an orbit is one
+    // gesture however many frames it takes, and reporting per frame would
+    // re-render the app sixty times a second over something still in progress.
+    const onEnd = (): void => {
+      report.current?.({
+        position: camera.position.toArray() as [number, number, number],
+        target: orbit.target.toArray() as [number, number, number],
+        zoom: camera.zoom,
+      });
+    };
     orbit.addEventListener('start', onStart);
-    return () => orbit.removeEventListener('start', onStart);
+    orbit.addEventListener('end', onEnd);
+    return () => {
+      orbit.removeEventListener('start', onStart);
+      orbit.removeEventListener('end', onEnd);
+    };
   }, [camera, domElement]);
 
   /**
@@ -594,6 +681,27 @@ function Controls({
       zoomToCursor
     />
   );
+}
+
+/**
+ * An effect that does not run on mount.
+ *
+ * Both of the deliberate reframes below are *changes* — a different system, a
+ * press of Reset view — and neither has happened on the first render. Running
+ * them there would have Reset view clear a remembered camera the moment the
+ * panel opened, which is the one thing that view is for.
+ */
+function useAfterFirst(run: () => void, deps: unknown[]): void {
+  const first = useRef(true);
+  useLayoutEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    run();
+    // The caller names what this watches; `run` is read fresh each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
 }
 
 interface Framing extends SystemExtent {

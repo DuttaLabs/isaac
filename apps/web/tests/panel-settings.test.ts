@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DEFAULT_LAYOUT_2D,
+  DEFAULT_LAYOUT_3D,
   DEFAULT_RAY_FAN,
   DEFAULT_SPOT,
   defaultSettings,
@@ -12,6 +13,7 @@ import {
 } from '../src/lib/panel-settings.ts';
 import {
   DEFAULT_WORKSPACE,
+  closePane,
   findPane,
   setPanePanel,
   setPaneSettings,
@@ -86,4 +88,27 @@ test('a field list reads past its end as visible', () => {
   assert.deepEqual(withFieldShown([], 2, false), [true, true, false]);
   assert.deepEqual(withFieldShown([false], 2, false), [false, true, false]);
   assert.deepEqual(withFieldShown([false, false], 0, true), [true, false]);
+});
+
+test('a framed camera outlives the panel that was framed', () => {
+  // Closing a neighbouring pane remounts the survivor -- React ties state to a
+  // position in the tree, and the sibling moves up a level -- so a camera held
+  // inside the component would go with it. On the pane, it does not.
+  const framed = setPaneSettings(DEFAULT_WORKSPACE, 'pane-layout-2d', {
+    ...DEFAULT_LAYOUT_3D,
+    camera: { position: [1, 2, 3], target: [0, 0, 4], zoom: 1 },
+  });
+  const survivor = closePane(framed, 'pane-first-order');
+
+  assert.deepEqual(
+    settingsOf(findPane(survivor, 'pane-layout-2d')?.settings, DEFAULT_LAYOUT_3D).camera,
+    {
+      position: [1, 2, 3],
+      target: [0, 0, 4],
+      zoom: 1,
+    },
+  );
+  // And a 3-D panel that has never been framed carries no camera at all, so it
+  // fits rather than restoring nothing.
+  assert.equal(DEFAULT_LAYOUT_3D.camera, undefined);
 });

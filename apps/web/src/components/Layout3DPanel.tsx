@@ -127,6 +127,8 @@ export function Layout3DPanel({
                 elementColors={elementColors}
                 surfaceColors={surfaceColors}
                 resetSignal={resetSignal}
+                camera={settings.camera}
+                onCamera={(camera) => onSettings({ ...settings, camera })}
                 overlay={
                   <PlotFieldFilter
                     system={system}

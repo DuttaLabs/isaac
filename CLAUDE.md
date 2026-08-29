@@ -556,9 +556,30 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   the system, and `placeCamera` decides where the camera stands, which is why the fit
   happens **inside** the canvas: R3F renders this subtree while the canvas is still at
   its untouched 300 × 150 default and reports a size of zero, so `Controls` fits on the
-  *measurement*, not on the mount. Two effects, then — a reframe (new system, Reset
-  view) and a measurement — and the second stops refitting once the user has orbited,
-  which `OrbitControls`' `start` event is what marks.
+  *measurement*, not on the mount.
+
+  **Where the camera stands is a setting on the pane** (`Layout3DSettings.camera`), written on
+  `OrbitControls`' `end` — once per gesture, never per frame. That is what carries an orbit
+  through the remount described above, and it will carry one into a saved layout later. `start`
+  marks the view as *framed by hand*, and almost everything follows from that one flag.
+
+  Three effects, each one idea, and the deps are the whole design:
+
+  - **Measurement** (`size`) — the first one to see a non-zero canvas puts the camera somewhere:
+    back where it was left if there is a remembered view, and around the whole system otherwise.
+    Later measurements refit only while nothing has been framed by hand.
+  - **Subject** (`system`) — a different design is framed afresh, unless the user has framed it
+    themselves; Reset view is one click and taking their viewpoint away is not.
+  - **Reset view**, projection and fit margin — a deliberate hand-back, so these drop the
+    remembered view as well as refitting.
+
+  **`framing` is deliberately not a dependency of any of them.** It is measured from the *scene*,
+  which includes the rays, so it is a fresh object every time the ray count or the field selection
+  changes — and depending on it meant that turning the rays from 9 to 11 threw away an orbit. The
+  subject of the picture had not changed, so the camera should not have moved. Near and far still
+  come from the fit even when a remembered view is restored: a remembered position says where to
+  stand, not what to be able to see, and a system that has grown since would be sliced by the old
+  clipping planes.
 
   Two traps, both of which cost an afternoon:
 
@@ -627,6 +648,16 @@ The marginal ray is also **produced undeviated from its first contact to the pup
     panel on screen changes size. The old arrangement re-divided the whole column's weights, so
     closing one panel nudged every panel in that column at once and left the user hunting for what
     moved.
+
+    **The survivor is remounted, though**, and this is worth knowing because it is invisible until
+    it costs something. The sibling moves *up a level* in the tree, and React ties component state
+    to a position, not to a key — so closing a neighbour throws away everything the surviving panel
+    was holding: the lens table's scroll position, the 2-D view's pan and zoom, the 3-D camera.
+    Splitting is safe because the pane stays where it is; closing is not. Anything that must
+    survive it therefore has to live *above* the panel — which is what `Pane.settings` is, and why
+    the 3-D camera is one. Curing this at the root means rendering the panes as a flat list
+    positioned from computed rectangles, so a pane's place in the React tree never changes; that is
+    a real change to `renderNode` and has not been made.
   - **A divider is a split's own `ratio`**, one number between 0 and 1. "The two together are exactly
     the parent" is therefore not an invariant anyone maintains — it is the only thing the type can
     say. A pair of weights could drift apart; a ratio cannot.

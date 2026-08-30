@@ -6,6 +6,9 @@ import { computeLayoutTraces } from '../src/lib/analysis.ts';
 import {
   outOfPlaneAxis,
   projectToPlane,
+  turnAxes,
+  turnBounds,
+  turnPoint,
   viewPlaneAxes,
   VIEW_PLANES,
   VIEW_PLANE_IDS,

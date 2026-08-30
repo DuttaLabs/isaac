@@ -1,5 +1,5 @@
 import { type PanelId } from './panels.ts';
-import { type ViewPlaneId } from './view-plane.ts';
+import { type QuarterTurns, type ViewPlaneId } from './view-plane.ts';
 
 /**
  * What one panel on screen is set to, as distinct from what every copy of it
@@ -27,9 +27,6 @@ import { type ViewPlaneId } from './view-plane.ts';
  * counter, a hover highlight — is not, and stays on `App`: writing a reset
  * counter to disk would mean nothing on the way back in.
  */
-
-/** Quarter turns clockwise applied to a plot: 0, 90, 180 or 270 degrees. */
-export type QuarterTurns = 0 | 1 | 2 | 3;
 
 /**
  * Which fields a plot draws, as a flag per field.

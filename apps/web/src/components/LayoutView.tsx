@@ -12,7 +12,15 @@ import type { FirstOrderRays, LayoutTrace } from '../lib/analysis.ts';
 import type { RayTraceResult } from '@isaac/optical-core';
 import { wavelengthStyle } from '../lib/wavelengths.ts';
 import { fieldStyle } from '../lib/fields.ts';
-import { VIEW_PLANES, viewPlaneAxes, type ViewPlane } from '../lib/view-plane.ts';
+import {
+  VIEW_PLANES,
+  turnAxes,
+  turnBounds,
+  turnPoint,
+  viewPlaneAxes,
+  type QuarterTurns,
+  type ViewPlane,
+} from '../lib/view-plane.ts';
 import { AxisTriad } from './AxisTriad.tsx';
 
 const WIDTH = 900;
@@ -62,6 +70,7 @@ export function LayoutView({
   system,
   traces,
   plane,
+  turns = 0,
   defaultSemiDiameter,
   highlightedSurface,
   elementColors,
@@ -73,6 +82,12 @@ export function LayoutView({
   traces: readonly LayoutTrace[];
   /** Which plane to draw. Defaults to the meridional one a layout has always meant. */
   plane?: ViewPlane;
+  /**
+   * Quarter turns clockwise. A rotation of the *picture*, not a change of plane:
+   * one turn stands the axis upright with the object at the top, which is how a
+   * microscope column is read.
+   */
+  turns?: QuarterTurns;
   defaultSemiDiameter: number;
   /** Surface the user is on in the lens table, picked out so the row and the
    *  picture can be read together. */
@@ -105,7 +120,12 @@ export function LayoutView({
 
   const multipleWavelengths = new Set(traces.map((trace) => trace.wavelengthIndex)).size > 1;
 
-  const { minH, maxH, minV, maxV } = geometry.bounds;
+  // Turned *here*, in the projection, rather than in the geometry: the plane
+  // decides which world axes are in play and how a profile is swept, and holding
+  // the picture sideways changes none of that. Folding the turn into `project`
+  // also means everything drawn through it comes round together — the overlay
+  // included, which builds its own points from a z and a radius.
+  const { minH, maxH, minV, maxV } = turnBounds(geometry.bounds, turns);
   const spanH = Math.max(maxH - minH, 1e-6);
   const spanV = Math.max(maxV - minV, 1e-6);
   const scale = Math.min((WIDTH - 2 * PADDING) / spanH, (HEIGHT - 2 * PADDING) / spanV);
@@ -116,10 +136,17 @@ export function LayoutView({
   // empty.
   const centerH = (minH + maxH) / 2;
   const centerV = (minV + maxV) / 2;
-  const project = (point: LayoutPoint): { x: number; y: number } => ({
-    x: WIDTH / 2 + (point.h - centerH) * scale,
-    y: HEIGHT / 2 - (point.v - centerV) * scale,
-  });
+  const project = (point: LayoutPoint): { x: number; y: number } => {
+    const turned = turnPoint(point, turns);
+    return {
+      x: WIDTH / 2 + (turned.h - centerH) * scale,
+      y: HEIGHT / 2 - (turned.v - centerV) * scale,
+    };
+  };
+
+  // Which way the optical axis runs on screen once the picture has been turned.
+  // It is the h direction of the view plane, so a quarter turn stands it upright.
+  const axisAcross = turnPoint({ h: 1, v: 0 }, turns).h !== 0;
 
   const origin = project({ h: 0, v: 0 });
   const zoom = view.width / WIDTH;
@@ -135,10 +162,10 @@ export function LayoutView({
       {drawn.axial ? (
         <line
           className="axis-line"
-          x1={PADDING}
-          y1={origin.y}
-          x2={WIDTH - PADDING}
-          y2={origin.y}
+          x1={axisAcross ? PADDING : origin.x}
+          y1={axisAcross ? origin.y : PADDING}
+          x2={axisAcross ? WIDTH - PADDING : origin.x}
+          y2={axisAcross ? origin.y : HEIGHT - PADDING}
           strokeDasharray="4 4"
         />
       ) : (
@@ -299,7 +326,7 @@ export function LayoutView({
         legend that grows when you zoom in has stopped being one.
       */}
       <AxisTriad
-        axes={viewPlaneAxes(drawn)}
+        axes={turnAxes(viewPlaneAxes(drawn), turns)}
         label={`${drawn.label} plane. ${drawn.description}`}
         x={view.x + view.width - TRIAD_INSET * zoom}
         y={view.y + TRIAD_INSET * zoom}
@@ -555,6 +582,10 @@ function PupilPlane({
   const top = project({ h: mark.z, v: mark.radius });
   const bottom = project({ h: mark.z, v: -mark.radius });
   const tick = 6 * zoom;
+  // Across the bar, whichever way the bar is now lying. Taken from the bar's own
+  // screen direction rather than assumed horizontal, so the end caps stay end
+  // caps when the picture is turned.
+  const across = perpendicular(top, bottom);
 
   return (
     <g className={`pupil-plane ${kind}`}>
@@ -567,10 +598,10 @@ function PupilPlane({
       {[top, bottom].map((end, index) => (
         <line
           key={index}
-          x1={end.x - tick}
-          y1={end.y}
-          x2={end.x + tick}
-          y2={end.y}
+          x1={end.x - across.x * tick}
+          y1={end.y - across.y * tick}
+          x2={end.x + across.x * tick}
+          y2={end.y + across.y * tick}
           strokeDasharray="none"
         />
       ))}
@@ -579,14 +610,33 @@ function PupilPlane({
           where they would overlap at any useful zoom. Font size is scaled
           against the viewBox so a label keeps one size on screen. */}
       <text
-        x={(entrance ? top.x : bottom.x) + tick + 2 * zoom}
-        y={entrance ? top.y - 4 * zoom : bottom.y + 11 * zoom}
+        x={(entrance ? top.x : bottom.x) + across.x * (tick + 3 * zoom)}
+        y={(entrance ? top.y : bottom.y) + across.y * (tick + 3 * zoom) + 4 * zoom}
         fontSize={11 * zoom}
       >
         {entrance ? 'EP' : 'XP'}
       </text>
     </g>
   );
+}
+
+/**
+ * A unit vector across a line, in screen coordinates.
+ *
+ * The overlay's bars run along the height of the beam, and their end caps and
+ * labels sit *across* them. That direction used to be assumed horizontal, which
+ * was true only while the axis ran left to right; a turned picture needs it
+ * taken from the bar itself. Degenerate bars — a pupil of zero radius — fall
+ * back to horizontal rather than dividing by nothing.
+ */
+function perpendicular(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): { x: number; y: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  return length < 1e-9 ? { x: 1, y: 0 } : { x: -dy / length, y: dx / length };
 }
 
 /**
@@ -661,6 +711,7 @@ function PrincipalPlaneMarks({
         }
         const top = project({ h: z, v: planes.radius });
         const bottom = project({ h: z, v: -planes.radius });
+        const across = perpendicular(top, bottom);
         return (
           <g key={key}>
             <title>
@@ -669,7 +720,11 @@ function PrincipalPlaneMarks({
                 : 'Rear principal plane P′: the rear focal point lies one focal length after it. To first order the whole lens behaves as a thin one placed here.'}
             </title>
             <line x1={top.x} y1={top.y} x2={bottom.x} y2={bottom.y} strokeDasharray="9 5" />
-            <text x={top.x + 3 * zoom} y={top.y - 4 * zoom} fontSize={11 * zoom}>
+            <text
+              x={top.x + across.x * 4 * zoom}
+              y={top.y + across.y * 4 * zoom + 4 * zoom}
+              fontSize={11 * zoom}
+            >
               {label}
             </text>
           </g>

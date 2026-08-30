@@ -198,5 +198,115 @@ export function viewPlaneAxes(view: ViewPlane): ProjectedAxis[] {
   });
 }
 
+/**
+ * How far a 2-D plot is turned on screen, in quarter turns **clockwise**.
+ *
+ * A rotation is not a change of *plane*: which two world axes are in play
+ * decides how a surface profile is swept and which way a ray fan has to be
+ * spread, and none of that is affected by holding the picture sideways. So this
+ * is applied to the projected point, after {@link projectToPlane} — never by
+ * swapping the plane's axes, which would quietly re-sweep every profile in the
+ * wrong direction.
+ *
+ * One quarter turn puts the object at the top and the image at the bottom, which
+ * is how a microscope's column is read: light goes left to right by default, and
+ * turning the picture clockwise sends the left edge to the top.
+ */
+export type QuarterTurns = 0 | 1 | 2 | 3;
+
+export const QUARTER_TURNS: readonly QuarterTurns[] = [0, 1, 2, 3];
+
+/** What the control shows. Degrees, because that is what is being asked for. */
+export const QUARTER_TURN_LABELS: Record<QuarterTurns, string> = {
+  0: '0°',
+  1: '90°',
+  2: '180°',
+  3: '270°',
+};
+
+export const QUARTER_TURN_DESCRIPTIONS: Record<QuarterTurns, string> = {
+  0: 'Light left to right, the way a lens layout is usually drawn.',
+  1: 'Turned a quarter clockwise: the object at the top and the image at the bottom, as a microscope column is read.',
+  2: 'Turned half round: light right to left.',
+  3: 'Turned a quarter anticlockwise: the object at the bottom and the image at the top.',
+};
+
+/**
+ * A projected point, turned.
+ *
+ * `v` runs *up*, so a clockwise turn takes (h, v) to (v, −h): a point out to the
+ * right at h = 1 lands at v = −1, which is the bottom. That is the whole of the
+ * rotation, and everything else in the 2-D view follows from putting it inside
+ * the projection.
+ */
+export function turnPoint(point: LayoutPoint, turns: QuarterTurns): LayoutPoint {
+  switch (turns) {
+    case 1:
+      return { h: point.v, v: -point.h };
+    case 2:
+      return { h: -point.h, v: -point.v };
+    case 3:
+      return { h: -point.v, v: point.h };
+    default:
+      return point;
+  }
+}
+
+/** The extent of a drawing, in the view's own coordinates. */
+export interface PlaneBounds {
+  minH: number;
+  maxH: number;
+  minV: number;
+  maxV: number;
+}
+
+/**
+ * The same extent, turned — so a quarter turn re-fits a wide layout as a tall
+ * one instead of leaving it fitted to the shape it used to have.
+ */
+export function turnBounds(bounds: PlaneBounds, turns: QuarterTurns): PlaneBounds {
+  const corners = [
+    turnPoint({ h: bounds.minH, v: bounds.minV }, turns),
+    turnPoint({ h: bounds.maxH, v: bounds.maxV }, turns),
+  ];
+  const hs = corners.map((corner) => corner.h);
+  const vs = corners.map((corner) => corner.v);
+  return {
+    minH: Math.min(...hs),
+    maxH: Math.max(...hs),
+    minV: Math.min(...vs),
+    maxV: Math.max(...vs),
+  };
+}
+
+/**
+ * The gizmo's axes, turned with the picture.
+ *
+ * These are in *screen* directions, where `y` grows downward as SVG does, so the
+ * turn is the other one: clockwise takes (x, y) to (−y, x). An arrow pointing
+ * right becomes one pointing down, which is what turning the picture clockwise
+ * does to it. Getting this backwards draws a gizmo that contradicts the drawing
+ * beside it, which is worse than having no gizmo.
+ */
+export function turnAxes(axes: ProjectedAxis[], turns: QuarterTurns): ProjectedAxis[] {
+  return axes.map((axis) => {
+    const turned = turnScreen(axis.x, axis.y, turns);
+    return { ...axis, x: turned.x, y: turned.y };
+  });
+}
+
+function turnScreen(x: number, y: number, turns: QuarterTurns): { x: number; y: number } {
+  switch (turns) {
+    case 1:
+      return { x: -y, y: x };
+    case 2:
+      return { x: -x, y: -y };
+    case 3:
+      return { x: y, y: -x };
+    default:
+      return { x, y };
+  }
+}
+
 /** The world axes, in the order a gizmo lists them. */
 export const AXES: readonly Axis[] = AXIS_ORDER;

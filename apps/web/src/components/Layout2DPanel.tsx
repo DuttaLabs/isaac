@@ -10,7 +10,15 @@ import {
 } from '../lib/analysis.ts';
 import { fieldShown, type Layout2DSettings } from '../lib/panel-settings.ts';
 import type { Result } from '../lib/result.ts';
-import { VIEW_PLANES, VIEW_PLANE_IDS, type ViewPlaneId } from '../lib/view-plane.ts';
+import {
+  QUARTER_TURNS,
+  QUARTER_TURN_DESCRIPTIONS,
+  QUARTER_TURN_LABELS,
+  VIEW_PLANES,
+  VIEW_PLANE_IDS,
+  type QuarterTurns,
+  type ViewPlaneId,
+} from '../lib/view-plane.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { FieldLegend } from './FieldLegend.tsx';
 import { FirstOrderLegend } from './FirstOrderLegend.tsx';
@@ -180,6 +188,28 @@ export function Layout2DPanel({
               ))}
             </select>
           </label>
+          {/* Turning the picture, not changing the plane — which is why it sits
+            beside the plane rather than inside it: the same cross-section can be
+            read with the axis across the page or standing up it. */}
+          <label className="inline hint" title={QUARTER_TURN_DESCRIPTIONS[settings.quarterTurns]}>
+            turn
+            <select
+              value={settings.quarterTurns}
+              aria-label="Rotate the layout"
+              onChange={(event) =>
+                onSettings({
+                  ...settings,
+                  quarterTurns: Number(event.target.value) as QuarterTurns,
+                })
+              }
+            >
+              {QUARTER_TURNS.map((turns) => (
+                <option key={turns} value={turns}>
+                  {QUARTER_TURN_LABELS[turns]}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             title="Fit the drawing to the panel again"
             onClick={() => setResetSignal((count) => count + 1)}
@@ -201,6 +231,7 @@ export function Layout2DPanel({
                 system={system}
                 traces={traces.value}
                 plane={plane}
+                turns={settings.quarterTurns}
                 defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                 highlightedSurface={highlightedSurface}
                 elementColors={elementColors}

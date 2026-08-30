@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ApertureKind, SurfaceAperture } from '@isaac/optical-core';
+import { useTweaks } from '../dev/tweaks.ts';
 import { NumericCell } from './NumericCell.tsx';
 
 /**
@@ -19,17 +20,34 @@ import { NumericCell } from './NumericCell.tsx';
  * fixed where the drawing has no outer bound to be proportional to.
  */
 
+/** The icon's own coordinate space. Screen size is {@link PIXELS}. */
 const SIDE = 18;
 const CENTER = SIDE / 2;
+/**
+ * How large the icon is drawn, before the development scale knob. Every pixel
+ * here is a pixel of row height, which is why the knob exists — see
+ * `dev/tweaks.ts`.
+ */
+const PIXELS = 36;
+/**
+ * The placeholder's size, which the knob does not touch. It marks a surface
+ * with *no* aperture, so it should stay quiet however large the real icons are.
+ */
+const EMPTY_PIXELS = 18;
 /** The disc standing for the surface itself, nearly filling the square. */
 const DISC = 0.4 * SIDE;
 /**
- * The obscuration, inscribed in the square: the corners stay white, so it still
- * reads as a disc on paper rather than as a black cell. It is deliberately
- * larger than {@link DISC} — an obscuration is the whole of what the icon has to
- * say, where the colored disc is a surface that also has a hole to show.
+ * The obscuration.
+ *
+ * **A fixed size, not a proportion.** Unlike the hole in an annulus — which is
+ * `minRadius / maxRadius` of the disc, and so tells you at a glance how much of
+ * the aperture is missing — an obscuration has no outer bound *in the icon* to
+ * be a proportion of. The nearest candidate is the surface's semi-diameter, and
+ * on the case this was drawn for it is the same number (the Hubble's baffle is
+ * drawn at exactly its own radius), so a proportional disc would fill the
+ * square and say nothing.
  */
-const OBSCURATION = SIDE / 2;
+const OBSCURATION = SIDE / 4;
 
 export const APERTURE_KIND_LABELS: Record<ApertureKind, string> = {
   CIRCULAR: 'Circular aperture',
@@ -43,6 +61,19 @@ export const APERTURE_KIND_HINTS: Record<ApertureKind, string> = {
   CIRCULAR_OBSCURATION: 'Light is stopped between the two radii and passes elsewhere (Zemax OBSC).',
   FLOATING: 'A circular aperture that follows the semi-diameter (Zemax FLAP).',
 };
+
+/**
+ * Where to draw a decentered obscuration. Its own disc is a fixed size, so the
+ * offset is measured against the obscuration's *radius* — a baffle decentered by
+ * its own radius sits with its edge on the axis, which is what the icon shows.
+ */
+function obscurationOffset(decenter: number, radius: number): number {
+  if (decenter === 0 || !Number.isFinite(radius) || radius <= 0) {
+    return 0;
+  }
+  const shift = (OBSCURATION * decenter) / radius;
+  return Math.max(-CENTER, Math.min(CENTER, shift));
+}
 
 export function apertureSummary(aperture: SurfaceAperture | undefined): string {
   if (aperture === undefined) {
@@ -73,12 +104,24 @@ export function ApertureIcon({
   aperture: SurfaceAperture | undefined;
   color: string;
 }) {
+  // In a production build this is `DEFAULT_TWEAKS` and the subscription never
+  // fires; the hook is called unconditionally all the same.
+  const { apertureIconScale: scale } = useTweaks();
+
   if (aperture === undefined) {
     // Not nothing: an empty cell in a column of pictures reads as a missing
     // picture. A faint outline says "there could be one here", which is also
     // the invitation to click.
     return (
-      <svg className="aperture-icon empty" viewBox={`0 0 ${SIDE} ${SIDE}`} aria-hidden="true">
+      <svg
+        className="aperture-icon empty"
+        // Sized here rather than in the sheet, for the same reason the real icon
+        // is: one place decides how big an aperture cell is, and the placeholder
+        // deliberately does not follow the knob.
+        style={{ width: `${EMPTY_PIXELS}px`, height: `${EMPTY_PIXELS}px` }}
+        viewBox={`0 0 ${SIDE} ${SIDE}`}
+        aria-hidden="true"
+      >
         <rect
           x={1.5}
           y={1.5}
@@ -96,12 +139,32 @@ export function ApertureIcon({
     aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
       ? DISC * Math.min(aperture.minRadius / aperture.maxRadius, 0.8)
       : 0;
+  /**
+   * A decentered hole is drawn decentered, in the same proportion its radius is:
+   * the icon's disc stands for `maxRadius`, so a decenter of half that is half
+   * the disc across. Clamped inside the disc, since the icon has to keep looking
+   * like a part even when the numbers say the hole has wandered off the edge.
+   */
+  const offset = (decenter: number): number =>
+    hole === 0 || !Number.isFinite(aperture.maxRadius)
+      ? 0
+      : Math.max(-DISC, Math.min(DISC, (DISC * decenter) / aperture.maxRadius));
 
   return (
-    <svg className="aperture-icon" viewBox={`0 0 ${SIDE} ${SIDE}`} aria-hidden="true">
+    <svg
+      className="aperture-icon"
+      style={{ width: `${PIXELS * scale}px`, height: `${PIXELS * scale}px` }}
+      viewBox={`0 0 ${SIDE} ${SIDE}`}
+      aria-hidden="true"
+    >
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
       {aperture.kind === 'CIRCULAR_OBSCURATION' ? (
-        <circle cx={CENTER} cy={CENTER} r={OBSCURATION} className="aperture-obscuration" />
+        <circle
+          cx={CENTER + obscurationOffset(aperture.decenterX, aperture.maxRadius)}
+          cy={CENTER - obscurationOffset(aperture.decenterY, aperture.maxRadius)}
+          r={OBSCURATION}
+          className="aperture-obscuration"
+        />
       ) : (
         <>
           <circle
@@ -114,7 +177,16 @@ export function ApertureIcon({
             // semi-diameter is — so its rim is drawn as one that can move.
             strokeDasharray={aperture.kind === 'FLOATING' ? '2 2' : undefined}
           />
-          {hole > 0 ? <circle cx={CENTER} cy={CENTER} r={hole} className="aperture-hole" /> : null}
+          {hole > 0 ? (
+            <circle
+              // Screen y grows downward, so a hole decentered toward +y is drawn
+              // toward the top of the square — the same way the layout draws it.
+              cx={CENTER + offset(aperture.decenterX)}
+              cy={CENTER - offset(aperture.decenterY)}
+              r={hole}
+              className="aperture-hole"
+            />
+          ) : null}
         </>
       )}
     </svg>

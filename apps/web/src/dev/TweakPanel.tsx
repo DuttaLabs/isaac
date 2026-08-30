@@ -97,6 +97,9 @@ export default function TweakPanel({ open }: { open: boolean }) {
     camera.add(params, 'fitMargin', 1, 2, 0.01).name('Fit margin');
     camera.add(params, 'cameraDistance', 0.25, 4, 0.05).name('Distance (x fit)');
 
+    const table = gui.addFolder('Lens table');
+    table.add(params, 'apertureIconScale', 0, 1, 0.02).name('Aperture icon');
+
     gui.onChange(() => {
       const next = { ...params };
       setTweaks(next);

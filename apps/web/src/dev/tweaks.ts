@@ -69,6 +69,18 @@ export interface Tweaks {
    * moves the depth range.
    */
   cameraDistance: number;
+
+  /**
+   * How large the lens table's aperture icon is, as a fraction of the size it
+   * is drawn at now. 1 is that size; 0 hides it.
+   *
+   * A knob because the answer is a trade nobody can reason out: the icon has to
+   * be readable at a glance, and every pixel of it is a pixel of row height in a
+   * table that is already sparser than the spreadsheet it replaces. The right
+   * size is also a moving target while more aperture kinds are being added —
+   * a rectangle and an ellipse have to read at whatever size this settles on.
+   */
+  apertureIconScale: number;
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -84,6 +96,8 @@ export const DEFAULT_TWEAKS: Tweaks = {
   fieldOfView: 24,
   fitMargin: 1.12,
   cameraDistance: 1,
+
+  apertureIconScale: 1,
 };
 
 /**

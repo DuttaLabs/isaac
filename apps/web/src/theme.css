@@ -1056,6 +1056,33 @@ svg.layout.panning {
 }
 
 /*
+ * **Ink does not scale.** The view zooms by shrinking the `viewBox`, which
+ * magnifies every length in the drawing — including the width of a stroke, so a
+ * 1.5-unit line became a 30-pixel slab at 20x and the lens it outlined
+ * disappeared inside its own edge. `non-scaling-stroke` moves the stroking into
+ * screen space: the geometry zooms, the pen does not, which is what a drawing
+ * program does and what a hairline is for.
+ *
+ * Two things follow from the same property, both wanted. Dash patterns are
+ * measured in screen space too, so a dashed axis stays dashed instead of
+ * stretching into a row of bars. And the stroke no longer scales with the
+ * *panel* either — 1.5 means 1.5 device pixels in a narrow pane and a wide one,
+ * where it used to render nearly twice as heavy on a wide panel.
+ *
+ * On the descendants rather than on the SVG, because `vector-effect` does not
+ * inherit. A blanket rule rather than an attribute per shape so that a path
+ * added later cannot forget it — this is a fact about the whole drawing, not a
+ * decoration on one shape.
+ *
+ * `stroke-linejoin: round` goes with it: a profile is a sampled polyline, and a
+ * miter join on a tight curve throws a spike out of the corner.
+ */
+svg.layout * {
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+
+/*
    The 3-D view fills its panel. It used to hold the 2-D drawing's proportions so
    that toggling between the two did not make the panel jump -- but they are two
    panels now, with no toggle between them, and a fixed aspect ratio in a panel

@@ -549,8 +549,28 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which
   is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture
-  vocabulary deliberately. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with
-  the zoom.
+  vocabulary deliberately. The 2D view pans and zooms by rewriting the SVG `viewBox`.
+
+  **The drawing scales; the ink does not.** Shrinking the `viewBox` magnifies *every* length in user
+  units, the width of a stroke included — at 20x a 1.5-unit outline became a 30-pixel slab, the lens
+  vanished inside its own edge, and the two strokes meeting at a rim showed a notch where their butt
+  caps failed to overlap. `svg.layout *` therefore carries `vector-effect: non-scaling-stroke`, which
+  moves the stroking into screen space: the geometry zooms, the pen does not. It is a blanket CSS rule
+  rather than an attribute per shape because `vector-effect` does not inherit and a path added later
+  must not be able to forget it. Dash patterns become screen lengths by the same property — a dashed
+  axis stays dashed instead of stretching into bars — and a stroke no longer scales with the *panel*
+  either, where a wide pane used to render every line nearly twice as heavy.
+
+  Two things go with it. `stroke-linejoin: round` on the same rule, because a profile is a sampled
+  polyline and a miter join on a tight curve throws a spike out of the corner; and `strokeLinecap`
+  round on the profiles and the ground edges, so the two strokes ending at one rim point overlap into
+  a corner at any weight.
+
+  **A mark that is a legend holds its screen size**, and the ones that do it multiply by `zoom`
+  (`view.width / WIDTH`): the gizmo, the first-order overlay's ticks and labels, the crosshairs that
+  stand for the axis end-on, and the stop bars — which, left in drawing units, grew into the tallest
+  thing in a zoomed picture. Anything measuring the *design* stays in drawing units, which is the
+  whole of the distinction.
 
   **A pan cannot lose the drawing.** `clampPan` (`lib/pan-zoom.ts`) holds the view's *center* inside
   the fitted box, which is the simplest rule that keeps the picture on screen and behaves at both ends

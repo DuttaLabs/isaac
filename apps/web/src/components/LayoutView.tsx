@@ -49,6 +49,8 @@ const WHEEL_SENSITIVITY = 0.0015;
 const TRIAD_INSET = 46;
 /** Half-length of the crosshairs standing in for an axis seen end-on. */
 const AXIS_CROSS = 14;
+/** How far a stop bar reaches past the rim, in screen pixels at any zoom. */
+const STOP_BAR = 10;
 
 const fittedBox = (height: number): ViewBox => ({ x: 0, y: 0, width: WIDTH, height });
 
@@ -178,8 +180,18 @@ export function LayoutView({
         // where it comes through; drawing it as a line would put an axis in the
         // picture that is not lying in this plane at all.
         <g className="axis-line" strokeDasharray="4 4">
-          <line x1={origin.x - AXIS_CROSS} y1={origin.y} x2={origin.x + AXIS_CROSS} y2={origin.y} />
-          <line x1={origin.x} y1={origin.y - AXIS_CROSS} x2={origin.x} y2={origin.y + AXIS_CROSS} />
+          <line
+            x1={origin.x - AXIS_CROSS * zoom}
+            y1={origin.y}
+            x2={origin.x + AXIS_CROSS * zoom}
+            y2={origin.y}
+          />
+          <line
+            x1={origin.x}
+            y1={origin.y - AXIS_CROSS * zoom}
+            x2={origin.x}
+            y2={origin.y + AXIS_CROSS * zoom}
+          />
         </g>
       )}
 
@@ -246,6 +258,7 @@ export function LayoutView({
                 fill="none"
                 stroke="var(--glass-stroke)"
                 strokeWidth={1.5}
+                strokeLinecap="round"
               />
             )),
       )}
@@ -271,6 +284,10 @@ export function LayoutView({
             fill="none"
             stroke={stroke}
             strokeWidth={highlighted ? 3 : profile.isMirror ? 2.5 : profile.isImage ? 2 : 1.5}
+            // A profile and the ground edge it meets are two strokes ending at
+            // one rim point. Butt caps leave a notch on the outside of that
+            // angle; round ones overlap into a corner, at any weight.
+            strokeLinecap="round"
           >
             {profile.isMirror ? <title>{`Surface ${profile.surfaceIndex}: mirror`}</title> : null}
           </path>
@@ -309,13 +326,18 @@ export function LayoutView({
           return [top, bottom].map((point, side) => {
             const projected = project(point);
             const direction = side === 0 ? -1 : 1;
+            // A mark rather than a measurement: the bar says *which* surface
+            // stops the beam, so its length is a screen length. Left in drawing
+            // units it grew with the zoom until it was the tallest thing in the
+            // picture — the white bar through the middle of a zoomed layout.
+            const reach = STOP_BAR * zoom;
             return (
               <line
                 key={`stop-${profile.surfaceIndex}-${side}`}
                 x1={projected.x}
                 y1={projected.y}
                 x2={projected.x}
-                y2={projected.y + direction * 10}
+                y2={projected.y + direction * reach}
                 stroke="var(--stop-mark)"
                 strokeWidth={2.5}
               />

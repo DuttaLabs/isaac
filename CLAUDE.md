@@ -552,6 +552,20 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   vocabulary deliberately. The 2D view pans by rewriting the SVG `viewBox`, so stroke widths scale with
   the zoom.
 
+  **A pan cannot lose the drawing.** `clampPan` (`lib/pan-zoom.ts`) holds the view's *center* inside
+  the fitted box, which is the simplest rule that keeps the picture on screen and behaves at both ends
+  of the zoom: wound in, the view is small and reaches any part of the drawing but not past its edge,
+  the way a map pans; wound out, the drawing can be pushed to the edge of the panel but never out of
+  it. Unclamped, a drag simply kept going and the drawing left the panel with no hint of which way it
+  had gone — recoverable only by Reset view, which is a poor thing to have to discover. Tested rather
+  than looked at, because a view panned into empty space renders perfectly and shows nothing, which
+  reads as a blank panel rather than as a bug.
+
+  Marking the drawing area's border was the other idea, and it is **not worth drawing**: the box fills
+  the panel body, so its top edge is the header's own rule and its sides are the panel's own border. A
+  line there would trace what is already on screen. The only unmarked edge is the bottom one, where
+  the drawing meets the legends.
+
   **`.layout-3d` is `flex: 1 1 0`, and the `0` is load-bearing.** It used to hold a fixed
   `aspect-ratio` so that toggling to 3D did not make the panel jump; with no toggle left, a fixed
   aspect in a panel that can be any height is just an overflow waiting to happen, so the canvas fills

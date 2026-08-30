@@ -22,6 +22,7 @@ import {
   type ViewPlane,
 } from '../lib/view-plane.ts';
 import { AxisTriad } from './AxisTriad.tsx';
+import { clampPan, type ViewBox } from '../lib/pan-zoom.ts';
 
 /**
  * The drawing's own coordinate width. Everything inside is in these units, so a
@@ -48,13 +49,6 @@ const WHEEL_SENSITIVITY = 0.0015;
 const TRIAD_INSET = 46;
 /** Half-length of the crosshairs standing in for an axis seen end-on. */
 const AXIS_CROSS = 14;
-
-interface ViewBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 const fittedBox = (height: number): ViewBox => ({ x: 0, y: 0, width: WIDTH, height });
 
@@ -455,12 +449,15 @@ function usePanZoom(resetSignal: number): {
       );
       // Height follows width so the scale stays uniform and shapes stay true.
       const height = width * (aspect.current / WIDTH);
-      return {
-        x: current.x + (current.width - width) * fx,
-        y: current.y + (current.height - height) * fy,
-        width,
-        height,
-      };
+      return clampPan(
+        {
+          x: current.x + (current.width - width) * fx,
+          y: current.y + (current.height - height) * fy,
+          width,
+          height,
+        },
+        { width: WIDTH, height: aspect.current },
+      );
     });
   }, []);
 
@@ -510,7 +507,12 @@ function usePanZoom(resetSignal: number): {
       // exactly however far the view is zoomed in.
       const dx = ((event.clientX - held.clientX) / rect.width) * held.from.width;
       const dy = ((event.clientY - held.clientY) / rect.height) * held.from.height;
-      setView({ ...held.from, x: held.from.x - dx, y: held.from.y - dy });
+      setView(
+        clampPan(
+          { ...held.from, x: held.from.x - dx, y: held.from.y - dy },
+          { width: WIDTH, height: aspect.current },
+        ),
+      );
     };
 
     const onPointerUp = (event: PointerEvent): void => {

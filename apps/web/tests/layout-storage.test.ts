@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DEFAULT_LIBRARY,
+  addLayout,
+  deleteLayout,
+  duplicateLayout,
   readLibrary,
+  renameLayout,
+  selectLayout,
   serializeLibrary,
   withWorkspace,
   workspaceIn,
@@ -228,4 +233,97 @@ test('a window pointing at a layout that is gone still has something to show', (
   const library = readLibrary(stored);
   assert.equal(library.main, 'a');
   assert.equal(library.secondary, 'a');
+});
+
+test('a new layout is shown in the window that asked for it, and nowhere else', () => {
+  const library = addLayout(DEFAULT_LIBRARY, 'secondary');
+
+  assert.equal(library.layouts.length, 3);
+  // The window is pointed at what was just made, which is what lets the rename
+  // box open on it without anything carrying its key around.
+  assert.equal(library.secondary, library.layouts[2]!.key);
+  assert.equal(library.main, DEFAULT_LIBRARY.main);
+  assert.deepEqual(workspaceIn(library, library.secondary, DEFAULT_WORKSPACE), DEFAULT_WORKSPACE);
+});
+
+test('generated names never repeat one already in the library', () => {
+  const once = addLayout(DEFAULT_LIBRARY, 'main');
+  const twice = addLayout(once, 'main');
+
+  assert.deepEqual(
+    twice.layouts.map((layout) => layout.name),
+    ['Design', 'Grid and layout', 'Layout', 'Layout 2'],
+  );
+  // And the keys are minted afresh, so no two layouts can be confused.
+  assert.equal(new Set(twice.layouts.map((layout) => layout.key)).size, 4);
+});
+
+test('a duplicate carries the arrangement and takes a name of its own', () => {
+  const arranged = withWorkspace(
+    DEFAULT_LIBRARY,
+    'layout-main',
+    splitPane(DEFAULT_WORKSPACE, 'pane-source', 'row'),
+  );
+  const library = duplicateLayout(arranged, 'main', 'layout-main');
+  const copy = library.layouts[2]!;
+
+  assert.equal(copy.name, 'Design copy');
+  assert.deepEqual(
+    shape(copy.workspace),
+    shape(workspaceIn(arranged, 'layout-main', DEFAULT_WORKSPACE)),
+  );
+  // The original is untouched: a duplicate is a second layout, not a rename.
+  assert.equal(library.layouts[0]!.name, 'Design');
+});
+
+test('renaming collapses whitespace and refuses to leave a layout nameless', () => {
+  const named = renameLayout(DEFAULT_LIBRARY, 'layout-main', '  Monte  Carlo \n');
+  assert.equal(named.layouts[0]!.name, 'Monte Carlo');
+
+  // A blank name would be a layout nobody can pick out of the list again.
+  assert.deepEqual(renameLayout(named, 'layout-main', '   '), named);
+});
+
+test('deleting a layout leaves the window on its neighbour, and the last one stands', () => {
+  const three = addLayout(DEFAULT_LIBRARY, 'main');
+  const left = deleteLayout(three, 'layout-second');
+
+  assert.deepEqual(
+    left.layouts.map((layout) => layout.key),
+    ['layout-main', three.main],
+  );
+  // The second window was showing what has gone; it lands on the layout that
+  // took its place in the list rather than back at the start.
+  assert.equal(left.secondary, three.main);
+
+  const one = deleteLayout(left, left.main);
+  assert.equal(one.layouts.length, 1);
+  assert.deepEqual(deleteLayout(one, one.layouts[0]!.key), one);
+});
+
+test('both windows may show one layout, and then they are the same arrangement', () => {
+  const shared = selectLayout(DEFAULT_LIBRARY, 'secondary', 'layout-main');
+  assert.equal(shared.main, shared.secondary);
+
+  const split = splitPane(workspaceIn(shared, shared.main, DEFAULT_WORKSPACE), 'pane-spot', 'row');
+  const after = withWorkspace(shared, shared.main, split);
+  // One tree, drawn twice: an edit made through either window is the same edit.
+  assert.deepEqual(
+    shape(workspaceIn(after, after.main, DEFAULT_WORKSPACE)),
+    shape(workspaceIn(after, after.secondary, DEFAULT_WORKSPACE)),
+  );
+
+  // A key nothing answers to is refused rather than leaving a window pointing
+  // at nothing.
+  assert.deepEqual(selectLayout(shared, 'main', 'layout-gone'), shared);
+});
+
+test('a library of several layouts survives a round trip', () => {
+  const library = renameLayout(
+    addLayout(addLayout(DEFAULT_LIBRARY, 'main'), 'secondary'),
+    'layout-second',
+    'Analysis',
+  );
+
+  assert.deepEqual(readLibrary(serializeLibrary(library)), library);
 });

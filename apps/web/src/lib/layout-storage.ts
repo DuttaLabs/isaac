@@ -54,10 +54,19 @@ export interface LayoutLibrary {
 export const STORAGE_KEY = 'isaac.layout.v1';
 const VERSION = 1;
 
+/**
+ * What a first-time Isaac holds: the arrangement it opens with, and the wide one
+ * the second window starts in.
+ *
+ * They are named for what they *are* rather than for where they are shown, now
+ * that either window can be pointed at either — "Second display" was a fair name
+ * while a layout belonged to a window and became a wrong one the moment it did
+ * not.
+ */
 export const DEFAULT_LIBRARY: LayoutLibrary = {
   layouts: [
     { key: 'layout-main', name: 'Design', workspace: DEFAULT_WORKSPACE },
-    { key: 'layout-second', name: 'Second display', workspace: DEFAULT_SECONDARY_WORKSPACE },
+    { key: 'layout-second', name: 'Grid and layout', workspace: DEFAULT_SECONDARY_WORKSPACE },
   ],
   main: 'layout-main',
   secondary: 'layout-second',
@@ -81,6 +90,162 @@ export function withWorkspace(
       layout.key === key ? { ...layout, workspace } : layout,
     ),
   };
+}
+
+/**
+ * Which window a layout is being shown in. There are two, and only two.
+ *
+ * A layout is not *owned* by a window — it is an arrangement, and either window
+ * can be pointed at any of them. That is the whole reason the library is a flat
+ * list with two pointers into it rather than one layout per window.
+ */
+export type WindowId = 'main' | 'secondary';
+
+/** Which layout a window is showing, if it is still in the library. */
+export function layoutFor(library: LayoutLibrary, window: WindowId): NamedLayout | undefined {
+  return library.layouts.find((layout) => layout.key === shownKey(library, window));
+}
+
+/** The key a window is pointed at, whether or not a layout still answers to it. */
+export function shownKey(library: LayoutLibrary, window: WindowId): string {
+  return window === 'main' ? library.main : library.secondary;
+}
+
+/**
+ * Points one window at a layout.
+ *
+ * **Both windows may name the same one**, and then they mirror: one tree drawn
+ * twice, so a split made in either is a split in both. That is the honest
+ * reading of "both windows are showing this layout". Forking a private copy
+ * instead would leave two different arrangements wearing one name, which is the
+ * one thing a named layout exists to prevent.
+ */
+export function selectLayout(library: LayoutLibrary, window: WindowId, key: string): LayoutLibrary {
+  return library.layouts.some((layout) => layout.key === key)
+    ? pointAt(library, window, key)
+    : library;
+}
+
+/**
+ * Adds a layout and shows it in that window.
+ *
+ * The window is pointed at it here rather than by a second call, so the new
+ * layout's key never has to be handed back and threaded around: whatever this
+ * window now shows *is* the new one, which is also what lets the rename box open
+ * on it without knowing its key.
+ *
+ * A new layout starts from the arrangement Isaac opens with rather than from a
+ * blank pane. Building one up from nothing is the rare case, and *Duplicate* is
+ * there for starting from what is already on screen.
+ */
+export function addLayout(
+  library: LayoutLibrary,
+  window: WindowId,
+  workspace: Workspace = DEFAULT_WORKSPACE,
+): LayoutLibrary {
+  return insertLayout(library, window, freeName('Layout', library.layouts), workspace);
+}
+
+/** Copies a layout under a name of its own, and shows the copy in that window. */
+export function duplicateLayout(
+  library: LayoutLibrary,
+  window: WindowId,
+  key: string,
+): LayoutLibrary {
+  const found = library.layouts.find((layout) => layout.key === key);
+  return found === undefined
+    ? library
+    : insertLayout(
+        library,
+        window,
+        freeName(`${found.name} copy`, library.layouts),
+        found.workspace,
+      );
+}
+
+/**
+ * Renames a layout.
+ *
+ * An empty name is refused, and whitespace is collapsed, for the same reason the
+ * lens name's is: the name is the only thing telling one entry in the list from
+ * another, so a blank one would be a layout the user cannot pick again. Names
+ * are otherwise free — two layouts may share one, since the key is what
+ * identifies them, and quietly numbering what someone just typed would be worse
+ * than letting them see the duplicate and fix it.
+ */
+export function renameLayout(library: LayoutLibrary, key: string, name: string): LayoutLibrary {
+  const clean = name.trim().replace(/\s+/g, ' ');
+  return clean === ''
+    ? library
+    : {
+        ...library,
+        layouts: library.layouts.map((layout) =>
+          layout.key === key ? { ...layout, name: clean } : layout,
+        ),
+      };
+}
+
+/**
+ * Removes a layout. The last one is kept, whatever is asked.
+ *
+ * A window showing what has gone falls to the layout that took its place in the
+ * list — its neighbour below, or the new last one — rather than to the start of
+ * the library: closing a layout should leave the user next to where they were.
+ */
+export function deleteLayout(library: LayoutLibrary, key: string): LayoutLibrary {
+  const at = library.layouts.findIndex((layout) => layout.key === key);
+  if (at === -1 || library.layouts.length <= 1) {
+    return library;
+  }
+  const layouts = library.layouts.filter((layout) => layout.key !== key);
+  const neighbour = layouts[Math.min(at, layouts.length - 1)]!.key;
+  const kept = (shown: string): string => (shown === key ? neighbour : shown);
+  return { ...library, layouts, main: kept(library.main), secondary: kept(library.secondary) };
+}
+
+function insertLayout(
+  library: LayoutLibrary,
+  window: WindowId,
+  name: string,
+  workspace: Workspace,
+): LayoutLibrary {
+  const key = `layout-${library.nextKey}`;
+  return pointAt(
+    {
+      ...library,
+      layouts: [...library.layouts, { key, name, workspace }],
+      nextKey: library.nextKey + 1,
+    },
+    window,
+    key,
+  );
+}
+
+/**
+ * Written out rather than as a computed key, because `{ ...library, [window]: key }`
+ * widens both fields to `string | undefined` under a union-typed key — a shape
+ * the library type does not have.
+ */
+function pointAt(library: LayoutLibrary, window: WindowId, key: string): LayoutLibrary {
+  return {
+    ...library,
+    main: window === 'main' ? key : library.main,
+    secondary: window === 'secondary' ? key : library.secondary,
+  };
+}
+
+/** A name nothing else in the library is using: the stem, then the stem and a number. */
+function freeName(stem: string, layouts: readonly NamedLayout[]): string {
+  const taken = new Set(layouts.map((layout) => layout.name));
+  if (!taken.has(stem)) {
+    return stem;
+  }
+  for (let n = 2; ; n += 1) {
+    const candidate = `${stem} ${n}`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 export function serializeLibrary(library: LayoutLibrary): string {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * A free-text table cell that keeps a draft while focused and commits on blur
@@ -11,15 +11,33 @@ export function TextCell({
   placeholder,
   ariaLabel,
   title,
+  focusOnOpen,
 }: {
   value: string;
   onCommit: (next: string) => void;
   placeholder?: string;
   ariaLabel?: string;
   title?: string;
+  /**
+   * For a box that appears *in order to be typed in* — the layout rename. It
+   * takes focus and **selects what is there**, so the first keystroke replaces
+   * the old name rather than being appended to it, which is what a rename box
+   * opened by a menu item is asking for.
+   */
+  focusOnOpen?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   const [editing, setEditing] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+
+  // On mount only: the box has just been opened, and re-selecting mid-typing
+  // would eat every keystroke after the first.
+  useEffect(() => {
+    if (focusOnOpen === true) {
+      input.current?.focus();
+      input.current?.select();
+    }
+  }, [focusOnOpen]);
 
   // Adopt external changes (undo, file load) unless the user is mid-edit.
   useEffect(() => {
@@ -38,6 +56,7 @@ export function TextCell({
 
   return (
     <input
+      ref={input}
       className="text-input"
       value={editing ? draft : value}
       placeholder={placeholder}

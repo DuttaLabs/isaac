@@ -298,6 +298,71 @@ body {
  * themselves, because an absolutely positioned box resolves its percentages
  * against the padding box and would ignore it.
  */
+/*
+ * The strip naming the layout this window shows.
+ *
+ * Above the workspace rather than in the app bar, because there are two windows
+ * and only one app bar: the second window picks its layout in the same place,
+ * with the same control. Its horizontal padding matches the workspace's own
+ * inset so the picker lines up with the left edge of the panels below it, and
+ * it is one line of small text because the space it takes is space the plots
+ * would otherwise have.
+ */
+.layout-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 0;
+  min-width: 0;
+}
+
+/*
+ * Quiet like the panel chooser, and for the same reason: this is a label that
+ * happens to be a menu. The native arrow stays — it is the one cue that says
+ * there is a menu here, and it is drawn in the platform's colors, so it follows
+ * the theme for free.
+ */
+.layout-choice {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 4px;
+  padding: 1px 3px;
+  max-width: 24ch;
+  cursor: pointer;
+}
+
+.layout-choice:hover,
+.layout-choice:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--surface-1);
+}
+
+/* The rename box, sized like the picker it stands in for. */
+.layout-name .text-input {
+  font-size: 12px;
+  width: 22ch;
+  padding-block: 1px;
+}
+
+.layout-more {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+  padding: 2px 6px;
+}
+
+.layout-more:hover,
+.layout-more:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
 .workspace {
   position: relative;
   flex: 1 1 auto;

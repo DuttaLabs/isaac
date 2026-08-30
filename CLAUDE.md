@@ -816,11 +816,33 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   that has to stay smooth. Both the read and the write are wrapped: `localStorage` does not merely
   come back empty in a private window or with site data blocked, the accessor itself throws.
 
-  **A library of named layouts from the start**, holding one per window. Switchable named layouts are
-  the point of this eventually, and writing that shape now means there will be no stored format to
-  migrate when the picker arrives — only a UI to add. The version is in the **storage key**, so a
-  future format is a different key: an old Isaac open in another tab keeps reading and writing its
-  own, and neither corrupts the other.
+  **A library of named layouts, with each window pointed at one.** The version is in the **storage
+  key**, so a future format is a different key: an old Isaac open in another tab keeps reading and
+  writing its own, and neither corrupts the other.
+
+  The strip above each workspace (`components/LayoutBar.tsx`) is where a layout is picked and managed:
+  a native `select` of the names, and a `⋯` opening the same `ContextMenu` the lens grid uses — New,
+  Duplicate, Rename, then, past a rule, Delete. Delete is set apart because it is the one thing here
+  that destroys something, and the one with no way back: panels have an undo stack and an arrangement
+  does not. The **last layout is kept whatever is asked**, for the same reason the root pane is
+  blanked rather than removed — there is no dead end to reach.
+
+  Three decisions in the operations themselves (`lib/layout-storage.ts`):
+
+  - **The library is the one truth, and each window's arrangement is derived from it.** They were
+    state of their own while a layout belonged to a window; the moment either window can be pointed at
+    any layout there is nowhere for a second copy to live without going stale.
+  - **Both windows may name the same layout, and then they mirror** — one tree drawn twice, so a split
+    made in either is a split in both. That is the honest reading of "both windows are showing this
+    layout"; quietly forking a private copy would leave two different arrangements wearing one name,
+    which is the thing a named layout exists to prevent. The strip says so out loud while it is
+    happening, because the alternative — a panel appearing in the other window unbidden — reads as a
+    bug.
+  - **New and Duplicate point the window at what they made**, so no key is ever handed back and
+    threaded around: the rename box that opens after them acts on *whatever this window shows*, which
+    is already the new layout. Generated names avoid the ones in use ("Layout 2", "Design copy"), but
+    a name the user *types* is taken as typed — duplicates are allowed, since the key identifies a
+    layout and silently numbering what someone just wrote would be worse than letting them see it.
 
   **Never trust the parse.** `JSON.parse` returns `any`, so a value written by an older Isaac
   type-checks perfectly and renders nothing — which looks like a bug in the app rather than in the

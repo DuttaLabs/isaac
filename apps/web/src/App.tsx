@@ -20,7 +20,14 @@ import { describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { BlankPanel, ErrorNote, type PanelChoice } from './components/Panel.tsx';
 import { PANEL_TITLES } from './lib/panels.ts';
-import { loadLibrary, saveLibrary, withWorkspace, workspaceIn } from './lib/layout-storage.ts';
+import {
+  loadLibrary,
+  saveLibrary,
+  shownKey,
+  withWorkspace,
+  workspaceIn,
+  type WindowId,
+} from './lib/layout-storage.ts';
 import {
   DEFAULT_LAYOUT_2D,
   DEFAULT_LAYOUT_3D,
@@ -41,6 +48,7 @@ import {
   type Pane,
   type Workspace,
 } from './lib/workspace.ts';
+import { LayoutBar } from './components/LayoutBar.tsx';
 import { SecondaryWindow } from './components/SecondaryWindow.tsx';
 import {
   moveToOtherScreen,
@@ -121,35 +129,41 @@ export function App() {
   const [elementStyles, setElementStyles] = useState<ElementStyles>({});
 
   /**
-   * The whole arrangement: which panels are open, where, and how big.
+   * Every arrangement Isaac knows: the named layouts, and which one each window
+   * is pointed at. One piece of state rather than the several it grew from,
+   * because a closed panel has to take its share of the space with it, and a
+   * window has to be able to change which layout it is showing.
    *
-   * Sizes are `fr` weights rather than pixels, because the page does not scroll
-   * — the workspace is exactly the height of the window, so a divider moves
-   * space from one panel to its neighbour rather than making the page longer,
-   * and the proportions survive the window being resized.
-   *
-   * One piece of state rather than the four it grew from, because opening and
-   * closing panels means the sizes and the panels can no longer be separate
-   * lists kept in step by hand: a closed panel has to take its weight with it.
+   * Read from storage **once and synchronously**, in a lazy initializer rather
+   * than an effect: `localStorage` is synchronous, so the layout is in hand
+   * before the first paint, where an effect would render the default
+   * arrangement and then snap to the stored one.
    *
    * A view setting like the field checkboxes, and for the same reason: an
    * arrangement someone likes is not a fact about the lens, so it must not land
    * on the undo stack or be written into a file.
    */
+  const [library, setLibrary] = useState(loadLibrary);
   /**
-   * The stored arrangement, read **once and synchronously**, before the first
-   * paint. `localStorage` is synchronous, so a lazy initializer has the layout
-   * in hand; reading it in an effect would render the default arrangement and
-   * then snap to the saved one — a visible flash of the wrong layout on every
-   * load.
+   * The setter a pane's own controls are handed, naming the layout it is in —
+   * which is what keeps a pane in the second window from rearranging the first
+   * window's layout. It takes a `SetStateAction` because that is what every
+   * workspace operation already expects to be given.
    *
-   * Read once rather than held as state: from here on the two workspaces below
-   * are the truth, and the library is only what gets written back.
+   * **The arrangement on screen is derived from the library, never stored beside
+   * it.** Each window was state of its own while a layout belonged to a window;
+   * once either can be pointed at any layout there is nowhere for a second copy
+   * to live without going stale. Both may name the *same* layout, and then they
+   * mirror — one tree drawn twice, in two places.
    */
-  const [library] = useState(loadLibrary);
-  const [workspace, setWorkspace] = useState(() =>
-    workspaceIn(library, library.main, DEFAULT_WORKSPACE),
-  );
+  const updateWorkspace =
+    (key: string): Dispatch<SetStateAction<Workspace>> =>
+    (action) =>
+      setLibrary((current) => {
+        const tree = workspaceIn(current, key, DEFAULT_WORKSPACE);
+        const next = typeof action === 'function' ? action(tree) : action;
+        return next === tree ? current : withWorkspace(current, key, next);
+      });
   /** Development only: whether the tweak panel is showing. See `dev/tweaks.ts`. */
   const [showTweaks, setShowTweaks] = useState(false);
 
@@ -175,18 +189,7 @@ export function App() {
    */
   const [secondary, setSecondary] = useState<SecondaryWindowHandle | undefined>();
   /**
-   * The second window's own arrangement.
-   *
-   * Two trees, not one: a second display is a second place to *lay panels out*,
-   * not a shelf to send them to. Kept while the window is shut so reopening
-   * brings back whatever was arranged there, rather than starting over.
-   */
-  const [secondaryWorkspace, setSecondaryWorkspace] = useState(() =>
-    workspaceIn(library, library.secondary, DEFAULT_SECONDARY_WORKSPACE),
-  );
-
-  /**
-   * Writing it back, a moment after the last change.
+   * Writing the library back, a moment after the last change.
    *
    * Debounced because a divider drag calls `resizeSplit` on every pointer move,
    * and `localStorage.setItem` is synchronous — a write per frame would stall
@@ -194,17 +197,9 @@ export function App() {
    * delay is short enough that any pause counts as finished.
    */
   useEffect(() => {
-    const timer = setTimeout(() => {
-      saveLibrary(
-        withWorkspace(
-          withWorkspace(library, library.main, workspace),
-          library.secondary,
-          secondaryWorkspace,
-        ),
-      );
-    }, LAYOUT_SAVE_MS);
+    const timer = setTimeout(() => saveLibrary(library), LAYOUT_SAVE_MS);
     return () => clearTimeout(timer);
-  }, [library, workspace, secondaryWorkspace]);
+  }, [library]);
 
   /**
    * Whether the browser will place a window on a chosen display. Asked once, up
@@ -694,41 +689,53 @@ export function App() {
    *
    * `lib/tiling.ts` does the arithmetic; this only turns rectangles into boxes.
    */
-  const renderWorkspace = (
-    tree: Workspace,
-    update: Dispatch<SetStateAction<Workspace>>,
-  ): ReactNode => {
+  const renderWorkspace = (which: WindowId): ReactNode => {
+    const key = shownKey(library, which);
+    const tree = workspaceIn(
+      library,
+      key,
+      which === 'main' ? DEFAULT_WORKSPACE : DEFAULT_SECONDARY_WORKSPACE,
+    );
+    const update = updateWorkspace(key);
     const { panes, splitters } = tile(tree.root, SPLITTER_PX, WORKSPACE_INSET);
     const onlyPane = tree.root.kind === 'pane';
     return (
-      <div className="workspace">
-        {panes.map(({ pane, rect }) => {
-          const choice = choiceOf(pane, update, onlyPane);
-          return (
-            <div key={pane.key} className="pane" style={cssRect(rect)}>
-              {pane.panel === undefined ? (
-                <BlankPanel choice={choice} />
-              ) : (
-                renderPanel(pane, choice, update)
-              )}
-            </div>
-          );
-        })}
-        {splitters.map((divider) => (
-          <Splitter
-            key={divider.key}
-            style={cssRect(divider.rect)}
-            // The divider runs across the direction it moves in, which is the
-            // easy thing to get backwards: side-by-side panels are parted by an
-            // upright bar, and `aria-orientation` names the bar.
-            orientation={divider.direction === 'row' ? 'vertical' : 'horizontal'}
-            label={`Resize ${nodeName(divider.first)}`}
-            valueNow={divider.ratio}
-            span={divider.span}
-            onResize={(delta) => update((current) => resizeSplit(current, divider.key, delta))}
-          />
-        ))}
-      </div>
+      <>
+        <LayoutBar
+          library={library}
+          which={which}
+          mirrored={secondary !== undefined && library.main === library.secondary}
+          onLibrary={setLibrary}
+        />
+        <div className="workspace">
+          {panes.map(({ pane, rect }) => {
+            const choice = choiceOf(pane, update, onlyPane);
+            return (
+              <div key={pane.key} className="pane" style={cssRect(rect)}>
+                {pane.panel === undefined ? (
+                  <BlankPanel choice={choice} />
+                ) : (
+                  renderPanel(pane, choice, update)
+                )}
+              </div>
+            );
+          })}
+          {splitters.map((divider) => (
+            <Splitter
+              key={divider.key}
+              style={cssRect(divider.rect)}
+              // The divider runs across the direction it moves in, which is the
+              // easy thing to get backwards: side-by-side panels are parted by an
+              // upright bar, and `aria-orientation` names the bar.
+              orientation={divider.direction === 'row' ? 'vertical' : 'horizontal'}
+              label={`Resize ${nodeName(divider.first)}`}
+              valueNow={divider.ratio}
+              span={divider.span}
+              onResize={(delta) => update((current) => resizeSplit(current, divider.key, delta))}
+            />
+          ))}
+        </div>
+      </>
     );
   };
 
@@ -872,7 +879,7 @@ export function App() {
         </div>
       ) : null}
 
-      {renderWorkspace(workspace, setWorkspace)}
+      {renderWorkspace('main')}
 
       {secondary ? (
         <SecondaryWindow
@@ -880,7 +887,7 @@ export function App() {
           title={`Isaac — ${system.name}`}
           onClose={forgetSecondary}
         >
-          {renderWorkspace(secondaryWorkspace, setSecondaryWorkspace)}
+          {renderWorkspace('secondary')}
         </SecondaryWindow>
       ) : null}
 

@@ -802,6 +802,42 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   there rather than starting over. Both it and the handle are *view* settings in `App`, never on
   `OpticalSystem`.
 
+- **Both arrangements outlive the session** (`lib/layout-storage.ts`). `localStorage`, not a cookie: a
+  cookie rides along on every request and caps out near 4 KB, and this never needs to reach a server —
+  the two default trees come to about 1.2 kB together. It works at all because a `Workspace` is plain
+  data, so `JSON` is lossless on it; that is emphatically **not** true of `OpticalSystem`, whose class
+  instances would come back as bare numbers with no prototypes, which is why the *design* is not
+  stored this way.
+
+  Read in a `useState` lazy initializer, **not an effect**: `localStorage` is synchronous, so the
+  layout is in hand before the first paint, where an effect would render the default arrangement and
+  then snap to the saved one. Written on a 400 ms debounce, because a divider drag calls `resizeSplit`
+  on every pointer move and `setItem` is synchronous — a write per frame would stall the very gesture
+  that has to stay smooth. Both the read and the write are wrapped: `localStorage` does not merely
+  come back empty in a private window or with site data blocked, the accessor itself throws.
+
+  **A library of named layouts from the start**, holding one per window. Switchable named layouts are
+  the point of this eventually, and writing that shape now means there will be no stored format to
+  migrate when the picker arrives — only a UI to add. The version is in the **storage key**, so a
+  future format is a different key: an old Isaac open in another tab keeps reading and writing its
+  own, and neither corrupts the other.
+
+  **Never trust the parse.** `JSON.parse` returns `any`, so a value written by an older Isaac
+  type-checks perfectly and renders nothing — which looks like a bug in the app rather than in the
+  storage. Everything is checked on the way in, and the rule is **repair rather than reject**: a pane
+  naming a panel this build does not have is *blanked and keeps its place*, a ratio out of range is
+  clamped, a setting of the wrong type takes its default. Losing an arrangement someone built over one
+  bad value would be the worse failure. Two things are unrepairable and drop the layout: a tree that
+  is not a tree, and **duplicate pane keys**, since React identifies a pane by its key and duplicates
+  would silently merge two panes into one. `nextKey` is *recomputed* from the keys present rather than
+  trusted, because a stored counter that is too low would mint exactly that duplicate.
+
+  Settings are read by walking the **defaults**, so a value survives only if it is present and of the
+  right type, and a setting added later gains its default automatically. A pane with nothing stored
+  keeps `settings` absent rather than gaining an explicit copy of the defaults — which is the model's
+  own word for "untouched", and what lets the round trip be checked for equality rather than for
+  equivalence.
+
   Portals work across documents only because React attaches its event system to a portal's *container*
   and not merely to the root (`HostPortal` → `listenToAllSupportedEvents`); the popup's DOM events never
   reach the opener's root, so without that every control out there would be inert. Three consequences

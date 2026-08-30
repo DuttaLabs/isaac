@@ -20,6 +20,7 @@ import { describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { BlankPanel, ErrorNote, type PanelChoice } from './components/Panel.tsx';
 import { PANEL_TITLES } from './lib/panels.ts';
+import { loadLibrary, saveLibrary, withWorkspace, workspaceIn } from './lib/layout-storage.ts';
 import {
   DEFAULT_LAYOUT_2D,
   DEFAULT_LAYOUT_3D,
@@ -70,6 +71,8 @@ const HISTORY_LIMIT = 50;
 const SPLITTER_PX = 10;
 /** The margin around the whole workspace, in pixels, so it does not scale. */
 const WORKSPACE_INSET = 12;
+/** How long after the last layout change the arrangement is written to storage. */
+const LAYOUT_SAVE_MS = 400;
 type Theme = 'system' | 'light' | 'dark';
 
 interface Notice {
@@ -133,7 +136,20 @@ export function App() {
    * arrangement someone likes is not a fact about the lens, so it must not land
    * on the undo stack or be written into a file.
    */
-  const [workspace, setWorkspace] = useState(DEFAULT_WORKSPACE);
+  /**
+   * The stored arrangement, read **once and synchronously**, before the first
+   * paint. `localStorage` is synchronous, so a lazy initializer has the layout
+   * in hand; reading it in an effect would render the default arrangement and
+   * then snap to the saved one — a visible flash of the wrong layout on every
+   * load.
+   *
+   * Read once rather than held as state: from here on the two workspaces below
+   * are the truth, and the library is only what gets written back.
+   */
+  const [library] = useState(loadLibrary);
+  const [workspace, setWorkspace] = useState(() =>
+    workspaceIn(library, library.main, DEFAULT_WORKSPACE),
+  );
   /** Development only: whether the tweak panel is showing. See `dev/tweaks.ts`. */
   const [showTweaks, setShowTweaks] = useState(false);
 
@@ -165,7 +181,30 @@ export function App() {
    * not a shelf to send them to. Kept while the window is shut so reopening
    * brings back whatever was arranged there, rather than starting over.
    */
-  const [secondaryWorkspace, setSecondaryWorkspace] = useState(DEFAULT_SECONDARY_WORKSPACE);
+  const [secondaryWorkspace, setSecondaryWorkspace] = useState(() =>
+    workspaceIn(library, library.secondary, DEFAULT_SECONDARY_WORKSPACE),
+  );
+
+  /**
+   * Writing it back, a moment after the last change.
+   *
+   * Debounced because a divider drag calls `resizeSplit` on every pointer move,
+   * and `localStorage.setItem` is synchronous — a write per frame would stall
+   * the main thread during exactly the gesture that has to stay smooth. The
+   * delay is short enough that any pause counts as finished.
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveLibrary(
+        withWorkspace(
+          withWorkspace(library, library.main, workspace),
+          library.secondary,
+          secondaryWorkspace,
+        ),
+      );
+    }, LAYOUT_SAVE_MS);
+    return () => clearTimeout(timer);
+  }, [library, workspace, secondaryWorkspace]);
 
   /**
    * Whether the browser will place a window on a chosen display. Asked once, up

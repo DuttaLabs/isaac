@@ -970,11 +970,16 @@ svg.plot,
   flex-direction: column;
 }
 
+/*
+   Fills the box the stage gives it, rather than holding a fixed aspect of its
+   own. The drawing's viewBox is measured from this box, so a taller panel is a
+   taller drawing — which is what a layout turned on its side needs, and what a
+   fixed 900:340 could never give it however many panels were closed underneath.
+*/
 svg.layout {
-  flex: none;
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   /* The drawing takes the drag and the wheel itself; without this the browser
      scrolls the page instead of panning the view. */
   touch-action: none;
@@ -1754,6 +1759,12 @@ input.coefficient {
    legends below are read alongside it rather than on top of it, and a control
    floating over a legend would cover the very thing it names.
 
+   It takes the free height (`flex: 1 1 0`), which does two things at once: the
+   drawing grows when the panel does, and the legends are pushed to the bottom
+   of the panel instead of sitting immediately under a short drawing with empty
+   space beneath them. The floor keeps it usable in a panel dragged very small;
+   below that the body scrolls, as it did before.
+
    The 3-D view needs no equivalent -- `.layout-3d` is already the positioned box
    its orientation gizmo hangs in, and a wrapper around it would be fatal: it is
    `flex: 1 1 0` precisely so R3F measures the panel, and an intervening box
@@ -1761,8 +1772,8 @@ input.coefficient {
 */
 .plot-stage {
   position: relative;
-  flex: none;
-  min-height: 0;
+  flex: 1 1 0;
+  min-height: 120px;
 }
 
 /*

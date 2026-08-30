@@ -23,8 +23,19 @@ import {
 } from '../lib/view-plane.ts';
 import { AxisTriad } from './AxisTriad.tsx';
 
+/**
+ * The drawing's own coordinate width. Everything inside is in these units, so a
+ * stroke width or a font size means the same thing whatever the panel is doing.
+ *
+ * There is no matching HEIGHT: the box's height is **measured from the panel**,
+ * so a taller panel is a taller drawing rather than the same drawing with space
+ * under it. It used to be a constant 340, which fixed the drawing's proportions
+ * to 900:340 forever — and a layout turned on its side is tall, so closing the
+ * panels below it bought nothing at all.
+ */
 const WIDTH = 900;
-const HEIGHT = 340;
+/** What the box falls back to before the panel has been measured. */
+const FALLBACK_HEIGHT = 340;
 const PADDING = 18;
 
 /** How far in and out the wheel may take the view, against the fitted layout. */
@@ -45,7 +56,7 @@ interface ViewBox {
   height: number;
 }
 
-const FITTED: ViewBox = { x: 0, y: 0, width: WIDTH, height: HEIGHT };
+const fittedBox = (height: number): ViewBox => ({ x: 0, y: 0, width: WIDTH, height });
 
 /** Says which element is impossible and by how much, on hover. */
 function crossedMessage(body: GlassBody, units: string): string {
@@ -116,7 +127,7 @@ export function LayoutView({
     [system, traces, defaultSemiDiameter, drawn],
   );
 
-  const { view, svg, panning } = usePanZoom(resetSignal);
+  const { view, boxHeight, svg, panning } = usePanZoom(resetSignal);
 
   const multipleWavelengths = new Set(traces.map((trace) => trace.wavelengthIndex)).size > 1;
 
@@ -128,7 +139,7 @@ export function LayoutView({
   const { minH, maxH, minV, maxV } = turnBounds(geometry.bounds, turns);
   const spanH = Math.max(maxH - minH, 1e-6);
   const spanV = Math.max(maxV - minV, 1e-6);
-  const scale = Math.min((WIDTH - 2 * PADDING) / spanH, (HEIGHT - 2 * PADDING) / spanV);
+  const scale = Math.min((WIDTH - 2 * PADDING) / spanH, (boxHeight - 2 * PADDING) / spanV);
 
   // Centered both ways. A cross-section fills the width and cannot tell the
   // difference, but the end-on view is as tall as it is wide, and anchoring it
@@ -140,7 +151,7 @@ export function LayoutView({
     const turned = turnPoint(point, turns);
     return {
       x: WIDTH / 2 + (turned.h - centerH) * scale,
-      y: HEIGHT / 2 - (turned.v - centerV) * scale,
+      y: boxHeight / 2 - (turned.v - centerV) * scale,
     };
   };
 
@@ -165,7 +176,7 @@ export function LayoutView({
           x1={axisAcross ? PADDING : origin.x}
           y1={axisAcross ? origin.y : PADDING}
           x2={axisAcross ? WIDTH - PADDING : origin.x}
-          y2={axisAcross ? origin.y : HEIGHT - PADDING}
+          y2={axisAcross ? origin.y : boxHeight - PADDING}
           strokeDasharray="4 4"
         />
       ) : (
@@ -344,14 +355,62 @@ export function LayoutView({
  * scale with the zoom the way a drawing should, and the reset is a single
  * assignment back to the fitted box.
  */
+/**
+ * The drawing box's height in its own coordinates, taken from the panel.
+ *
+ * The SVG is sized by CSS — full width, full height of whatever the panel leaves
+ * it — so its box on screen is the only thing that knows the shape the drawing
+ * has to fit. Turning that into the box's *own* units keeps the width fixed at
+ * `WIDTH`, so a stroke width or a font size means the same thing at every panel
+ * size, and only the height changes.
+ *
+ * Observed rather than measured once: a divider dragged or a neighbouring panel
+ * closed changes the shape with no re-render of its own to hang a measurement
+ * on. The observer is taken from **the element's own window**, because one built
+ * from the global `window` never reports on an element in the second window —
+ * the same trap the 3-D canvas hit, where it left the canvas at its default size
+ * while its container was a thousand pixels wide.
+ */
+function useDrawingHeight(ref: React.RefObject<SVGSVGElement | null>): number {
+  const [height, setHeight] = useState(FALLBACK_HEIGHT);
+
+  useEffect(() => {
+    const element = ref.current;
+    const view = element?.ownerDocument.defaultView;
+    if (!element || !view) {
+      return;
+    }
+    const measure = (): void => {
+      const box = element.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) {
+        setHeight(WIDTH * (box.height / box.width));
+      }
+    };
+    measure();
+    const observer = new view.ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return height;
+}
+
 function usePanZoom(resetSignal: number): {
   view: ViewBox;
+  boxHeight: number;
   svg: React.RefObject<SVGSVGElement | null>;
   panning: boolean;
 } {
-  const [view, setView] = useState<ViewBox>(FITTED);
-  const [panning, setPanning] = useState(false);
   const svg = useRef<SVGSVGElement>(null);
+  const boxHeight = useDrawingHeight(svg);
+  const [view, setView] = useState<ViewBox>(() => fittedBox(boxHeight));
+  const [panning, setPanning] = useState(false);
+  /** Whether the user has framed the drawing themselves. */
+  const framed = useRef(false);
+  // Read inside the wheel handler, which is attached once and must not close
+  // over a stale height.
+  const aspect = useRef(boxHeight);
+  aspect.current = boxHeight;
   const drag = useRef<{
     pointerId: number;
     clientX: number;
@@ -361,7 +420,20 @@ function usePanZoom(resetSignal: number): {
 
   // Reset only on request. An edit elsewhere re-fits the drawing inside the
   // same box, so a zoomed-in user keeps looking at what they were looking at.
-  useEffect(() => setView(FITTED), [resetSignal]);
+  useEffect(() => {
+    framed.current = false;
+    setView(fittedBox(aspect.current));
+  }, [resetSignal]);
+
+  // The panel changing shape — a divider dragged, or a neighbour closed. The box
+  // is a different shape now, so a view fitted to the old one is fitted to
+  // nothing; refit, unless the user has framed something themselves, in which
+  // case leave their view alone as the 3-D camera does.
+  useEffect(() => {
+    if (!framed.current) {
+      setView(fittedBox(boxHeight));
+    }
+  }, [boxHeight]);
 
   const zoom = useCallback((event: WheelEvent, element: SVGSVGElement): void => {
     // Without this the page scrolls behind the drawing.
@@ -374,6 +446,7 @@ function usePanZoom(resetSignal: number): {
     const fx = (event.clientX - rect.left) / rect.width;
     const fy = (event.clientY - rect.top) / rect.height;
 
+    framed.current = true;
     setView((current) => {
       const factor = Math.exp(event.deltaY * WHEEL_SENSITIVITY);
       const width = Math.min(
@@ -381,7 +454,7 @@ function usePanZoom(resetSignal: number): {
         WIDTH * MAX_ZOOM_OUT,
       );
       // Height follows width so the scale stays uniform and shapes stay true.
-      const height = width * (HEIGHT / WIDTH);
+      const height = width * (aspect.current / WIDTH);
       return {
         x: current.x + (current.width - width) * fx,
         y: current.y + (current.height - height) * fy,
@@ -414,6 +487,7 @@ function usePanZoom(resetSignal: number): {
         return;
       }
       element.setPointerCapture(event.pointerId);
+      framed.current = true;
       drag.current = {
         pointerId: event.pointerId,
         clientX: event.clientX,
@@ -462,7 +536,7 @@ function usePanZoom(resetSignal: number): {
     // changes; that is what makes successive drags compose.
   }, [view]);
 
-  return { view, svg, panning };
+  return { view, boxHeight, svg, panning };
 }
 
 /** Everything the first-order overlay draws, gathered by the panel that owns it. */

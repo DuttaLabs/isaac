@@ -2,7 +2,7 @@ import { Point3 } from '../geometry/point3.ts';
 import { Vector3 } from '../geometry/vector3.ts';
 import type { Field, OpticalSystem } from '../model/optical-system.ts';
 import { Ray } from '../model/ray.ts';
-import { entrancePupil, paraxialProperties } from './paraxial.ts';
+import { entrancePupil, entrancePupilPlaneZ, paraxialProperties } from './paraxial.ts';
 import { traceRay, type RayTraceResult } from './trace.ts';
 
 /**
@@ -106,7 +106,11 @@ export function entrancePupilRadius(system: OpticalSystem): number {
  * when a stop is defined, otherwise the vertex plane of the first surface.
  */
 export function entrancePupilZ(system: OpticalSystem): number {
-  return system.stopIndex === undefined ? system.axialPositionAt(1) : entrancePupil(system).z;
+  // The *plane*, not the pupil: aiming needs to know where to point, and a
+  // system can perfectly well declare its pupil size with `ENPD` while its stop
+  // is a bare plane with no size of its own. Asking for the whole pupil here
+  // would refuse to trace such a system over a number it never needed.
+  return system.stopIndex === undefined ? system.axialPositionAt(1) : entrancePupilPlaneZ(system);
 }
 
 /**

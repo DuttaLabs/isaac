@@ -140,13 +140,20 @@ export function ApertureIcon({
       ? DISC * Math.min(aperture.minRadius / aperture.maxRadius, 0.8)
       : 0;
   /**
-   * A decentered hole is drawn decentered, in the same proportion its radius is:
-   * the icon's disc stands for `maxRadius`, so a decenter of half that is half
-   * the disc across. Clamped inside the disc, since the icon has to keep looking
-   * like a part even when the numbers say the hole has wandered off the edge.
+   * A decentered aperture is drawn decentered, in the same proportion its radius
+   * is: the icon's disc stands for `maxRadius`, so a decenter of half that moves
+   * it half a disc across. The whole aperture moves, not only its hole — an
+   * off-axis parabola is a circle cut well to one side of the parent's axis, and
+   * an icon that drew it centered would say the opposite of the truth.
+   *
+   * Clamped to the square, because those decenters are routinely larger than the
+   * aperture itself (Zemax's off-axis Gregorian is 55 mm cut 100 mm off axis)
+   * and a disc drawn faithfully at that distance would be off the icon
+   * altogether. Clamped, it sits against the edge it went out of, which is the
+   * thing worth seeing; the tooltip carries the numbers.
    */
   const offset = (decenter: number): number =>
-    hole === 0 || !Number.isFinite(aperture.maxRadius)
+    !Number.isFinite(aperture.maxRadius) || aperture.maxRadius <= 0
       ? 0
       : Math.max(-DISC, Math.min(DISC, (DISC * decenter) / aperture.maxRadius));
 
@@ -168,8 +175,8 @@ export function ApertureIcon({
       ) : (
         <>
           <circle
-            cx={CENTER}
-            cy={CENTER}
+            cx={CENTER + offset(aperture.decenterX)}
+            cy={CENTER - offset(aperture.decenterY)}
             r={DISC}
             fill={color}
             className="aperture-disc"

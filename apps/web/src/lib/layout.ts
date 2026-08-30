@@ -149,7 +149,7 @@ function leastAxialGap(
  */
 function outlineInLocalFrame(
   shape: SurfaceShape,
-  semiDiameter: number,
+  disc: Disc,
   view: ViewPlane,
   hole: Hole | undefined,
 ): { points: Point3[]; hole?: { from: number; to: number } } {
@@ -157,7 +157,7 @@ function outlineInLocalFrame(
     // End-on, a hole is a second rim rather than a gap in the first: the inner
     // circle is appended to the outer one, and the index it starts at is what
     // tells the view where to break the path.
-    const outer = rimSamples(shape, semiDiameter, 0, 0);
+    const outer = rimSamples(shape, disc.radius, disc.centerX, disc.centerY);
     if (hole === undefined) {
       return { points: outer };
     }
@@ -166,11 +166,17 @@ function outlineInLocalFrame(
   }
 
   const upright = view.vertical;
+  // The section runs across the disc that exists, which is not always centered
+  // on the surface's own axis.
+  const middle = upright === 'y' ? disc.centerY : disc.centerX;
   const center = upright === 'y' ? (hole?.centerY ?? 0) : (hole?.centerX ?? 0);
   const at = (sample: number): number =>
-    -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
+    middle - disc.radius + (2 * disc.radius * sample) / (PROFILE_SAMPLES - 1);
   const points = Array.from({ length: PROFILE_SAMPLES }, (_, sample) => {
     const height = at(sample);
+    // Sag is measured from the *surface's* axis, never from the aperture's
+    // center: an off-axis parabola is a piece of the parent, and it curves the
+    // way the parent does at that distance out.
     const depth = sag(shape, height);
     return upright === 'y' ? new Point3(0, height, depth) : new Point3(height, 0, depth);
   });
@@ -196,11 +202,39 @@ function outlineInLocalFrame(
   return from === -1 ? { points } : { points, hole: { from, to } };
 }
 
-/** A hole in a surface: where it is in the surface's own frame, and how big. */
-interface Hole {
+/** A disc in a surface's own frame: how big, and how far off its axis. */
+interface Disc {
   radius: number;
   centerX: number;
   centerY: number;
+}
+
+/** A hole in a surface: the same thing, subtracted rather than added. */
+type Hole = Disc;
+
+/**
+ * The piece of surface that actually exists, as a disc in the surface's frame.
+ *
+ * **The aperture wins when there is one, because the aperture *is* the part.**
+ * An off-axis parabola is written as a parent parabola plus a clear aperture
+ * cut some way off its axis — Zemax's own `Unobscured Gregorian` is a 55 mm
+ * circle taken 100 mm off a parent whose vertex is nowhere near the beam — and
+ * drawing the parent disc instead would draw a mirror nobody has, straddling the
+ * axis it was designed to keep clear. Those files set the semi-diameter to zero
+ * to say exactly that: there is no parent disc to draw.
+ *
+ * An obscuration does not bound the surface — it is something sitting in the way
+ * of one — so it falls through to the drawn extent like a surface with no
+ * aperture at all.
+ */
+function drawnDisc(surface: Surface, fallback: number): Disc {
+  const extent = Number.isFinite(surface.semiDiameter) ? surface.semiDiameter : fallback;
+  const aperture = surface.aperture;
+  if (aperture === undefined || aperture.kind === 'CIRCULAR_OBSCURATION') {
+    return { radius: extent, centerX: 0, centerY: 0 };
+  }
+  const radius = aperture.kind === 'FLOATING' ? extent : aperture.maxRadius;
+  return { radius, centerX: aperture.decenterX, centerY: aperture.decenterY };
 }
 
 /**
@@ -274,15 +308,15 @@ export function buildLayout(
       continue;
     }
     const pose = system.poseAt(index);
-    const semiDiameter = Number.isFinite(surface.semiDiameter)
-      ? surface.semiDiameter
-      : defaultSemiDiameter;
-    heights.push(semiDiameter);
+    const disc = drawnDisc(surface, defaultSemiDiameter);
+    // The bound is how far the drawing reaches, which for a decentered piece is
+    // its far edge rather than its radius.
+    heights.push(Math.abs(disc.centerY) + disc.radius, Math.abs(disc.centerX) + disc.radius);
 
     // The outline is built in the surface's own frame and then carried into
     // global coordinates, so a tilted element is drawn tilted. For a centered
     // system this is the vertex offset it always was.
-    const outline = outlineInLocalFrame(surface.shape, semiDiameter, view, holeIn(surface));
+    const outline = outlineInLocalFrame(surface.shape, disc, view, holeIn(surface));
     const points = outline.points.map((local) => projectToPlane(pose.apply(local), view));
     profiles.push({
       surfaceIndex: index,

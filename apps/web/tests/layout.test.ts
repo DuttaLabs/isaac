@@ -476,3 +476,55 @@ test('a mirror with an annular aperture is drawn with the hole left out', () => 
   );
   assert.equal(buildLayout(baffled, [], DEFAULT_SEMI_DIAMETER).profiles[1]?.hole, undefined);
 });
+
+test('a decentered aperture is drawn where the aperture is, not where the axis is', () => {
+  // Zemax's Unobscured Gregorian in miniature: a parent conic whose vertex is
+  // put 100 off the beam by a coordinate break, with a 55 circle taken out of it
+  // back on the beam. Drawing the parent disc instead would draw a mirror nobody
+  // has, straddling the axis the design exists to keep clear.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'ct',
+        type: 'COORDINATE_TRANSFORM',
+        thickness: 0,
+        coordinateTransform: {
+          decenterX: 0,
+          decenterY: 100,
+          tiltXDeg: 0,
+          tiltYDeg: 0,
+          tiltZDeg: 0,
+          tiltFirst: false,
+        },
+      }),
+      new Surface({
+        id: 'oap',
+        type: 'STANDARD',
+        radius: -304.26,
+        conic: -1.0087,
+        thickness: -178.59,
+        // No stated extent, exactly as the sample file has it: the aperture is
+        // the only thing that says how big this mirror is.
+        aperture: { kind: 'CIRCULAR', maxRadius: 55, decenterY: -100 },
+        reflective: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+
+  const profile = buildLayout(system, [], DEFAULT_SEMI_DIAMETER).profiles.find(
+    (one) => one.surfaceIndex === 2,
+  );
+  assert.ok(profile);
+  const heights = profile.points.map((point) => point.v);
+  const low = Math.min(...heights);
+  const high = Math.max(...heights);
+
+  // The frame is 100 up and the aperture 100 back down, so the piece drawn
+  // straddles the global axis — which is the whole point of the idiom.
+  assert.ok(Math.abs(low + 55) < 1e-6, `bottom of the drawn piece is ${low}`);
+  assert.ok(Math.abs(high - 55) < 1e-6, `top of the drawn piece is ${high}`);
+  // And no hole: this aperture has no inner radius, decentered or not.
+  assert.equal(profile.hole, undefined);
+});

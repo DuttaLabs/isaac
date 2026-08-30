@@ -1,5 +1,6 @@
 import type { OpticalSystem } from '../model/optical-system.ts';
 import type { Surface } from '../model/surface.ts';
+import { apertureOuterRadius } from '../model/aperture.ts';
 
 /** Slopes below this are treated as parallel to the axis (afocal / telecentric). */
 const PARAXIAL_EPSILON = 1e-14;
@@ -297,8 +298,33 @@ export function entrancePupil(
   system: OpticalSystem,
   wavelengthNm: number = system.primaryWavelengthNm,
 ): Pupil {
+  return solveEntrancePupil(system, wavelengthNm, requireStopRadius(system, requireStop(system)));
+}
+
+/**
+ * Where the entrance pupil *is*, without asking how big it is.
+ *
+ * The two are solved by two rays, and only the second needs a stop radius: the
+ * pupil's position comes from a ray leaving the stop's center, which starts on
+ * the axis whatever the stop's size. Splitting them apart is what lets a system
+ * whose stop has no stated size — an off-axis design whose stop is a bare plane,
+ * with the pupil declared by `ENPD` instead — still be aimed and traced. Asking
+ * for the radius of such a pupil is still an error, because that number is
+ * genuinely not knowable from the stop.
+ */
+export function entrancePupilPlaneZ(
+  system: OpticalSystem,
+  wavelengthNm: number = system.primaryWavelengthNm,
+): number {
+  return solveEntrancePupil(system, wavelengthNm, 0).z;
+}
+
+function solveEntrancePupil(
+  system: OpticalSystem,
+  wavelengthNm: number,
+  stopRadius: number,
+): Pupil {
   const stopIndex = requireStop(system);
-  const stopRadius = requireStopRadius(system, stopIndex);
 
   // Two rays leaving the stop backwards, in the reversed frame ζ = −(z − z₁):
   // one from the center to locate the pupil, one from the rim to size it.
@@ -392,10 +418,30 @@ function requireStop(system: OpticalSystem): number {
   return stopIndex;
 }
 
+/**
+ * How big the stop is: its aperture if it has one, and its drawn extent if not.
+ *
+ * The aperture comes first because that is what actually stops light — a stop
+ * whose `CLAP` says 25 mm is a 25 mm stop however large the surface is drawn.
+ * The semi-diameter is the fallback for the common case of a stop with no
+ * aperture record at all, where the file is using the drawn size to mean the
+ * hole.
+ */
+export function stopRadius(system: OpticalSystem, stopIndex: number): number {
+  const surface = system.surfaceAt(stopIndex);
+  const limit = apertureOuterRadius(surface.aperture, surface.semiDiameter);
+  // `apertureOuterRadius` answers "how far out does the aperture let light
+  // through", so a surface with no aperture answers Infinity — true, and not
+  // what a stop's size is. The drawn extent is the fallback there.
+  return Number.isFinite(limit) ? limit : surface.semiDiameter;
+}
+
 function requireStopRadius(system: OpticalSystem, stopIndex: number): number {
-  const radius = system.surfaceAt(stopIndex).semiDiameter;
+  const radius = stopRadius(system, stopIndex);
   if (!Number.isFinite(radius)) {
-    throw new RangeError('The aperture stop needs a finite semi-diameter to size the pupils.');
+    throw new RangeError(
+      'The aperture stop has neither an aperture nor a finite semi-diameter, so there is nothing to size the pupils from.',
+    );
   }
   return radius;
 }

@@ -11,6 +11,7 @@ import {
   exitPupil,
   generateChiefRay,
   generateMarginalRay,
+  entrancePupilPlaneZ,
   generateRay,
   traceRay,
 } from '../src/index.ts';
@@ -307,4 +308,45 @@ test('a ray outside the solved pupil is clipped by the stop itself', () => {
 
   assert.equal(overfilled.status, 'BLOCKED');
   assert.equal(overfilled.terminatedAtSurface, 3); // blocked at the stop, not at the lens
+});
+
+test('a stop with no size of its own still says where the pupil is', () => {
+  // An off-axis design whose stop is a bare plane: the pupil's *size* is
+  // declared by the system aperture, and the stop is there to say where. Asking
+  // the stop how big it is would refuse to trace a system that never needed the
+  // answer — which is how Zemax's Unobscured Gregorian is written.
+  const system = new OpticalSystem({
+    wavelengthsNm: [WAVELENGTH_NM],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({ id: 'stop', type: 'STANDARD', thickness: 30, isStop: true }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 5,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
+      new Surface({ id: 's2', type: 'STANDARD', thickness: 95, semiDiameter: 25 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+
+  // The stop is in front of everything, so it is its own entrance pupil.
+  assert.ok(Math.abs(entrancePupilPlaneZ(system) - system.axialPositionAt(1)) < 1e-9);
+  assert.equal(traceRay(system, generateRay(system, { px: 0, py: 1 })).status, 'TERMINATED');
+
+  // Its size, though, is genuinely unknowable from the stop, and saying so is
+  // better than inventing one.
+  assert.throws(() => entrancePupil(system), /nothing to size the pupils from/);
+
+  // Give the stop an aperture and the size follows from that, not from the
+  // semi-diameter it is drawn at.
+  const withHole = system.withSurfaceAt(
+    1,
+    system.surfaceAt(1).with({ semiDiameter: 30, aperture: { kind: 'CIRCULAR', maxRadius: 7 } }),
+  );
+  assert.equal(entrancePupil(withHole).radius, 7);
 });

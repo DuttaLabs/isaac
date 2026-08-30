@@ -65,6 +65,8 @@ export {
   withImageAtParaxialFocus,
   lastRefractingSurfaceIndex,
   entrancePupil,
+  entrancePupilPlaneZ,
+  stopRadius,
   exitPupil,
 } from './tracing/paraxial.ts';
 export type {

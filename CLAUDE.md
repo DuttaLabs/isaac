@@ -988,6 +988,32 @@ format's own arrangement (one `OBDC` serving whichever aperture the surface has)
 an off-axis hole is not an off-axis surface — that is a coordinate transform, and it moves the glass
 too.
 
+**A decentered aperture is how an off-axis element is written**, and it is worth understanding
+before touching any of this. Zemax's `Unobscured Gregorian` is the canonical case: a coordinate break
+puts the parent conic's vertex 100 mm off the beam, and the mirror then carries `CLAP 0 55` with
+`OBDC 0 -100`, which takes a 55 mm circle back on the beam. The aperture is not a hole in a mirror
+there — **it is which piece of the parent surface the mirror is**. Ansys's own tutorial says so in
+one line: "The decentered aperture on this surface aligns the mirror with the incoming beam."
+
+Two consequences, and both are why the file sets that surface's semi-diameter to **zero**:
+
+- **The aperture is the drawn extent when there is one.** `drawnDisc` in `lib/layout.ts` takes the
+  radius *and the center* from the aperture, falling back to the semi-diameter and then to the view's
+  default. Drawing the semi-diameter instead would draw the parent disc — a mirror nobody has,
+  straddling the axis the design exists to keep clear. An obscuration is the exception and falls
+  through, since it is something in the way of a surface rather than the bound of one.
+- **A stop can have no size of its own.** That file's stop is a bare plane whose pupil is declared by
+  `ENPD`, so `entrancePupilPlaneZ` finds the pupil *plane* without asking how big the stop is — only
+  the ray from the stop's center is needed for that, and it starts on the axis whatever the size.
+  `entrancePupil` still refuses to invent a radius. When the stop does have a size, `stopRadius`
+  takes it from the **aperture** first and the semi-diameter second: a stop whose `CLAP` says 25 mm is
+  a 25 mm stop however large the surface is drawn.
+
+**The 3-D view cannot yet draw a decentered aperture.** A hole is made by starting the lathe at the
+inner radius, and a lathe is a surface of revolution — an off-center bore is not one. It currently
+revolves the right radius about the wrong center, which is the one silent wrongness left in this
+feature; fixing it needs a triangulated annulus with an offset inner boundary rather than a lathe.
+
 The live gap now is **the non-circular apertures**: `SQAP` (57 records), `ELAP` (2) and the
 user-defined `UDAD` polygons. Each is the same idea with a different boundary — a case in
 `apertureBlocks` and one in the icon — rather than a new concept, and until they land they stay in

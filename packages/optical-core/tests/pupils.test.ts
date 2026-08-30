@@ -59,6 +59,11 @@ function stopBehindLens(stopSemiDiameter = 5): OpticalSystem {
         radius: Infinity,
         thickness: 25,
         semiDiameter: stopSemiDiameter,
+        // A stop that is a real hole says so. In the sample corpus 383 of 471
+        // stop surfaces carry no aperture record at all — the stop defines the
+        // pupil rays are aimed at, and only an explicit aperture vignettes — so
+        // a test about a ray being *clipped* there has to declare one.
+        aperture: { kind: 'FLOATING' },
         isStop: true,
       }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
@@ -249,6 +254,9 @@ function singletWithInternalStop(): OpticalSystem {
         radius: Infinity,
         thickness: 80,
         semiDiameter: 3,
+        // The stop is a real hole here: this system's aperture floats to it,
+        // and the test below asks for a ray to be clipped there.
+        aperture: { kind: 'FLOATING' },
         isStop: true,
       }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),

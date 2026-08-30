@@ -42,6 +42,8 @@ export type {
 } from './model/material.ts';
 export { Surface, ASPHERIC_SURFACE_TYPES, STOP_CAPABLE_SURFACE_TYPES } from './model/surface.ts';
 export type { SurfaceConfig, SurfaceType, CoordinateTransform } from './model/surface.ts';
+export { apertureBlocks, apertureOuterRadius, normalizeAperture } from './model/aperture.ts';
+export type { ApertureKind, SurfaceAperture, SurfaceApertureConfig } from './model/aperture.ts';
 export { OpticalSystem } from './model/optical-system.ts';
 export type {
   OpticalSystemConfig,

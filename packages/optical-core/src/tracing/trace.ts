@@ -84,10 +84,12 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
 
     const point = pose.apply(hit.point);
 
-    // Clip against the clear aperture, which is radial about the surface's own
-    // axis — not the global one, or a tilted element would vignette by its tilt.
-    const radial = Math.hypot(hit.point.x, hit.point.y);
-    if (radial > surface.semiDiameter + DISTANCE_EPSILON) {
+    // Clip against the surface's aperture, which is measured about the surface's
+    // own axis — not the global one, or a tilted element would vignette by its
+    // tilt. A surface with no aperture stops nothing: the semi-diameter says how
+    // large to *draw* it, and drawing something is not the same as putting a
+    // wall there.
+    if (surface.blocksAt(hit.point.x, hit.point.y, DISTANCE_EPSILON)) {
       ray = ray.with({ origin: point, status: 'BLOCKED' });
       return finish(inputRay, ray, intersections, 'BLOCKED', index);
     }

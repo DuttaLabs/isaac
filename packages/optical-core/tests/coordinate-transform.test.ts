@@ -213,6 +213,9 @@ test('a decentered element is hit off-axis, and its aperture is its own', () => 
         radius: 50,
         thickness: 20,
         semiDiameter: 2,
+        // Clipped at the semi-diameter, said out loud: that is what this test is
+        // about, and a semi-diameter on its own no longer stops anything.
+        aperture: { kind: 'FLOATING' },
         material: N_BK7,
       }),
       new Surface({ id: 's2', type: 'STANDARD', thickness: 20, semiDiameter: 10 }),

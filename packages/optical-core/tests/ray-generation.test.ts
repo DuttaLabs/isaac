@@ -41,6 +41,9 @@ function singlet(
         radius,
         thickness: 5,
         semiDiameter,
+        // Clipped at the semi-diameter, which is now something a surface has to
+        // declare rather than something every surface does.
+        aperture: { kind: 'FLOATING' },
         material: GLASS,
       }),
       new Surface({
@@ -49,6 +52,7 @@ function singlet(
         radius: Infinity,
         thickness: 96.6667,
         semiDiameter,
+        aperture: { kind: 'FLOATING' },
         material: AIR,
       }),
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, material: AIR }),

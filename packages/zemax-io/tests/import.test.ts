@@ -210,21 +210,62 @@ test('a model glass without usable numbers is refused, not guessed at', () => {
 });
 
 test('surface records that would change the geometry become warnings', () => {
-  // CLAP is a second, tighter aperture on the surface: ignoring it silently
-  // would trace rays the real lens vignettes away.
-  const withClap = importDoublet(
-    DOUBLET.replace(
-      '  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP',
-      '  CLAP 0 5.0 0\n  DIAM 1.5E+1 1 0 0 1 ""\n  FLAP',
-    ),
+  // A rectangular aperture is a real limit this reader cannot yet express, so
+  // ignoring it silently would trace rays the real lens vignettes away.
+  const withSquare = importDoublet(
+    DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""', '  SQAP 5 5 0\n  DIAM 1.5E+1 1 0 0 1 ""'),
   );
   assert.ok(
-    withClap.warnings.some((warning) => /Surface 1 has a CLAP record/.test(warning)),
-    `expected a CLAP warning, got ${JSON.stringify(withClap.warnings)}`,
+    withSquare.warnings.some((warning) => /Surface 1 has a SQAP record/.test(warning)),
+    `expected a SQAP warning, got ${JSON.stringify(withSquare.warnings)}`,
   );
 
   // Records that only annotate the surface stay quiet.
   assert.deepEqual(importDoublet().warnings, []);
+});
+
+test('a circular aperture, an obscuration and a floating one are read onto the surface', () => {
+  // The fixture already carries FLAP on its first surface, which is the
+  // commonest aperture record in the corpus by a factor of six: the one that
+  // asks for the semi-diameter to be the limit.
+  const floating = importDoublet().system.surfaces[1]!;
+  assert.deepEqual(floating.aperture, {
+    kind: 'FLOATING',
+    minRadius: 0,
+    maxRadius: Infinity,
+    decenterX: 0,
+    decenterY: 0,
+  });
+
+  // An annulus, decentered — the Hubble's primary, in miniature.
+  const annulus = importDoublet(DOUBLET.replace('  FLAP', '  CLAP 0.2 1.21 0\n  OBDC 0.5 -0.25'))
+    .system.surfaces[1]!;
+  assert.deepEqual(annulus.aperture, {
+    kind: 'CIRCULAR',
+    minRadius: 0.2,
+    maxRadius: 1.21,
+    decenterX: 0.5,
+    decenterY: -0.25,
+  });
+
+  const baffle = importDoublet(DOUBLET.replace('  FLAP', '  OBSC 0 0.155 0')).system.surfaces[1]!;
+  assert.equal(baffle.aperture?.kind, 'CIRCULAR_OBSCURATION');
+  assert.equal(baffle.aperture?.maxRadius, 0.155);
+
+  // A surface with no aperture record has none, whatever its DIAM says: a
+  // semi-diameter is the drawn extent, and only an explicit record vignettes.
+  const drawnOnly = importDoublet(DOUBLET.replace('  FLAP', '  COMM "no aperture"'));
+  assert.equal(drawnOnly.system.surfaces[1]!.aperture, undefined);
+  assert.equal(drawnOnly.system.surfaces[1]!.semiDiameter, 15);
+});
+
+test('two aperture records on one surface: the first is taken and the rest are reported', () => {
+  const both = importDoublet(DOUBLET.replace('  FLAP', '  CLAP 0 5 0\n  OBSC 0 1 0'));
+  assert.equal(both.system.surfaces[1]!.aperture?.kind, 'CIRCULAR');
+  assert.ok(
+    both.warnings.some((warning) => /carries 2 aperture records/.test(warning)),
+    `expected a warning, got ${JSON.stringify(both.warnings)}`,
+  );
 });
 
 test('header settings that change how rays are launched become warnings', () => {
@@ -253,11 +294,11 @@ test('header settings that change how rays are launched become warnings', () => 
 test('tokens the reader does not interpret are reported, not silently dropped', () => {
   const { ignoredTokens } = importDoublet();
 
-  for (const token of ['HIDE', 'MIRR', 'FLAP', 'GCAT', 'VERS', 'TOL', 'MNUM']) {
+  for (const token of ['HIDE', 'MIRR', 'GCAT', 'VERS', 'TOL', 'MNUM']) {
     assert.ok(ignoredTokens.includes(token), `expected ${token} to be reported as ignored`);
   }
   // Interpreted tokens must not appear in the ignored list.
-  for (const token of ['CURV', 'DISZ', 'DIAM', 'GLAS', 'STOP', 'ENPD', 'WAVM']) {
+  for (const token of ['CURV', 'DISZ', 'DIAM', 'GLAS', 'STOP', 'ENPD', 'WAVM', 'FLAP']) {
     assert.ok(!ignoredTokens.includes(token));
   }
 });

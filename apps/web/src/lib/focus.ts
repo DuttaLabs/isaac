@@ -1,4 +1,8 @@
-import { withImageAtParaxialFocus, type OpticalSystem } from '@isaac/optical-core';
+import {
+  apertureOuterRadius,
+  withImageAtParaxialFocus,
+  type OpticalSystem,
+} from '@isaac/optical-core';
 import { computeSpot } from './analysis.ts';
 import { attempt, type Result } from './result.ts';
 
@@ -175,8 +179,12 @@ function paraxialThickness(system: OpticalSystem, surfaceIndex: number): number 
  * score to a minimizer.
  */
 export function measureSpot(system: OpticalSystem, gridCount = DEFAULT_GRID_COUNT): SpotMerit {
-  const imageSemiDiameter = system.surfaceAt(system.surfaces.length - 1).semiDiameter;
-  const lostRadius = Number.isFinite(imageSemiDiameter) ? imageSemiDiameter : undefined;
+  // The detector is finite when it *says* it is: a semi-diameter is how large
+  // the image surface is drawn, and only an aperture on it stops a ray. A
+  // detector with no aperture catches everything, so there is nothing to charge.
+  const image = system.surfaceAt(system.surfaces.length - 1);
+  const imageRadius = apertureOuterRadius(image.aperture, image.semiDiameter);
+  const lostRadius = Number.isFinite(imageRadius) ? imageRadius : undefined;
   const fieldCount = Math.max(system.fields.length, 1);
   const droppedFields: number[] = [];
   let sumSquares = 0;

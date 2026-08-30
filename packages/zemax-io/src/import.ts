@@ -12,6 +12,7 @@ import {
   type LinearUnit,
   type CoordinateTransform,
   type Material,
+  type SurfaceApertureConfig,
   type SurfaceType,
 } from '@isaac/optical-core';
 import { decodeZmx } from './decode.ts';
@@ -110,7 +111,19 @@ const HANDLED_HEADER_TOKENS = new Set([
   'OBNA',
   'FLOA',
 ]);
-const HANDLED_SURFACE_TOKENS = new Set(['TYPE', 'CURV', 'DISZ', 'DIAM', 'GLAS', 'STOP', 'CONI']);
+const HANDLED_SURFACE_TOKENS = new Set([
+  'TYPE',
+  'CURV',
+  'DISZ',
+  'DIAM',
+  'GLAS',
+  'STOP',
+  'CONI',
+  'CLAP',
+  'OBSC',
+  'FLAP',
+  'OBDC',
+]);
 
 /**
  * Zemax surface types this reader maps onto the model. Everything else is
@@ -126,10 +139,23 @@ const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH', 'COORDB
  * surface block can hold — display flags, coating names, scatter data — leaves
  * the traced result untouched.
  */
+/**
+ * The **surface** aperture records this reader models, in the order a surface
+ * carrying more than one is resolved: circular before floating, because a stated
+ * radius is more specific than "whatever the semi-diameter is".
+ *
+ * Not to be confused with `APERTURE_TOKENS` below, which is the *system*
+ * aperture — `ENPD`, `FNUM` and friends. Zemax keeps the same two meanings apart
+ * by calling one a system aperture and the other a surface aperture, and so does
+ * this file.
+ */
+const SURFACE_APERTURE_TOKENS = ['CLAP', 'OBSC', 'FLAP'] as const;
+
 const UNMODELED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
-  ['CLAP', 'an additional circular clear aperture'],
   ['SQAP', 'a rectangular aperture'],
-  ['OBDC', 'a decentered aperture'],
+  ['SQOB', 'a rectangular obscuration'],
+  ['ELAP', 'an elliptical aperture'],
+  ['ELOB', 'an elliptical obscuration'],
   ['UDAD', 'a user-defined aperture'],
   ['USAP', 'a user-defined aperture'],
   ['PKUP', 'a pickup solve'],
@@ -364,6 +390,7 @@ function toSurface(
       focalLength: readParaxialFocalLength(records, number),
       thickness,
       semiDiameter,
+      aperture: readSurfaceAperture(records, number, context),
       material: readMaterial(records, number, context),
       isStop,
       comment: readComment(records),
@@ -380,6 +407,7 @@ function toSurface(
       : {}),
     thickness,
     semiDiameter,
+    aperture: readSurfaceAperture(records, number, context),
     material: reflective ? AIR : readMaterial(records, number, context),
     reflective,
     isStop,
@@ -434,6 +462,79 @@ function adoptMirrorMedia(surfaces: readonly Surface[]): Surface[] {
  * the whole meaning, and one that is not among the six is not something to guess
  * at. That is the same rule the PARAXIAL and EVENASPH readers follow.
  */
+/**
+ * The surface's aperture, if it has one.
+ *
+ * Three records, all verified against Chapter 29's keyword table and the sample
+ * corpus: `CLAP min max` is a circular clear aperture, `OBSC min max` a circular
+ * obscuration, and `FLAP` a floating one whose radius is the semi-diameter.
+ * `OBDC xdec ydec` decenters whichever of them the surface has — one record
+ * serving all three, which is why the decenter lives on the aperture here too.
+ *
+ * Files write a **third** value on `CLAP`/`OBSC`/`FLAP` that the manual does not
+ * document; it is `0` in all 820 records in the corpus, so it is left alone
+ * rather than guessed at, and written back as the `0` every file carries.
+ *
+ * A surface may carry more than one aperture record — Zemax allows an aperture
+ * and an obscuration together. Only the first is taken, and the rest are
+ * reported, rather than silently keeping whichever happened to be last.
+ */
+function readSurfaceAperture(
+  records: readonly ZmxRecord[],
+  number: number,
+  context: SurfaceContext,
+): SurfaceApertureConfig | undefined {
+  const found = SURFACE_APERTURE_TOKENS.map((token) => ({
+    token,
+    record: findRecord(records, token),
+  })).filter((entry) => entry.record !== undefined);
+  if (found.length === 0) {
+    return undefined;
+  }
+  if (found.length > 1) {
+    context.warnings.push(
+      `Surface ${number} carries ${found.length} aperture records ` +
+        `(${found.map((entry) => entry.token).join(', ')}); only the ${found[0]!.token} is modeled.`,
+    );
+  }
+  const { token, record } = found[0]!;
+  const decenter = findRecord(records, 'OBDC');
+  const decenterX = numericValue(decenter?.values[0]) ?? 0;
+  const decenterY = numericValue(decenter?.values[1]) ?? 0;
+
+  if (token === 'FLAP') {
+    // Its radius is the semi-diameter, so the numbers the file writes here are
+    // the value that floated, not a second definition of it.
+    return { kind: 'FLOATING', decenterX, decenterY };
+  }
+
+  const minRadius = numericValue(record!.values[0]) ?? 0;
+  const maxRadius = numericValue(record!.values[1]) ?? 0;
+  // An aperture of zero radius has no extent, which is the literal reading of a
+  // record left at its defaults: one file in the corpus carries `OBSC 0 0 0`,
+  // plainly a leftover from an edit. Saying so beats both refusing to open the
+  // file and honoring it — an obscuration of radius zero obscures nothing, and a
+  // clear aperture of radius zero would pass nothing at all.
+  if (maxRadius === 0) {
+    context.warnings.push(
+      `Surface ${number} has ${token} ${minRadius} ${maxRadius}, an aperture of no extent; ignoring it.`,
+    );
+    return undefined;
+  }
+  if (!Number.isFinite(minRadius) || !Number.isFinite(maxRadius) || maxRadius <= minRadius) {
+    throw new ZmxImportError(
+      `Surface ${number} has ${token} ${minRadius} ${maxRadius}, which bounds no ring.`,
+    );
+  }
+  return {
+    kind: token === 'OBSC' ? 'CIRCULAR_OBSCURATION' : 'CIRCULAR',
+    minRadius,
+    maxRadius,
+    decenterX,
+    decenterY,
+  };
+}
+
 function readCoordinateTransform(
   records: readonly ZmxRecord[],
   surfaceNumber: number,

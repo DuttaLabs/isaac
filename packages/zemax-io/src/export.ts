@@ -37,6 +37,7 @@
 
 import {
   ModelGlassMaterial,
+  apertureOuterRadius,
   type LinearUnit,
   type Material,
   type OpticalSystem,
@@ -314,8 +315,43 @@ function surfaceBlock(
     records.push(record('CONI', number(surface.conic)));
   }
   records.push(...diameterRecord(surface, isTransform));
+  records.push(...surfaceApertureRecords(surface));
 
   return { number: index, records };
+}
+
+/**
+ * The surface aperture, as the one or two records a file carries for it.
+ *
+ * `CLAP min max`, `OBSC min max` and `FLAP` all take the undocumented third
+ * value every file in the corpus writes as `0`; the reader leaves that column
+ * alone, and writing the value everything else writes is the one choice that
+ * cannot surprise a reader expecting it. A `FLAP` carries the radius that
+ * floated, which for us is the semi-diameter it is defined as.
+ *
+ * `OBDC` goes out only when the aperture is actually decentered — it is a
+ * separate record, and writing `OBDC 0 0` on every apertured surface would add a
+ * line to the file that says nothing.
+ */
+function surfaceApertureRecords(surface: Surface): ZmxRecord[] {
+  const aperture = surface.aperture;
+  if (aperture === undefined) {
+    return [];
+  }
+  const radius = apertureOuterRadius(aperture, surface.semiDiameter);
+  const token =
+    aperture.kind === 'CIRCULAR'
+      ? 'CLAP'
+      : aperture.kind === 'CIRCULAR_OBSCURATION'
+        ? 'OBSC'
+        : 'FLAP';
+  const records = [
+    record(token, number(aperture.minRadius), number(Number.isFinite(radius) ? radius : 0), '0'),
+  ];
+  if (aperture.decenterX !== 0 || aperture.decenterY !== 0) {
+    records.push(record('OBDC', number(aperture.decenterX), number(aperture.decenterY)));
+  }
+  return records;
 }
 
 /**

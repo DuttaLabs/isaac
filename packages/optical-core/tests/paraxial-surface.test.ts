@@ -37,6 +37,8 @@ function idealLens(focalLength: number, imageDistance = focalLength): OpticalSys
         focalLength,
         thickness: imageDistance,
         semiDiameter: 25,
+        // The stop is what this lens's aperture *is*, so it clips at it.
+        aperture: { kind: 'FLOATING' },
         material: AIR,
         isStop: true,
       }),

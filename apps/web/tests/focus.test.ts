@@ -24,6 +24,7 @@ function singlet(imageDistance: number, imageSemiDiameter = Infinity): OpticalSy
         radius: 50,
         thickness: 6,
         semiDiameter: 10,
+        aperture: { kind: 'FLOATING' },
         material: N_BK7,
         isStop: true,
       }),
@@ -33,6 +34,7 @@ function singlet(imageDistance: number, imageSemiDiameter = Infinity): OpticalSy
         radius: -50,
         thickness: imageDistance,
         semiDiameter: 10,
+        aperture: { kind: 'FLOATING' },
         material: AIR,
       }),
       new Surface({
@@ -40,6 +42,9 @@ function singlet(imageDistance: number, imageSemiDiameter = Infinity): OpticalSy
         type: 'IMAGE',
         thickness: 0,
         semiDiameter: imageSemiDiameter,
+        // A finite detector is one that says it is finite: a semi-diameter is
+        // the drawn extent, and only an aperture catches a ray short.
+        aperture: { kind: 'FLOATING' },
         material: AIR,
       }),
     ],
@@ -192,6 +197,7 @@ function gated(gateSemiDiameter: number, angleDeg: number, imageSemiDiameter = 2
         radius: 50,
         thickness: 6,
         semiDiameter: 10,
+        aperture: { kind: 'FLOATING' },
         material: N_BK7,
         isStop: true,
       }),
@@ -201,6 +207,7 @@ function gated(gateSemiDiameter: number, angleDeg: number, imageSemiDiameter = 2
         radius: -50,
         thickness: 40,
         semiDiameter: 10,
+        aperture: { kind: 'FLOATING' },
         material: AIR,
       }),
       new Surface({
@@ -209,6 +216,7 @@ function gated(gateSemiDiameter: number, angleDeg: number, imageSemiDiameter = 2
         radius: Infinity,
         thickness: 12,
         semiDiameter: gateSemiDiameter,
+        aperture: { kind: 'FLOATING' },
         material: AIR,
       }),
       new Surface({
@@ -216,6 +224,9 @@ function gated(gateSemiDiameter: number, angleDeg: number, imageSemiDiameter = 2
         type: 'IMAGE',
         thickness: 0,
         semiDiameter: imageSemiDiameter,
+        // A finite detector is one that says it is finite: a semi-diameter is
+        // the drawn extent, and only an aperture catches a ray short.
+        aperture: { kind: 'FLOATING' },
         material: AIR,
       }),
     ],

@@ -1,4 +1,10 @@
 import { AIR, type Material } from './material.ts';
+import {
+  apertureBlocks,
+  normalizeAperture,
+  type SurfaceAperture,
+  type SurfaceApertureConfig,
+} from './aperture.ts';
 import { Transform3 } from '../geometry/transform3.ts';
 import { Vector3 } from '../geometry/vector3.ts';
 import {
@@ -96,8 +102,23 @@ export interface SurfaceConfig {
   asphericCoefficients?: readonly number[];
   /** Axial distance to the next surface, in system units. */
   thickness: number;
-  /** Clear-aperture semi-diameter. Rays beyond this radius are blocked. */
+  /**
+   * How far out the surface is *drawn*, in system units.
+   *
+   * Not a limit on the light. A `.zmx` carries this on every surface — usually
+   * computed, as the radius the rays reached — and it vignettes nothing; that
+   * is what {@link SurfaceConfig.aperture} is for, and a file wanting the two
+   * to coincide says so with a `FLOATING` aperture. Isaac used to block on this
+   * number, which made a drawn baffle into a wall and reported ten of eleven
+   * rays as `BLOCKED` on a Hubble that is in fact unvignetted.
+   */
   semiDiameter?: number;
+  /**
+   * What stops light at this surface, if anything. Absent means nothing does.
+   * See `model/aperture.ts` — the decenter lives here rather than on the
+   * surface, because an off-axis hole is not an off-axis surface.
+   */
+  aperture?: SurfaceApertureConfig | SurfaceAperture;
   /**
    * Focal length of the ideal thin lens, for `PARAXIAL` surfaces only, where it
    * replaces the radius as the source of the surface's power (φ = 1/focalLength).
@@ -140,7 +161,10 @@ export class Surface {
   /** `α₁…αₙ` on r², r⁴, …; empty unless this is an `EVEN_ASPHERE`. */
   public readonly asphericCoefficients: readonly number[];
   public readonly thickness: number;
+  /** The drawn extent, not a limit on the light. See {@link Surface.aperture}. */
   public readonly semiDiameter: number;
+  /** What stops light here, or `undefined` when nothing does. */
+  public readonly aperture: SurfaceAperture | undefined;
   /** Ideal-lens focal length; defined only on a `PARAXIAL` surface. */
   public readonly focalLength: number | undefined;
   /** Decenter and tilt; defined only on a `COORDINATE_TRANSFORM` surface. */
@@ -242,6 +266,9 @@ export class Surface {
           'A COORDINATE_TRANSFORM meets no ray, so it cannot have a clear aperture.',
         );
       }
+      if (config.aperture !== undefined) {
+        throw new RangeError('A COORDINATE_TRANSFORM meets no ray, so it cannot have an aperture.');
+      }
     } else if (config.coordinateTransform !== undefined) {
       throw new RangeError(
         'coordinateTransform is only meaningful on a COORDINATE_TRANSFORM surface.',
@@ -267,6 +294,7 @@ export class Surface {
     this.coordinateTransform = config.coordinateTransform;
     this.thickness = config.thickness;
     this.semiDiameter = semiDiameter;
+    this.aperture = normalizeAperture(config.aperture);
     this.material = config.material ?? AIR;
     this.reflective = config.reflective ?? false;
     this.isStop = config.isStop ?? false;
@@ -293,6 +321,10 @@ export class Surface {
       asphericCoefficients: changes.asphericCoefficients ?? this.asphericCoefficients,
       thickness: changes.thickness ?? this.thickness,
       semiDiameter: changes.semiDiameter ?? this.semiDiameter,
+      // `?? this` cannot express "take the aperture off again", so an explicit
+      // `aperture: undefined` in the changes has to mean it — which is what
+      // `in` distinguishes and `??` cannot.
+      aperture: 'aperture' in changes ? changes.aperture : this.aperture,
       focalLength: changes.focalLength ?? this.focalLength,
       coordinateTransform: changes.coordinateTransform ?? this.coordinateTransform,
       material: changes.material ?? this.material,
@@ -333,6 +365,19 @@ export class Surface {
   /** Largest radius at which the surface exists; `Infinity` unless the conic closes. */
   public get maximumRadius(): number {
     return maximumSagRadius(this.shape);
+  }
+
+  /**
+   * Whether a ray meeting this surface at `(x, y)` — in the surface's own local
+   * frame — is stopped.
+   *
+   * The single definition of vignetting, the way `surfacePower` is the single
+   * definition of power: the tracer asks it, and so does anything drawing the
+   * hole in a mirror, so the picture cannot show an aperture the trace does not
+   * have. A surface with no aperture stops nothing, whatever its semi-diameter.
+   */
+  public blocksAt(x: number, y: number, epsilon = 0): boolean {
+    return apertureBlocks(this.aperture, this.semiDiameter, x, y, epsilon);
   }
 
   /**

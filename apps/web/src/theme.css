@@ -416,9 +416,20 @@ body {
 }
 
 .aperture-icon {
+  width: 36px;
+  height: 36px;
+  display: block;
+}
+
+/*
+ * The placeholder stays small. It marks a surface with *no* aperture, so it
+ * should be quiet — an outline the size of the real icons would fill the column
+ * with squares saying nothing.
+ */
+.aperture-icon.empty {
   width: 18px;
   height: 18px;
-  display: block;
+  margin: 9px;
 }
 
 .aperture-ground {

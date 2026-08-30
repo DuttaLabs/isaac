@@ -455,7 +455,9 @@ test('a mirror with an annular aperture is drawn with the hole left out', () => 
     ],
   });
 
-  const profile = buildLayout(system, []).profiles.find((one) => one.surfaceIndex === 1);
+  const profile = buildLayout(system, [], DEFAULT_SEMI_DIAMETER).profiles.find(
+    (one) => one.surfaceIndex === 1,
+  );
   assert.ok(profile?.hole, 'expected the mirror to be drawn with a hole');
   // Every sample the stroke skips is inside the hole, and the ones either side
   // of the run are not: the gap is exactly the missing material.
@@ -472,5 +474,5 @@ test('a mirror with an annular aperture is drawn with the hole left out', () => 
     1,
     system.surfaceAt(1).with({ aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 3 } }),
   );
-  assert.equal(buildLayout(baffled, []).profiles[1]?.hole, undefined);
+  assert.equal(buildLayout(baffled, [], DEFAULT_SEMI_DIAMETER).profiles[1]?.hole, undefined);
 });

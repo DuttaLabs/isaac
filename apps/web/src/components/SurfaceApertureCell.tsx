@@ -23,8 +23,13 @@ const SIDE = 18;
 const CENTER = SIDE / 2;
 /** The disc standing for the surface itself, nearly filling the square. */
 const DISC = 0.4 * SIDE;
-/** The obscuration: a third of the square across, which is what reads at 18px. */
-const OBSCURATION = SIDE / 6;
+/**
+ * The obscuration, inscribed in the square: the corners stay white, so it still
+ * reads as a disc on paper rather than as a black cell. It is deliberately
+ * larger than {@link DISC} — an obscuration is the whole of what the icon has to
+ * say, where the colored disc is a surface that also has a hole to show.
+ */
+const OBSCURATION = SIDE / 2;
 
 export const APERTURE_KIND_LABELS: Record<ApertureKind, string> = {
   CIRCULAR: 'Circular aperture',
@@ -73,7 +78,7 @@ export function ApertureIcon({
     // picture. A faint outline says "there could be one here", which is also
     // the invitation to click.
     return (
-      <svg className="aperture-icon" viewBox={`0 0 ${SIDE} ${SIDE}`} aria-hidden="true">
+      <svg className="aperture-icon empty" viewBox={`0 0 ${SIDE} ${SIDE}`} aria-hidden="true">
         <rect
           x={1.5}
           y={1.5}

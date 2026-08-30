@@ -435,3 +435,42 @@ test('drawing the object plane does not invent an element out of it', () => {
   assert.equal(withFinite.bodies.length, withInfinity.bodies.length);
   assert.ok(!withFinite.bodies.some((body) => body.frontIndex === 0));
 });
+
+test('a mirror with an annular aperture is drawn with the hole left out', () => {
+  // The Hubble's primary: light comes back through the middle of the mirror it
+  // just bounced off, so the material is a ring and the drawing has to say so.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'm1',
+        type: 'STANDARD',
+        radius: -20,
+        thickness: -10,
+        semiDiameter: 12,
+        aperture: { kind: 'CIRCULAR', minRadius: 3, maxRadius: 12 },
+        reflective: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 2 }),
+    ],
+  });
+
+  const profile = buildLayout(system, []).profiles.find((one) => one.surfaceIndex === 1);
+  assert.ok(profile?.hole, 'expected the mirror to be drawn with a hole');
+  // Every sample the stroke skips is inside the hole, and the ones either side
+  // of the run are not: the gap is exactly the missing material.
+  const heights = profile.points.map((point) => point.v);
+  for (let i = profile.hole.from; i <= profile.hole.to; i += 1) {
+    assert.ok(Math.abs(heights[i]!) < 3, `sample ${i} at ${heights[i]} should be inside the hole`);
+  }
+  assert.ok(Math.abs(heights[profile.hole.from - 1]!) >= 3);
+  assert.ok(Math.abs(heights[profile.hole.to + 1]!) >= 3);
+
+  // An obscuration is the opposite case and leaves no hole: the middle is all
+  // there is, and the surface is already drawn at the extent that says so.
+  const baffled = system.withSurfaceAt(
+    1,
+    system.surfaceAt(1).with({ aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 3 } }),
+  );
+  assert.equal(buildLayout(baffled, []).profiles[1]?.hole, undefined);
+});

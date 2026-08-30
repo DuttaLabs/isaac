@@ -310,3 +310,19 @@ test('a finite object plane is built, like the image plane at the other end', ()
   }
   scene.dispose();
 });
+
+test('a surface with an annular aperture is revolved from its hole, not from the axis', () => {
+  const shape = { curvature: -1 / 20, conic: 0, asphericCoefficients: [] as number[] };
+  const solid = surfaceProfile(shape, 0, 12, 8);
+  const holed = surfaceProfile(shape, 0, 12, 8, 3);
+
+  assert.equal(solid[0]!.x, 0);
+  assert.equal(holed[0]!.x, 3);
+  // Both still reach the rim: the hole takes material from the middle, not from
+  // the edge.
+  assert.equal(solid[solid.length - 1]!.x, 12);
+  assert.equal(holed[holed.length - 1]!.x, 12);
+  // The sag is the surface's own at every radius, hole or not — the shape is not
+  // re-scaled to fit the ring it is now drawn over.
+  assert.ok(Math.abs(holed[0]!.y - surfaceProfileSag(shape, 3)) < 1e-12);
+});

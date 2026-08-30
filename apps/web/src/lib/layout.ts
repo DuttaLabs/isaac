@@ -4,6 +4,7 @@ import {
   surfaceProfileSag,
   type OpticalSystem,
   type RayTraceResult,
+  type Surface,
   type SurfaceShape,
 } from '@isaac/optical-core';
 import { projectToPlane, VIEW_PLANES, type LayoutPoint, type ViewPlane } from './view-plane.ts';
@@ -23,6 +24,19 @@ export interface SurfaceProfile {
    * `points[0]` and `points[n - 1]` as the two rims applies to it.
    */
   closed: boolean;
+  /**
+   * The hole down the middle, when the surface's aperture has one — the Hubble's
+   * primary, where the light comes back through the mirror it just bounced off.
+   *
+   * Indices into {@link points} rather than a radius, so the view draws the
+   * outline as two runs of the samples it already has and nothing has to be
+   * re-derived at draw time. `undefined` where there is no hole, which is every
+   * surface in most designs.
+   *
+   * End-on there is no gap to leave: the hole is a second circle, and this is
+   * the index the inner rim's samples begin at.
+   */
+  hole?: { from: number; to: number };
 }
 
 export interface GlassBody {
@@ -133,20 +147,91 @@ function leastAxialGap(
  * is its rim, so that is the circle traced — at the rim's own sag, so a tilted
  * surface's rim projects to the ellipse it really is rather than to a circle.
  */
-function outlineInLocalFrame(shape: SurfaceShape, semiDiameter: number, view: ViewPlane): Point3[] {
+function outlineInLocalFrame(
+  shape: SurfaceShape,
+  semiDiameter: number,
+  view: ViewPlane,
+  hole: Hole | undefined,
+): { points: Point3[]; hole?: { from: number; to: number } } {
   if (!view.axial) {
-    const rimSag = sag(shape, semiDiameter);
-    return Array.from({ length: RIM_SAMPLES + 1 }, (_, sample) => {
-      const angle = (2 * Math.PI * sample) / RIM_SAMPLES;
-      return new Point3(semiDiameter * Math.cos(angle), semiDiameter * Math.sin(angle), rimSag);
-    });
+    // End-on, a hole is a second rim rather than a gap in the first: the inner
+    // circle is appended to the outer one, and the index it starts at is what
+    // tells the view where to break the path.
+    const outer = rimSamples(shape, semiDiameter, 0, 0);
+    if (hole === undefined) {
+      return { points: outer };
+    }
+    const inner = rimSamples(shape, hole.radius, hole.centerX, hole.centerY);
+    return { points: [...outer, ...inner], hole: { from: outer.length, to: outer.length } };
   }
 
   const upright = view.vertical;
-  return Array.from({ length: PROFILE_SAMPLES }, (_, sample) => {
-    const height = -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
+  const center = upright === 'y' ? (hole?.centerY ?? 0) : (hole?.centerX ?? 0);
+  const at = (sample: number): number =>
+    -semiDiameter + (2 * semiDiameter * sample) / (PROFILE_SAMPLES - 1);
+  const points = Array.from({ length: PROFILE_SAMPLES }, (_, sample) => {
+    const height = at(sample);
     const depth = sag(shape, height);
     return upright === 'y' ? new Point3(0, height, depth) : new Point3(height, 0, depth);
+  });
+  if (hole === undefined) {
+    return { points };
+  }
+
+  // The samples inside the hole are the ones the material is missing at. They
+  // are left in `points` — the bounds, the body and the stop bars all read them
+  // — and only the *stroke* skips them, which is the one thing a hole changes
+  // about a cross-section.
+  const inside = (sample: number): boolean => Math.abs(at(sample) - center) < hole.radius;
+  let from = -1;
+  let to = -1;
+  for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
+    if (inside(sample)) {
+      if (from === -1) {
+        from = sample;
+      }
+      to = sample;
+    }
+  }
+  return from === -1 ? { points } : { points, hole: { from, to } };
+}
+
+/** A hole in a surface: where it is in the surface's own frame, and how big. */
+interface Hole {
+  radius: number;
+  centerX: number;
+  centerY: number;
+}
+
+/**
+ * The hole an aperture leaves in the material, if it leaves one.
+ *
+ * Only a clear aperture with an inner radius does: light passes in the ring, so
+ * the middle is not there to be drawn. An obscuration is the opposite — the
+ * middle is *all* there is — and the surface is already drawn at the extent that
+ * describes it.
+ */
+function holeIn(surface: Surface): Hole | undefined {
+  const aperture = surface.aperture;
+  return aperture !== undefined && aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
+    ? { radius: aperture.minRadius, centerX: aperture.decenterX, centerY: aperture.decenterY }
+    : undefined;
+}
+
+function rimSamples(
+  shape: SurfaceShape,
+  radius: number,
+  centerX: number,
+  centerY: number,
+): Point3[] {
+  const rimSag = sag(shape, radius);
+  return Array.from({ length: RIM_SAMPLES + 1 }, (_, sample) => {
+    const angle = (2 * Math.PI * sample) / RIM_SAMPLES;
+    return new Point3(
+      centerX + radius * Math.cos(angle),
+      centerY + radius * Math.sin(angle),
+      rimSag,
+    );
   });
 }
 
@@ -197,9 +282,8 @@ export function buildLayout(
     // The outline is built in the surface's own frame and then carried into
     // global coordinates, so a tilted element is drawn tilted. For a centered
     // system this is the vertex offset it always was.
-    const points = outlineInLocalFrame(surface.shape, semiDiameter, view).map((local) =>
-      projectToPlane(pose.apply(local), view),
-    );
+    const outline = outlineInLocalFrame(surface.shape, semiDiameter, view, holeIn(surface));
+    const points = outline.points.map((local) => projectToPlane(pose.apply(local), view));
     profiles.push({
       surfaceIndex: index,
       points,
@@ -207,6 +291,7 @@ export function buildLayout(
       isImage: surface.type === 'IMAGE',
       isMirror: surface.reflective,
       closed: !view.axial,
+      ...(outline.hole === undefined ? {} : { hole: outline.hole }),
     });
   }
 

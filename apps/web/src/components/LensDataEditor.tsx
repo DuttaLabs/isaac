@@ -19,6 +19,7 @@ import {
   removeSurface,
   setMirror,
   setStop,
+  setSurfaceAperture,
   setSurfaceType,
   updateCoordinateTransform,
   updateSurface,
@@ -37,10 +38,12 @@ import type { MenuPoint } from '../lib/context-menu.ts';
 import { ErrorNote, Panel, type PanelChoice } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
+import { ApertureIcon, SurfaceApertureDialog, apertureSummary } from './SurfaceApertureCell.tsx';
 import { ElementColorPicker } from './ElementColorPicker.tsx';
 import {
   colorsInUse,
   defaultGapColor,
+  elementAt,
   elementLabel,
   elementRowSpan,
   endColor,
@@ -102,6 +105,8 @@ export function LensDataEditor({
   const [asphereSurface, setAsphereSurface] = useState<number | undefined>(undefined);
   /** Surface whose coordinate transform is open in the modal, if any. */
   const [transformSurface, setTransformSurface] = useState<number | undefined>(undefined);
+  /** Surface whose aperture is open in the modal, if any. */
+  const [apertureSurface, setApertureSurface] = useState<number | undefined>(undefined);
   /** The piece of glass whose color picker is open, by its key, if any. */
   const [colorGap, setColorGap] = useState<string | undefined>(undefined);
   /** Where the right-click menu is up, and which row it was opened on. */
@@ -110,7 +115,7 @@ export function LensDataEditor({
   const table = useRef<HTMLDivElement>(null);
   // A mirror's default color is the theme's own, resolved, so its swatch shows
   // what is actually drawn in whichever theme is on.
-  const { mirror: themeMirror } = useThemeColors();
+  const { mirror: themeMirror, surface: themeGlass } = useThemeColors();
 
   /*
    * Where the frozen Element column has to sit: the rendered width of the
@@ -178,6 +183,24 @@ export function LensDataEditor({
     return covered;
   }, [elements]);
   const ends = useMemo(() => systemEnds(system), [system]);
+
+  /**
+   * What color to draw a surface's aperture icon in: the element it belongs to,
+   * so a hole reads as a hole *in that mirror* rather than as a free-floating
+   * ring. A surface in no element — a dummy plane, the ends — gets the neutral
+   * one, which is also what the layout draws it in.
+   */
+  const apertureColor = (index: number): string => {
+    const element = elementAt(elements, index);
+    if (element === undefined) {
+      return themeGlass;
+    }
+    if (element.kind === 'MIRROR') {
+      return mirrorColor(element, elementStyles, themeMirror);
+    }
+    const gap = element.gaps.find((one) => one.frontIndex === index) ?? element.gaps[0];
+    return gap === undefined ? themeGlass : gapColor(gap, elementStyles);
+  };
   const endAt = useMemo(() => new Map(ends.map((end) => [end.index, end])), [ends]);
 
   /**
@@ -567,6 +590,7 @@ export function LensDataEditor({
             <col className="col-stop" />
             <col className="col-type" />
             <col className="col-label" />
+            <col className="col-aperture" />
             <col className="col-radius" />
             <col className="col-conic" />
             <col className="col-asphere" />
@@ -584,6 +608,10 @@ export function LensDataEditor({
               <th>Stop</th>
               <th>Surface Type</th>
               <th className="text-column">Label</th>
+              {/* Between the label and the shape: an aperture is a fact about
+                  the *surface* rather than about its shape, and it is the one
+                  thing here that is read as a picture. */}
+              <th>Aperture</th>
               {/* A header names a whole column, so it can only speak for one row
                   while the cursor is on that row. On a coordinate transform the
                   four shape columns hold nothing, and saying "Radius" over an
@@ -697,6 +725,25 @@ export function LensDataEditor({
                       title="A note naming this surface. Imported from and written as Zemax's COMM record."
                       onCommit={(next) => apply(updateSurface(system, index, { comment: next }))}
                     />
+                  </td>
+
+                  {/* A coordinate transform meets no ray, so it can have no
+                      aperture — the model refuses one. The cell is blank rather
+                      than a button that would only ever be rejected. */}
+                  <td className="aperture-column">
+                    {isTransform ? (
+                      <span className="cell-empty">–</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="aperture-button"
+                        title={`${apertureSummary(surface.aperture)}. Click to change.`}
+                        aria-label={`Aperture of surface ${label}: ${apertureSummary(surface.aperture)}`}
+                        onClick={() => setApertureSurface(index)}
+                      >
+                        <ApertureIcon aperture={surface.aperture} color={apertureColor(index)} />
+                      </button>
+                    )}
                   </td>
 
                   {/* A coordinate transform has none of the four things these
@@ -952,6 +999,18 @@ export function LensDataEditor({
             apply(updateCoordinateTransform(system, transformSurface, changes))
           }
           onClose={() => setTransformSurface(undefined)}
+        />
+      ) : null}
+
+      {apertureSurface !== undefined && apertureSurface < system.surfaces.length ? (
+        <SurfaceApertureDialog
+          key={system.surfaceAt(apertureSurface).id}
+          surfaceLabel={String(apertureSurface)}
+          aperture={system.surfaceAt(apertureSurface).aperture}
+          semiDiameter={system.surfaceAt(apertureSurface).semiDiameter}
+          units={system.units}
+          onCommit={(next) => apply(setSurfaceAperture(system, apertureSurface, next))}
+          onClose={() => setApertureSurface(undefined)}
         />
       ) : null}
     </Panel>

@@ -4,6 +4,7 @@ import {
   surfaceProfileSag,
   type OpticalSystem,
   type RayTraceResult,
+  type Surface,
   type SurfaceShape,
   type Transform3,
 } from '@isaac/optical-core';
@@ -98,13 +99,30 @@ export function surfaceProfile(
   vertexZ: number,
   semiDiameter: number,
   samples = DEFAULT_PROFILE_SAMPLES,
+  innerRadius = 0,
 ): Vector2[] {
   const points: Vector2[] = [];
+  const span = semiDiameter - innerRadius;
   for (let sample = 0; sample < samples; sample += 1) {
-    const r = (semiDiameter * sample) / (samples - 1);
+    const r = innerRadius + (span * sample) / (samples - 1);
     points.push(new Vector2(r, vertexZ + surfaceProfileSag(shape, r)));
   }
   return points;
+}
+
+/**
+ * The radius of the hole down the middle of a surface, if it has one.
+ *
+ * Only a clear aperture with an inner radius leaves one: the light passes in the
+ * ring, so there is no material in the middle to revolve. Starting the lathe out
+ * there is the whole of what makes the Hubble's primary a mirror you can see
+ * through rather than a disc — and because a lathe revolved from a non-zero
+ * radius no longer closes on the axis, an element with a hole is not welded into
+ * one solid, for the same reason a transform between two faces is not.
+ */
+function holeRadiusOf(surface: Surface): number {
+  const aperture = surface.aperture;
+  return aperture !== undefined && aperture.kind === 'CIRCULAR' ? aperture.minRadius : 0;
 }
 
 function lathe(points: Vector2[], segments: number, pose?: Transform3): LatheGeometry {
@@ -184,12 +202,22 @@ export function buildOpticalScene(
     const pose = system.poseAt(index);
     const backOffset = system.vertexZAt(index + 1) - system.vertexZAt(index);
 
+    // A hole through the element is the widest of its two faces' holes: the
+    // light passes through both, so the material that is missing is missing from
+    // the whole run. It also stops the two ends landing on the axis, which is
+    // what usually closes the revolution — so a holed element is a tube, open at
+    // the bore, which is exactly the shape it is.
+    const hole = Math.max(
+      holeRadiusOf(system.surfaceAt(index)),
+      holeRadiusOf(system.surfaceAt(index + 1)),
+    );
+
     // Out along the front surface, across the ground edge, back along the rear.
     // Both ends land on the axis, which is what closes the revolution into a
     // solid rather than leaving two open caps.
     const profile = [
-      ...surfaceProfile(frontShape, 0, frontRadius, samples),
-      ...surfaceProfile(backShape, backOffset, backRadius, samples).reverse(),
+      ...surfaceProfile(frontShape, 0, frontRadius, samples, hole),
+      ...surfaceProfile(backShape, backOffset, backRadius, samples, hole).reverse(),
     ];
 
     elements.push({
@@ -220,7 +248,7 @@ export function buildOpticalScene(
     surfaces.push({
       surfaceIndex: index,
       geometry: lathe(
-        surfaceProfile(surface.shape, 0, radiusOf(index), samples),
+        surfaceProfile(surface.shape, 0, radiusOf(index), samples, holeRadiusOf(surface)),
         segments,
         system.poseAt(index),
       ),

@@ -385,6 +385,91 @@ body {
   min-height: 0;
 }
 
+/* ---------- Surface apertures ---------- */
+
+/*
+ * The icon is a picture of the part rather than a map of where light goes:
+ * white is empty space, a colored disc is the surface itself, and black is
+ * something put in the way. So a Hubble primary reads as a mirror with a hole
+ * down the middle, and its baffle as a small disc hanging in the beam.
+ *
+ * The white ground is white in **both themes**, deliberately. It is the paper
+ * the part is drawn on, not a surface of the app, and an icon that inverts with
+ * the theme would make the same aperture read as two different things.
+ */
+.aperture-column {
+  text-align: center;
+}
+
+.aperture-button {
+  padding: 2px;
+  line-height: 0;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.aperture-button:hover,
+.aperture-button:focus-visible {
+  border-color: var(--border-strong);
+}
+
+.aperture-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.aperture-ground {
+  fill: #f2f0ea;
+}
+
+.aperture-empty {
+  fill: none;
+  stroke: var(--text-muted);
+  opacity: 0.5;
+}
+
+.aperture-disc {
+  stroke: rgba(0, 0, 0, 0.5);
+  stroke-width: 0.6;
+}
+
+.aperture-obscuration {
+  fill: #12100e;
+}
+
+/* The hole, and the paper showing through it: the same ground the square is. */
+.aperture-hole {
+  fill: #f2f0ea;
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 0.5;
+}
+
+.aperture-dialog .aperture-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  padding: 0 12px 12px;
+}
+
+.aperture-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.aperture-dialog > .aperture-field {
+  padding: 10px 12px 0;
+}
+
+.aperture-explainer {
+  margin-top: 4px;
+}
+
 /* ---------- Panels ---------- */
 
 /*
@@ -814,6 +899,11 @@ input.text-input {
 }
 .col-label {
   width: 112px;
+}
+/* Narrow: the cell holds one 18px picture. Wide enough for the header to read,
+   which at this font is what sets the floor rather than the picture. */
+.col-aperture {
+  width: 72px;
 }
 .col-radius {
   width: 96px;
@@ -1270,6 +1360,7 @@ svg.layout * {
 }
 
 .asphere-dialog,
+.aperture-dialog,
 .color-dialog {
   background: var(--surface-1);
   color: var(--text-primary);
@@ -1283,6 +1374,7 @@ svg.layout * {
 }
 
 .asphere-dialog::backdrop,
+.aperture-dialog::backdrop,
 .color-dialog::backdrop {
   /* Dark in both themes: the backdrop's job is to sink the page behind the
      dialog, and a light scrim over a light page does not do that. */
@@ -1290,6 +1382,7 @@ svg.layout * {
 }
 
 .asphere-dialog header,
+.aperture-dialog header,
 .color-dialog header {
   display: flex;
   align-items: center;
@@ -1364,7 +1457,8 @@ input.coefficient {
   font-size: 12px;
 }
 
-.asphere-dialog footer {
+.asphere-dialog footer,
+.aperture-dialog footer {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -1373,7 +1467,8 @@ input.coefficient {
   background: var(--surface-2);
 }
 
-.asphere-dialog footer button:last-child {
+.asphere-dialog footer button:last-child,
+.aperture-dialog footer button:last-child {
   margin-left: auto;
 }
 

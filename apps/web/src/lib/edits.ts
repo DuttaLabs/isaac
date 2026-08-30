@@ -4,6 +4,7 @@ import {
   Surface,
   type CoordinateTransform,
   type Material,
+  type SurfaceAperture,
 } from '@isaac/optical-core';
 import { newSurfaceId } from './default-system.ts';
 import { attempt, type Result } from './result.ts';
@@ -33,6 +34,24 @@ export function updateSurface(
   },
 ): Result<OpticalSystem> {
   return attempt(() => system.withSurfaceAt(index, system.surfaceAt(index).with(changes)));
+}
+
+/**
+ * Sets — or removes — what stops light at one surface.
+ *
+ * Its own edit rather than a field on {@link updateSurface}, because removing an
+ * aperture has to be expressible: `with({ aperture: undefined })` means "take it
+ * off", and a `changes` object where every key is optional cannot tell that
+ * apart from "leave it alone". The model refuses an aperture on a coordinate
+ * transform and an inverted ring, so a rejected edit leaves the design on screen
+ * with a message rather than a half-applied change.
+ */
+export function setSurfaceAperture(
+  system: OpticalSystem,
+  index: number,
+  aperture: SurfaceAperture | undefined,
+): Result<OpticalSystem> {
+  return attempt(() => system.withSurfaceAt(index, system.surfaceAt(index).with({ aperture })));
 }
 
 /**

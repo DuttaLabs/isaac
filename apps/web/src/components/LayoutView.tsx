@@ -7,6 +7,7 @@ import {
   toPath,
   type GlassBody,
   type LayoutPoint,
+  type SurfaceProfile,
 } from '../lib/layout.ts';
 import type { FirstOrderRays, LayoutTrace } from '../lib/analysis.ts';
 import type { RayTraceResult } from '@isaac/optical-core';
@@ -280,7 +281,11 @@ export function LayoutView({
         return (
           <path
             key={`surface-${profile.surfaceIndex}`}
-            d={toPath(profile.points, project)}
+            // A surface with a hole is drawn as two runs of the same outline —
+            // the material either side of it. The samples inside the hole are
+            // still in `points`, because the bounds and the stop bars read them;
+            // it is only the ink that stops.
+            d={profilePath(profile, project)}
             fill="none"
             stroke={stroke}
             strokeWidth={highlighted ? 3 : profile.isMirror ? 2.5 : profile.isImage ? 2 : 1.5}
@@ -727,6 +732,33 @@ function PupilPlane({
  * taken from the bar itself. Degenerate bars — a pupil of zero radius — fall
  * back to horizontal rather than dividing by nothing.
  */
+/**
+ * A surface outline as one path or two, depending on whether it has a hole.
+ *
+ * Edge-on the hole is a gap in the middle of the section: the material runs from
+ * the rim in to the hole on each side, and the two runs are separate subpaths of
+ * one `d`, which keeps the whole outline a single stroked element wearing one
+ * color. Seen end-on the hole is a second rim, so the inner circle is closed on
+ * its own — `hole.from` is where those samples begin.
+ */
+function profilePath(
+  profile: SurfaceProfile,
+  project: (point: LayoutPoint) => { x: number; y: number },
+): string {
+  const { points, hole } = profile;
+  if (hole === undefined) {
+    return toPath(points, project, profile.closed);
+  }
+  if (profile.closed) {
+    return `${toPath(points.slice(0, hole.from), project, true)} ${toPath(
+      points.slice(hole.from),
+      project,
+      true,
+    )}`;
+  }
+  return `${toPath(points.slice(0, hole.from), project)} ${toPath(points.slice(hole.to + 1), project)}`;
+}
+
 function perpendicular(
   from: { x: number; y: number },
   to: { x: number; y: number },

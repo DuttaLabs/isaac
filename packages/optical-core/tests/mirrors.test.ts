@@ -285,3 +285,60 @@ test('a mirror inside glass keeps the glass, and the model refuses one that does
     /the medium after it must be the medium before it \(N-BK7\), not AIR/,
   );
 });
+
+test('a Gregorian has a negative focal length, because its image is erect', () => {
+  // The counterpart to the Hubble above, and the case that shows the sign of an
+  // EFL carries *two* independent facts rather than one.
+  //
+  // Both are two-mirror telescopes, so image space runs forwards in each and the
+  // mirror count contributes nothing to the sign. What differs is where the
+  // secondary sits: a Cassegrain's is *before* the prime focus, so the beam
+  // never crosses the axis inside the system and the image is inverted; a
+  // Gregorian's is *beyond* it, so the beam crosses once and the image comes out
+  // erect. EFL is −y₁/u′, and that one crossing flips u′.
+  //
+  // Numbers from Zemax's own `Unobscured Gregorian` sample, which reports
+  // EFFL = −1237.63 mm. Isaac agrees to the last digit, and it is worth a test
+  // because a negative focal length on a two-mirror telescope reads as a bug.
+  const gregorian = new OpticalSystem({
+    name: 'Gregorian',
+    units: 'mm',
+    wavelengthsNm: [550],
+    fields: [{ angleDeg: 0 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 100 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({ id: 'dummy', type: 'STANDARD', thickness: 200 }),
+      new Surface({ id: 'stop', type: 'STANDARD', thickness: 60, semiDiameter: 50, isStop: true }),
+      new Surface({
+        id: 'primary',
+        type: 'STANDARD',
+        radius: 1 / -3.2866648831e-3,
+        conic: -1.00869694,
+        thickness: -178.59,
+        reflective: true,
+      }),
+      new Surface({
+        id: 'secondary',
+        type: 'STANDARD',
+        radius: 1 / 2.1219123523e-2,
+        conic: -0.568372493,
+        thickness: 26.702,
+        semiDiameter: 28,
+        aperture: { kind: 'FLOATING' },
+        reflective: true,
+      }),
+      new Surface({ id: 'relay', type: 'STANDARD', thickness: 189.140889 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+
+  const properties = paraxialProperties(gregorian);
+  assert.ok(
+    Math.abs(properties.effectiveFocalLength + 1237.63) < 0.01,
+    `EFL ${properties.effectiveFocalLength}, expected −1237.63 mm`,
+  );
+  // The magnitude is the textbook two-mirror product: the parent's 152.13 mm
+  // times the secondary's magnification.
+  assert.ok(Math.abs(Math.abs(properties.effectiveFocalLength) - 152.13 * 8.135) < 5);
+});

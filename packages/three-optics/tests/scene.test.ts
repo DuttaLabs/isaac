@@ -437,3 +437,45 @@ test('an obscuration is geometry of its own, and a spider is its arms', () => {
   assert.equal(obscurationGeometry(baffle.with({ aperture: undefined }), 20, 4, 32), undefined);
   assert.ok(shape.curvature === 0);
 });
+
+test('a surface whose only job is to obscure is drawn as the obscuration alone', () => {
+  // The dummy plane carrying a Schmidt-Cassegrain's spider: no glass, no
+  // coating, no rim. Its semi-diameter is a number the program computed, and a
+  // disc drawn there puts a pane in the beam that does not exist — and gives the
+  // vanes something to z-fight with.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'vanes',
+        type: 'STANDARD',
+        thickness: 20,
+        semiDiameter: 12,
+        aperture: { kind: 'SPIDER', armCount: 3, armWidth: 1 },
+      }),
+      new Surface({
+        id: 'mirror',
+        type: 'STANDARD',
+        radius: -100,
+        thickness: -50,
+        semiDiameter: 12,
+        aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 3 },
+        reflective: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 5 }),
+    ],
+  });
+
+  const scene = buildOpticalScene(system, [], { defaultSemiDiameter: 10 });
+  const shells = new Set(scene.surfaces.map((one) => one.surfaceIndex));
+  const blocked = new Set(scene.obscurations.map((one) => one.surfaceIndex));
+
+  // The spider's plane: vanes, and no disc behind them.
+  assert.ok(blocked.has(1));
+  assert.ok(!shells.has(1), 'the dummy plane should not be drawn as a surface');
+  // The mirror does something besides obscure, so it keeps its shell *and* gets
+  // its spot: a mirror with a spot painted on it is still a mirror.
+  assert.ok(shells.has(2));
+  assert.ok(blocked.has(2));
+  scene.dispose();
+});

@@ -298,32 +298,44 @@ export function buildOpticalScene(
     if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
     }
-    surfaces.push({
-      surfaceIndex: index,
-      geometry: needsAperturePatch(surface)
-        ? placed(
-            aperturePatch(surface, options.defaultSemiDiameter, PATCH_RINGS, segments),
-            system.poseAt(index),
-          )
-        : lathe(
-            surfaceProfile(surface.shape, 0, radiusOf(index), samples, holeRadiusOf(surface)),
-            segments,
-            system.poseAt(index),
-          ),
-      isStop: surface.isStop,
-      isImage: surface.type === 'IMAGE',
-      isMirror: surface.reflective,
-    });
-
     // What the surface's aperture *blocks*, where it blocks rather than bounds.
-    // Drawn separately because it is opaque and black where the surface is
-    // neither, and because it exists only on the surfaces that carry one.
     const blocked = obscurationGeometry(
       surface,
       options.defaultSemiDiameter,
       PATCH_RINGS,
       segments,
     );
+
+    // **A surface whose only job is to obscure is drawn as the obscuration and
+    // nothing else.** The dummy plane carrying a Schmidt-Cassegrain's spider has
+    // no glass, no coating and no rim — its semi-diameter is a number the
+    // program computed, and drawing a disc there puts a pane in the beam that
+    // does not exist. Once the shell is gone the vanes have nothing to be
+    // coplanar with either, which is the z-fighting rather than a symptom of it.
+    //
+    // A surface that does something *besides* obscure keeps its shell: a mirror
+    // with a spot painted on it is still a mirror.
+    const obscuringOnly =
+      blocked !== undefined && !surface.reflective && surface.type === 'STANDARD';
+    if (!obscuringOnly) {
+      surfaces.push({
+        surfaceIndex: index,
+        geometry: needsAperturePatch(surface)
+          ? placed(
+              aperturePatch(surface, options.defaultSemiDiameter, PATCH_RINGS, segments),
+              system.poseAt(index),
+            )
+          : lathe(
+              surfaceProfile(surface.shape, 0, radiusOf(index), samples, holeRadiusOf(surface)),
+              segments,
+              system.poseAt(index),
+            ),
+        isStop: surface.isStop,
+        isImage: surface.type === 'IMAGE',
+        isMirror: surface.reflective,
+      });
+    }
+
     if (blocked !== undefined) {
       obscurations.push({ surfaceIndex: index, geometry: placed(blocked, system.poseAt(index)) });
     }

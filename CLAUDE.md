@@ -1086,10 +1086,14 @@ obscuration covers — a disc, a rectangle, an ellipse, or a spider's vanes — 
 `patchOver` mesh the surface itself uses, so the two cannot disagree about where a decentered
 aperture sits. Black rather than a theme token, and deliberately: it is the one thing in the picture
 light does not get through, every other material there being translucent or metallic, and it is the
-only mark that means the same in both themes without being given two values. The material carries
-`polygonOffset`, because an obscuration lies *exactly* on the surface it blocks — same sag, same
-frame — and the depth buffer has no way to choose between them; without the offset a spider's vanes
-flicker against the mirror they are bolted to.
+only mark that means the same in both themes without being given two values. **A surface whose only job is to obscure is drawn as the obscuration and nothing else**: the dummy
+plane carrying a Schmidt-Cassegrain's spider has no glass, no coating and no rim, its semi-diameter
+is a number the program computed, and a disc drawn there puts a pane in the beam that does not
+exist. Removing it is also what removes the z-fighting rather than papering over it — with no shell
+the vanes have nothing to be coplanar *with*. A surface that does something besides obscure keeps its
+shell: a mirror with a spot painted on it is still a mirror, and for that case the material carries
+`polygonOffset`, since the spot does lie exactly on the mirror and the depth buffer cannot choose
+between them.
 
 **A surface the lathe cannot express is drawn as a patch instead** (`three-optics/src/aperture-patch.ts`).
 A lathe is a surface of revolution, and three of the shapes the model allows are not one: a

@@ -62,6 +62,7 @@ export const APERTURE_KIND_LABELS: Record<ApertureKind, string> = {
   RECTANGULAR_OBSCURATION: 'Rectangular obscuration',
   ELLIPTICAL: 'Elliptical aperture',
   ELLIPTICAL_OBSCURATION: 'Elliptical obscuration',
+  SPIDER: 'Spider',
   FLOATING: 'Floating (semi-diameter)',
 };
 
@@ -74,6 +75,7 @@ export const APERTURE_KIND_HINTS: Record<ApertureKind, string> = {
     'Light is stopped inside the rectangle and passes outside it (Zemax SQOB).',
   ELLIPTICAL: 'Light passes inside the ellipse and is stopped outside it (Zemax ELAP).',
   ELLIPTICAL_OBSCURATION: 'Light is stopped inside the ellipse and passes outside it (Zemax ELOB).',
+  SPIDER: 'Vanes holding a secondary: equal arms at equal angles, the first along +x (Zemax SPID).',
   FLOATING: 'A circular aperture that follows the semi-diameter (Zemax FLAP).',
 };
 
@@ -142,6 +144,13 @@ export function ApertureIcon({
   }
 
   const glyph = glyphFor(aperture);
+  const arms =
+    aperture.kind === 'SPIDER'
+      ? Array.from(
+          { length: aperture.armCount },
+          (_, arm) => (2 * Math.PI * arm) / aperture.armCount,
+        )
+      : [];
   /**
    * A decentered aperture is drawn decentered, in the proportion the glyph
    * already stands in: the glyph's half-size is the aperture's half-size, so a
@@ -172,7 +181,22 @@ export function ApertureIcon({
       aria-hidden="true"
     >
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
-      {glyph.rectangular ? (
+      {arms.length > 0 ? (
+        // Vanes radiating from the middle, the first along +x exactly as the
+        // aperture defines them — so a three-armed spider in the icon points the
+        // same way it does in the layout. Screen y grows downward, hence the
+        // negated sine.
+        arms.map((angle, at) => (
+          <line
+            key={at}
+            x1={CENTER}
+            y1={CENTER}
+            x2={CENTER + DISC * Math.cos(angle)}
+            y2={CENTER - DISC * Math.sin(angle)}
+            className="aperture-arm"
+          />
+        ))
+      ) : glyph.rectangular ? (
         <rect
           x={cx - glyph.rx}
           y={cy - glyph.ry}
@@ -242,6 +266,11 @@ function glyphFor(aperture: SurfaceAperture): {
     };
   }
 
+  if (aperture.kind === 'SPIDER') {
+    // Drawn as lines rather than as a region, so the glyph carries only the
+    // reference the decenter is measured against.
+    return { rx: full, ry: full, refX: full, refY: full, rectangular: false, hole: 0 };
+  }
   const largest = Math.max(aperture.halfWidthX, aperture.halfWidthY);
   return {
     rx: (full * aperture.halfWidthX) / largest,
@@ -313,6 +342,24 @@ export function SurfaceApertureDialog({
     // own drawn size, or a unit if even that is unset.
     const fallback = Number.isFinite(semiDiameter) && semiDiameter > 0 ? semiDiameter : 1;
 
+    if (next === 'SPIDER') {
+      onCommit(
+        normalizeAperture({
+          kind: 'SPIDER',
+          // Three vanes is the commonest real spider, and the width follows the
+          // surface rather than starting at something that would cover it.
+          armCount:
+            aperture?.armCount !== undefined && aperture.armCount > 0 ? aperture.armCount : 3,
+          armWidth:
+            aperture?.armWidth !== undefined && aperture.armWidth > 0
+              ? aperture.armWidth
+              : Math.max((Number.isFinite(semiDiameter) ? semiDiameter : 10) / 20, 0.1),
+          decenterX,
+          decenterY,
+        })!,
+      );
+      return;
+    }
     if (isCircularAperture(next)) {
       const carried =
         aperture !== undefined && isCircularAperture(aperture.kind) && aperture.maxRadius > 0
@@ -359,8 +406,9 @@ export function SurfaceApertureDialog({
 
   const floating = kind === 'FLOATING';
   const none = aperture === undefined;
+  const spider = kind === 'SPIDER';
   /** Bounded by half-widths rather than radii: a rectangle or an ellipse. */
-  const sized = aperture !== undefined && !isCircularAperture(aperture.kind);
+  const sized = aperture !== undefined && !isCircularAperture(aperture.kind) && !spider;
 
   return (
     <dialog
@@ -411,7 +459,26 @@ export function SurfaceApertureDialog({
           and a row of dead inputs teaches nobody which fields this aperture
           actually has. */}
       <div className="aperture-grid">
-        {sized ? (
+        {spider && aperture !== undefined ? (
+          <>
+            <label className="aperture-field">
+              <span>Number of arms</span>
+              <NumericCell
+                value={aperture.armCount}
+                ariaLabel={`Spider arm count of surface ${surfaceLabel}`}
+                onCommit={(next) => change({ armCount: Math.max(1, Math.round(next)) })}
+              />
+            </label>
+            <label className="aperture-field">
+              <span>Arm width ({units})</span>
+              <NumericCell
+                value={aperture.armWidth}
+                ariaLabel={`Spider arm width of surface ${surfaceLabel}`}
+                onCommit={(next) => change({ armWidth: next })}
+              />
+            </label>
+          </>
+        ) : sized ? (
           <>
             <label className="aperture-field">
               <span>X half-width ({units})</span>

@@ -342,6 +342,7 @@ const APERTURE_TOKEN_OF: Record<ApertureKind, string> = {
   RECTANGULAR_OBSCURATION: 'SQOB',
   ELLIPTICAL: 'ELAP',
   ELLIPTICAL_OBSCURATION: 'ELOB',
+  SPIDER: 'SPID',
 };
 
 function surfaceApertureRecords(surface: Surface): ZmxRecord[] {
@@ -354,9 +355,14 @@ function surfaceApertureRecords(surface: Surface): ZmxRecord[] {
   // radii for the circular kinds, two half-widths for the rest. `FLAP` writes
   // the radius that floated, which for us is the semi-diameter it is defined as.
   const floated = Number.isFinite(surface.semiDiameter) ? surface.semiDiameter : 0;
-  const [first, second] = isCircularAperture(aperture.kind)
-    ? [aperture.minRadius, aperture.kind === 'FLOATING' ? floated : aperture.maxRadius]
-    : [aperture.halfWidthX, aperture.halfWidthY];
+  // `SPID` is written **width then count**, which is the order the files use and
+  // the reverse of the manual's — see the note in `readSurfaceAperture`.
+  const [first, second] =
+    aperture.kind === 'SPIDER'
+      ? [aperture.armWidth, aperture.armCount]
+      : isCircularAperture(aperture.kind)
+        ? [aperture.minRadius, aperture.kind === 'FLOATING' ? floated : aperture.maxRadius]
+        : [aperture.halfWidthX, aperture.halfWidthY];
   const records = [record(token, number(first), number(second), '0')];
   if (aperture.decenterX !== 0 || aperture.decenterY !== 0) {
     records.push(record('OBDC', number(aperture.decenterX), number(aperture.decenterY)));

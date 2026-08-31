@@ -44,7 +44,9 @@ test('the color of a token is what the reader does with it', () => {
   assert.equal(tokenRole('  CLAP 0 55 0'), 'prescription');
   assert.equal(tokenRole('ENPD 100'), 'system');
   // A record that would move a ray and is *not* modeled is the one warned about.
-  assert.equal(tokenRole('  SPID 3 2 0'), 'unmodeled');
+  assert.equal(tokenRole('  UDAD 0 "slit.UDA" 1'), 'unmodeled');
+  // And one that has since been modeled is no longer flagged as a gap.
+  assert.equal(tokenRole('  SPID 2 3 0'), 'prescription');
   // And one that is skipped with nothing optical resting on it stays quiet.
   assert.equal(tokenRole('  HIDE 0 0 0'), 'annotation');
 });

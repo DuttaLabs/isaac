@@ -301,12 +301,10 @@ export function LayoutView({
               ink of its own. Without it, an obscuration smaller than its surface
               is drawn nowhere at all and the picture shows nothing stopping the
               rays the trace stops. */}
-            {profile.obscured === undefined ? null : (
+            {(profile.obscured ?? []).map((run, at) => (
               <path
-                d={toPath(
-                  profile.points.slice(profile.obscured.from, profile.obscured.to + 1),
-                  project,
-                )}
+                key={`obscured-${at}`}
+                d={toPath(profile.points.slice(run.from, run.to + 1), project)}
                 fill="none"
                 stroke="var(--obscuration)"
                 strokeWidth={4}
@@ -314,7 +312,7 @@ export function LayoutView({
               >
                 <title>{`Surface ${profile.surfaceIndex}: obscuration`}</title>
               </path>
-            )}
+            ))}
           </g>
         );
       })}

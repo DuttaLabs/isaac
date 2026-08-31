@@ -59,7 +59,14 @@ export type ApertureKind =
   /** `ELAP`: light passes inside the ellipse with those two semi-axes. */
   | 'ELLIPTICAL'
   /** `ELOB`: light is stopped inside that ellipse. */
-  | 'ELLIPTICAL_OBSCURATION';
+  | 'ELLIPTICAL_OBSCURATION'
+  /**
+   * `SPID`: the vanes holding a secondary. `armCount` arms of `armWidth`, spaced
+   * at equal angles, **the first along the local +x axis** — which is
+   * OpticStudio's own definition, and the reason a file rotates a spider with a
+   * coordinate break rather than with an angle of its own.
+   */
+  | 'SPIDER';
 
 /** The kinds bounded by two radii rather than by two half-widths. */
 export const CIRCULAR_APERTURE_KINDS: readonly ApertureKind[] = [
@@ -68,11 +75,12 @@ export const CIRCULAR_APERTURE_KINDS: readonly ApertureKind[] = [
   'FLOATING',
 ];
 
-/** The kinds that stop the middle and pass the outside. */
+/** The kinds that stop light where they are rather than bounding the surface. */
 export const OBSCURING_APERTURE_KINDS: readonly ApertureKind[] = [
   'CIRCULAR_OBSCURATION',
   'RECTANGULAR_OBSCURATION',
   'ELLIPTICAL_OBSCURATION',
+  'SPIDER',
 ];
 
 /** True when this kind is bounded by radii; false when by half-widths. */
@@ -91,6 +99,10 @@ export function isObscuration(kind: ApertureKind): boolean {
 
 export interface SurfaceApertureConfig {
   kind: ApertureKind;
+  /** How many arms a `SPIDER` has. That kind only. */
+  armCount?: number;
+  /** How wide each of them is, in system units. That kind only. */
+  armWidth?: number;
   /** Inner radius, in system units. Circular kinds only; 0 for no hole. */
   minRadius?: number;
   /** Outer radius, in system units. Circular kinds only, and never `FLOATING`. */
@@ -106,6 +118,9 @@ export interface SurfaceApertureConfig {
 
 export interface SurfaceAperture {
   readonly kind: ApertureKind;
+  /** `SPIDER` only; 0 on the others, where it has no meaning. */
+  readonly armCount: number;
+  readonly armWidth: number;
   /** Circular kinds only; 0 on the others, where it has no meaning. */
   readonly minRadius: number;
   /** Circular kinds only; `Infinity` on `FLOATING`, 0 on the others. */
@@ -142,6 +157,43 @@ export function normalizeAperture(
     throw new RangeError('Aperture decenters must be finite numbers.');
   }
 
+  // A spider is a third family: not a boundary at all, but a set of vanes, and
+  // described by a count and a width rather than by any radius.
+  if (config.kind === 'SPIDER') {
+    if (
+      nonZero(config.minRadius) ||
+      nonZero(config.maxRadius) ||
+      nonZero(config.halfWidthX) ||
+      nonZero(config.halfWidthY)
+    ) {
+      throw new RangeError(
+        'A SPIDER aperture is described by its arms, not by a radius or a width.',
+      );
+    }
+    const armCount = config.armCount ?? 0;
+    const armWidth = config.armWidth ?? 0;
+    if (!Number.isInteger(armCount) || armCount < 1) {
+      throw new RangeError('A SPIDER aperture needs at least one arm.');
+    }
+    if (!Number.isFinite(armWidth) || armWidth <= 0) {
+      throw new RangeError('SPIDER armWidth must be a positive number.');
+    }
+    return Object.freeze({
+      kind: config.kind,
+      minRadius: 0,
+      maxRadius: 0,
+      halfWidthX: 0,
+      halfWidthY: 0,
+      armCount,
+      armWidth,
+      decenterX,
+      decenterY,
+    });
+  }
+  if (nonZero(config.armCount) || nonZero(config.armWidth)) {
+    throw new RangeError(`A ${config.kind} aperture has no arms.`);
+  }
+
   if (circular) {
     // Non-zero rather than merely present: this function is handed its own
     // output every time a `Surface` is copied, and a normalized circular
@@ -173,6 +225,8 @@ export function normalizeAperture(
       maxRadius,
       halfWidthX: 0,
       halfWidthY: 0,
+      armCount: 0,
+      armWidth: 0,
       decenterX,
       decenterY,
     });
@@ -195,6 +249,8 @@ export function normalizeAperture(
     maxRadius: 0,
     halfWidthX,
     halfWidthY,
+    armCount: 0,
+    armWidth: 0,
     decenterX,
     decenterY,
   });
@@ -243,7 +299,36 @@ export function apertureBlocks(
       return !insideEllipse(aperture, dx, dy, epsilon);
     case 'ELLIPTICAL_OBSCURATION':
       return insideEllipse(aperture, dx, dy, -epsilon);
+    case 'SPIDER':
+      return onAnArm(aperture, dx, dy, epsilon);
   }
+}
+
+/**
+ * Whether the point lies on one of the spider's vanes.
+ *
+ * Each arm is a half-line from the center, so a point is on it when it is *past*
+ * the center in that direction and within half a width across. Half-lines rather
+ * than full ones because three arms do not make three diameters: the far side of
+ * a three-armed spider is open, which is the whole reason three is a common
+ * choice.
+ */
+function onAnArm(aperture: SurfaceAperture, dx: number, dy: number, epsilon: number): boolean {
+  const half = aperture.armWidth / 2;
+  for (let arm = 0; arm < aperture.armCount; arm += 1) {
+    // The first arm lies along +x, and the rest are spaced equally from it —
+    // OpticStudio's own definition, which is why a file that wants a spider at
+    // some other angle rotates it with a coordinate break.
+    const angle = (2 * Math.PI * arm) / aperture.armCount;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const along = dx * cos + dy * sin;
+    const across = -dx * sin + dy * cos;
+    if (along >= -epsilon && Math.abs(across) <= half + epsilon) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Present and meaning something: zero is what a normalized aperture carries. */

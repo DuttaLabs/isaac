@@ -552,12 +552,18 @@ test('an obscuration smaller than its surface is drawn, not left invisible', () 
   const profile = buildLayout(system, [], DEFAULT_SEMI_DIAMETER).profiles.find(
     (one) => one.surfaceIndex === 1,
   );
-  assert.ok(profile?.obscured, 'expected the obscuration to be drawn');
+  assert.equal(profile?.obscured?.length, 1, 'expected one obscured run');
   const heights = profile.points.map((point) => point.v);
   // The drawn run is the obscured middle, and the surface still reaches its own
   // extent either side of it: an obscuration is a thing in the way, not the edge.
-  for (let i = profile.obscured.from; i <= profile.obscured.to; i += 1) {
-    assert.ok(Math.abs(heights[i]!) < 5, `sample ${i} at ${heights[i]} is outside the obscuration`);
+  const run = profile.obscured[0]!;
+  for (let i = run.from; i <= run.to; i += 1) {
+    // Inclusive at the rim, because the trace is: a ray arriving exactly there
+    // meets the obscuration, and the drawing now says exactly what the trace does.
+    assert.ok(
+      Math.abs(heights[i]!) <= 5,
+      `sample ${i} at ${heights[i]} is outside the obscuration`,
+    );
   }
   assert.ok(Math.abs(Math.min(...heights) + 20) < 1e-9);
   assert.ok(Math.abs(Math.max(...heights) - 20) < 1e-9);
@@ -628,6 +634,47 @@ test('a section through a decentered piece is cut through the piece, not the par
   const across = sagittal.points.map((point) => point.v);
   assert.ok(Math.abs(Math.min(...across) + 55) < 1e-6);
   assert.ok(Math.abs(Math.max(...across) - 55) < 1e-6);
+});
+
+test('a spider is drawn where its arms cross the section, which is more than once', () => {
+  // Three vanes at 0°, 120° and 240°: the meridional plane crosses two of them,
+  // so a single span could not describe it. The runs come from `blocksAt` — the
+  // same function the tracer asks — so the picture cannot show an obscuration
+  // the trace does not have, or miss one it does.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'vaned',
+        type: 'STANDARD',
+        thickness: 40,
+        semiDiameter: 20,
+        aperture: { kind: 'SPIDER', armCount: 3, armWidth: 4 },
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 20 }),
+    ],
+  });
+
+  const profile = buildLayout(system, [], DEFAULT_SEMI_DIAMETER).profiles.find(
+    (one) => one.surfaceIndex === 1,
+  );
+  assert.ok(profile?.obscured);
+  // Every drawn sample is one the surface really stops light at, and every
+  // undrawn one is not.
+  const surface = system.surfaceAt(1);
+  const drawn = new Set<number>();
+  for (const run of profile.obscured) {
+    for (let i = run.from; i <= run.to; i += 1) {
+      drawn.add(i);
+    }
+  }
+  for (const [index, point] of profile.points.entries()) {
+    assert.equal(
+      drawn.has(index),
+      surface.blocksAt(0, point.v),
+      `sample ${index} at y=${point.v} disagrees with the trace`,
+    );
+  }
 });
 
 /** The conic sag, written out so the test does not ask the code under test. */

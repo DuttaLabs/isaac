@@ -466,6 +466,13 @@ body {
   stroke-width: 0.6;
 }
 
+/* A spider's vanes: the same ink as any other thing in the way. */
+.aperture-arm {
+  stroke: #12100e;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
 .aperture-obscuration {
   fill: #12100e;
 }

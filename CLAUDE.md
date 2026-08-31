@@ -122,7 +122,7 @@ Reads `.zmx` files in two stages, so unknown tokens are never guessed at:
 
 Token semantics: `CURV` is curvature (invert for radius), `DISZ` is thickness (`INFINITY` allowed), `DIAM` is the **semi**-diameter (`0` = no aperture ⇒ `Infinity`), `GLAS` names the medium *after* the surface, `STOP` is a bare flag, `WAVM n λ w` is in **micrometers**, `PWAV` is 1-based, and `FTYP <fieldType> <telecentric> <nFields> <nWaves>` gives the counts that trim the padded `WAVM`/`XFLN`/`YFLN` lists. On a `TYPE PARAXIAL` surface `PARM 1` is the focal length and `PARM 2` is the OPD mode (which moves no ray, so it stays in `ignoredTokens`); any *other* `PARM` there is refused rather than guessed at. On a `TYPE EVENASPH` surface `PARM 1`–`PARM 8` are the aspheric coefficients, and **`PARM 1` is the coefficient on r², not r⁴** — Chapter 14 gives the sag as `α₁r² + α₂r⁴ + … + α₈r¹⁶` and maps the eight parameter columns straight onto α₁…α₈, so the series starts at the second power. Reading it as r⁴ would shift every term by one power, and the result would still trace and still look like a lens while being the wrong lens. On a `TYPE COORDBRK` surface `PARM 1`–`PARM 6` are decenter x, decenter y, tilt about x, y and z, and the order flag; `PARM 6` is a *flag*, so any non-zero value means "tilt first", and it is compared that way rather than tested against 1. Outside those three types `PARM`'s meaning is unverified, so it stays in `ignoredTokens`. `CONI` is the conic constant and is read onto the surface. A `COORDBRK` surface names no glass either, and `adoptMirrorMedia` gives it the medium before it for the same reason it does a mirror — Zemax shows "-" in that column to say a transform cannot be a boundary between two media. `GLAS MIRROR` is not a glass at all: it makes the surface reflective and leaves the medium alone, so the reader takes that medium from the surface before — never stated in the file, and wrong as AIR for a mirror inside glass. `UNIT`'s first value spells meters `METER`; no file in the corpus writes `M`. **System** aperture tokens: `ENPD`/`FNUM`/`OBNA`/`FLOA`. **Surface** aperture tokens: `CLAP min max` is a circular clear aperture, `OBSC min max` a circular obscuration, `SQAP xwid ywid` and `SQOB xwid ywid` the rectangular pair, `ELAP xwid ywid` and `ELOB xwid ywid` the elliptical pair, `FLAP` a floating aperture whose radius is the semi-diameter, and `OBDC xdec ydec` decenters whichever of them the surface carries. **`xwid` is a half-width**, which the manual does not say and the corpus settles: `SQAP 25 25` sits on a surface whose semi-diameter is 35.36, exactly 25√2 — the circle circumscribing that rectangle. Reading them as full widths would halve every such aperture and still trace. All four are verified against Chapter 29's keyword table; the files write an undocumented **third** value on the first three, `0` in all 820 records in the corpus, so it is left alone and written back as the `0` everything else writes. A surface may carry more than one — the first is taken and the rest reported. A record with a **zero max radius** (`OBSC 0 0 0`, in one sample file) is an aperture of no extent: reported and ignored, rather than refused or honored.
 
-The format has **no *current* public specification** (dropped from the Zemax help system ~2005), but a pre-2005 one survives: **Chapter 29 of the 2000 Zemax manual** in `SupportingMaterial/` (gitignored) is a full keyword table, and Chapter 14 gives the per-surface-type `PARM` column meanings. Its argument *orders* still match all 471 OpticStudio sample files; it predates later additions, so it is stale on argument *counts* (`WAVM`, the extended `FTYP`/`UNIT`). Check it before inferring a token's meaning — and note that several tokens lead with a placeholder, so `firstValue()` is only correct for single-argument records (`RAIM`'s first value is a dead `tol` field, not the aiming mode). Beyond what it covers, the rule stands: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modeled (surface types outside `STANDARD`/`PARAXIAL`/`EVENASPH`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
+The format has **no *current* public specification** (dropped from the Zemax help system ~2005), but a pre-2005 one survives: **Chapter 29 of the 2000 Zemax manual** in `SupportingMaterial/` (gitignored) is a full keyword table, and Chapter 14 gives the per-surface-type `PARM` column meanings. Its argument *orders* match all 471 OpticStudio sample files **with one known exception — `SPID`, where the columns are reversed** (see below); it predates later additions, so it is also stale on argument *counts* (`WAVM`, the extended `FTYP`/`UNIT`). Check it before inferring a token's meaning — and note that several tokens lead with a placeholder, so `firstValue()` is only correct for single-argument records (`RAIM`'s first value is a dead `tol` field, not the aiming mode). Beyond what it covers, the rule stands: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modeled (surface types outside `STANDARD`/`PARAXIAL`/`EVENASPH`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
 
 **`ignoredTokens` is not a defect list.** A real file carries 30-plus record types that are annotation, not prescription — notes, tolerancing, display flags, multi-configuration, non-sequential and physical-optics settings — so a long list is normal and says nothing about whether the import is right. What matters is separated out into `warnings`: `UNMODELED_SURFACE_TOKENS` (`SPID`, `UDAD`/`USAP`, `PKUP`, `XDAT`/`YDAT`) are the ignored *surface* records that would move a ray, so their presence is warned about per surface; and `warnHeaderSettings` reports vignetting factors (`VDXN`/`VDYN`/`VCXN`/`VCYN`/`VANN`) that are not all zero, ray aiming (`RAIM` ≠ 0, which this reader cannot do — see "Aiming is paraxial"), and an `ENVD` environment away from 20 °C / 1 atm. Each is warned about only when it departs from the no-op value nearly every file carries. Don't add a token to those lists on a guess about its meaning; leave it in `ignoredTokens`. The UI must present the two differently — warnings up front, ignored tokens folded away.
 
@@ -233,8 +233,12 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
   to floating drops them, because the model refuses a radius on one.
 
   **An obscuration is drawn as the thing it is.** It does not bound the surface — the surface keeps its
-  own extent — so it is stroked *over* the outline, heavier and in ink of its own
-  (`--obscuration`), across the run it covers (`SurfaceProfile.obscured`, indices like `hole`'s).
+  own extent — so it is stroked *over* the outline, heavier and in ink of its own (`--obscuration`),
+  across the runs it covers. **Runs, plural, and asked rather than derived**: a three-armed spider
+  lies across the meridional plane in two places, so one span cannot describe it, and
+  `SurfaceProfile.obscured` is a list of them found by asking `Surface.blocksAt` at every sample —
+  the same function the tracer calls. That is what makes the promise hold in the hard direction as
+  well: the picture cannot show an obscuration the trace does not have, nor miss one it does.
   Without that, an obscuration smaller than its surface is drawn nowhere at all: **seven of the
   twenty-two in the sample corpus are**, including both Newtonians' diagonals and the Flat-field
   Schmidt's, and the trace stopped those rays while the picture showed nothing stopping them. That is
@@ -1028,7 +1032,7 @@ cannot show an aperture the trace does not have. That is also why 141 of the 471
 one nothing is asked for. Hubble's fan is now 1 of 11 blocked — the center ray, stopped by the
 secondary's shadow.
 
-Seven kinds are modeled (`model/aperture.ts`), in two families. The **circular** family is bounded by
+Eight kinds are modeled (`model/aperture.ts`), in three families. The **circular** family is bounded by
 two radii — `CIRCULAR` (`CLAP`, light between them), `CIRCULAR_OBSCURATION` (`OBSC`, light stopped
 between them) and `FLOATING` (`FLAP`) — and the **sized** family by a half-width in x and one in y:
 `RECTANGULAR`/`RECTANGULAR_OBSCURATION` (`SQAP`/`SQOB`) and `ELLIPTICAL`/`ELLIPTICAL_OBSCURATION`
@@ -1092,7 +1096,19 @@ draws it better and with fewer triangles. A glass *body* whose faces need a patc
 one solid, for the same reason a transform between the faces prevents it: the ground edge would have
 to join two boundaries of different shapes, which is a solid this cannot build yet.
 
-The live gap now is **the aperture shapes that are not a size at all**: `SPID`, the spider, whose
-radial arms hold a secondary, and `UDAD`, a polygon read from a separate file. Both are a different
-*shape* rather than a different size, so each belongs as its own kind rather than as a case of one of
-these; until they land they stay in `UNMODELED_SURFACE_TOKENS`, warned about per surface.
+**The spider is a third family**, being neither a boundary nor a size: `SPIDER` (`SPID`) is
+`armCount` vanes of `armWidth`, at equal angles, **the first along the local +x axis** — which is why
+a file that wants one at another angle rotates it with a coordinate break rather than with an angle
+of its own. It obscures rather than bounds, so the surface keeps its own extent.
+
+**`SPID` is written `width numarms`, the reverse of Chapter 29's `SPID numarms width`** — the one
+place in the corpus where the manual's argument *order* is wrong, and worth knowing because the rest
+of it has been reliable. The file `Schmidt-Cassegrain spider obscuration.zmx` writes `SPID 2 3` and
+OpticStudio shows that surface as 3 arms, 2 wide; read the manual's way, `sc_spatial3.zmx` would have
+a single arm three units across a surface whose semi-diameter is 2 — an arm wider than the aperture
+it crosses.
+
+The live gap now is **`UDAD`**, a polygon of points listed in the file under the name of a separate
+`.UDA`. It is a different *shape* rather than a different size, so it belongs as its own kind rather
+than as a case of these; until it lands it stays in `UNMODELED_SURFACE_TOKENS`, warned about per
+surface.

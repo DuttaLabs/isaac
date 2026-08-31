@@ -210,15 +210,15 @@ test('a model glass without usable numbers is refused, not guessed at', () => {
 });
 
 test('surface records that would change the geometry become warnings', () => {
-  // A spider is a real limit this reader cannot yet express — a set of radial
-  // arms rather than a size — so ignoring it silently would trace rays the real
-  // lens vignettes away.
-  const withSpider = importDoublet(
-    DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""', '  SPID 3 2 0\n  DIAM 1.5E+1 1 0 0 1 ""'),
+  // A user-defined aperture is a real limit this reader cannot yet express — a
+  // polygon rather than a size — so ignoring it silently would trace rays the
+  // real lens vignettes away.
+  const withPolygon = importDoublet(
+    DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""', '  UDAD 0 "slit.UDA" 1\n  DIAM 1.5E+1 1 0 0 1 ""'),
   );
   assert.ok(
-    withSpider.warnings.some((warning) => /Surface 1 has a SPID record/.test(warning)),
-    `expected a SPID warning, got ${JSON.stringify(withSpider.warnings)}`,
+    withPolygon.warnings.some((warning) => /Surface 1 has a UDAD record/.test(warning)),
+    `expected a UDAD warning, got ${JSON.stringify(withPolygon.warnings)}`,
   );
 
   // Records that only annotate the surface stay quiet.
@@ -236,6 +236,8 @@ test('a circular aperture, an obscuration and a floating one are read onto the s
     maxRadius: Infinity,
     halfWidthX: 0,
     halfWidthY: 0,
+    armCount: 0,
+    armWidth: 0,
     decenterX: 0,
     decenterY: 0,
   });
@@ -249,6 +251,8 @@ test('a circular aperture, an obscuration and a floating one are read onto the s
     maxRadius: 1.21,
     halfWidthX: 0,
     halfWidthY: 0,
+    armCount: 0,
+    armWidth: 0,
     decenterX: 0.5,
     decenterY: -0.25,
   });
@@ -279,7 +283,8 @@ test('rectangular and elliptical apertures are read as half-widths', () => {
 
   // The Newtonian idiom: a diagonal flat, whose major axis is √2 times its minor
   // because it is used at 45°.
-  const diagonal = importDoublet(DOUBLET.replace('  FLAP', '  ELAP 27.5 39.1 0')).system.surfaces[1]!;
+  const diagonal = importDoublet(DOUBLET.replace('  FLAP', '  ELAP 27.5 39.1 0')).system
+    .surfaces[1]!;
   assert.equal(diagonal.aperture?.kind, 'ELLIPTICAL');
   assert.equal(diagonal.aperture?.halfWidthX, 27.5);
   assert.equal(diagonal.aperture?.halfWidthY, 39.1);
@@ -288,9 +293,28 @@ test('rectangular and elliptical apertures are read as half-widths', () => {
     ['SQOB', 'RECTANGULAR_OBSCURATION'],
     ['ELOB', 'ELLIPTICAL_OBSCURATION'],
   ]) {
-    const blocked = importDoublet(DOUBLET.replace('  FLAP', `  ${token} 3 4 0`)).system.surfaces[1]!;
+    const blocked = importDoublet(DOUBLET.replace('  FLAP', `  ${token} 3 4 0`)).system
+      .surfaces[1]!;
     assert.equal(blocked.aperture?.kind, kind);
   }
+});
+
+test('SPID is width then count, which is the reverse of the manual', () => {
+  // The one place in the corpus where Chapter 29's argument *order* is wrong.
+  // `Schmidt-Cassegrain spider obscuration.zmx` writes `SPID 2 3`, and
+  // OpticStudio shows that surface as 3 arms, 2 wide.
+  const spider = importDoublet(DOUBLET.replace('  FLAP', '  SPID 2 3 0')).system.surfaces[1]!;
+  assert.equal(spider.aperture?.kind, 'SPIDER');
+  assert.equal(spider.aperture?.armWidth, 2);
+  assert.equal(spider.aperture?.armCount, 3);
+  // A spider is described by its arms and by nothing else.
+  assert.equal(spider.aperture?.maxRadius, 0);
+  assert.equal(spider.aperture?.halfWidthX, 0);
+
+  // A count that is not a whole number of arms describes no spider.
+  const nonsense = importDoublet(DOUBLET.replace('  FLAP', '  SPID 2 0 0'));
+  assert.equal(nonsense.system.surfaces[1]!.aperture, undefined);
+  assert.ok(nonsense.warnings.some((warning) => /describes no spider/.test(warning)));
 });
 
 test('two aperture records on one surface: the first is taken and the rest are reported', () => {

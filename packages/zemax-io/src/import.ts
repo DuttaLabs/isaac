@@ -123,6 +123,7 @@ const HANDLED_SURFACE_TOKENS = new Set([
   'CONI',
   'CLAP',
   'OBSC',
+  'SPID',
   'SQAP',
   'SQOB',
   'ELAP',
@@ -155,12 +156,22 @@ const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH', 'COORDB
  * by calling one a system aperture and the other a surface aperture, and so does
  * this file.
  */
-const SURFACE_APERTURE_TOKENS = ['CLAP', 'OBSC', 'SQAP', 'SQOB', 'ELAP', 'ELOB', 'FLAP'] as const;
+const SURFACE_APERTURE_TOKENS = [
+  'CLAP',
+  'OBSC',
+  'SPID',
+  'SQAP',
+  'SQOB',
+  'ELAP',
+  'ELOB',
+  'FLAP',
+] as const;
 
 /** Which kind each record names. Verified against Chapter 29's keyword table. */
 const APERTURE_KIND_OF: Record<string, ApertureKind> = {
   CLAP: 'CIRCULAR',
   OBSC: 'CIRCULAR_OBSCURATION',
+  SPID: 'SPIDER',
   SQAP: 'RECTANGULAR',
   SQOB: 'RECTANGULAR_OBSCURATION',
   ELAP: 'ELLIPTICAL',
@@ -209,7 +220,6 @@ export function zmxTokenRole(token: string): ZmxTokenRole {
 }
 
 const UNMODELED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
-  ['SPID', 'a spider aperture'],
   ['UDAD', 'a user-defined aperture'],
   ['USAP', 'a user-defined aperture'],
   ['PKUP', 'a pickup solve'],
@@ -565,6 +575,24 @@ function readSurfaceAperture(
   const kind = APERTURE_KIND_OF[token]!;
   const first = numericValue(record!.values[0]) ?? 0;
   const second = numericValue(record!.values[1]) ?? 0;
+
+  if (kind === 'SPIDER') {
+    // **`SPID` is `width numarms`, which is the reverse of what the manual
+    // says.** Chapter 29 gives it as `SPID numarms width`, and this is the one
+    // place in the corpus where its argument *order* is wrong: the sample file
+    // `Schmidt-Cassegrain spider obscuration.zmx` writes `SPID 2 3`, and
+    // OpticStudio shows that surface as **3 arms, 2 wide**. Read the manual's
+    // way it would be one arm two units wide, and the file `sc_spatial3.zmx`
+    // would have a single arm three units across a surface whose semi-diameter
+    // is 2 — an arm wider than the aperture it crosses.
+    if (first <= 0 || !Number.isInteger(second) || second < 1) {
+      context.warnings.push(
+        `Surface ${number} has SPID ${first} ${second}, which describes no spider; ignoring it.`,
+      );
+      return undefined;
+    }
+    return { kind, armWidth: first, armCount: second, decenterX, decenterY };
+  }
 
   if (!isCircularAperture(kind)) {
     // `SQAP xwid ywid` and `ELAP xwid ywid` are **half**-widths, which the

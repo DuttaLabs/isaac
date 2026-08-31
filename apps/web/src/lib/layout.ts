@@ -50,7 +50,7 @@ export interface SurfaceProfile {
    * the picture showed nothing stopping them, which is the fault of drawing an
    * aperture the trace does not have, read backwards.
    */
-  obscured?: { from: number; to: number };
+  obscured?: { from: number; to: number }[];
 }
 
 export interface GlassBody {
@@ -166,11 +166,14 @@ function outlineInLocalFrame(
   disc: Disc,
   view: ViewPlane,
   hole: Hole | undefined,
-  obscuration: Disc | undefined,
+  /** True when the surface's aperture stops light where it is, rather than bounding it. */
+  obscuring: boolean,
+  /** The surface's own blocking rule — the one the tracer asks. */
+  blocks: (x: number, y: number) => boolean,
 ): {
   points: Point3[];
   hole?: { from: number; to: number };
-  obscured?: { from: number; to: number };
+  obscured?: { from: number; to: number }[];
 } {
   if (!view.axial) {
     // End-on, a hole is a second rim rather than a gap in the first: the inner
@@ -218,23 +221,49 @@ function outlineInLocalFrame(
   // ones inside an obscuration are where something is standing in the way. Both
   // are left in `points` — the bounds, the body and the stop bars all read them
   // — and only the *ink* changes: a hole is skipped, an obscuration drawn over.
-  const covered =
-    obscuration === undefined
-      ? undefined
-      : coveredSamples(
-          at,
-          upright === 'y' ? obscuration.centerY : obscuration.centerX,
-          upright === 'y' ? obscuration.radiusY : obscuration.radiusX,
-        );
+  const covered = obscuring ? blockedRuns(points, blocks) : [];
   if (hole === undefined) {
-    return covered === undefined ? { points } : { points, obscured: covered };
+    return covered.length === 0 ? { points } : { points, obscured: covered };
   }
   const span = coveredSamples(at, center, hole.radius);
   return {
     points,
     ...(span === undefined ? {} : { hole: span }),
-    ...(covered === undefined ? {} : { obscured: covered }),
+    ...(covered.length === 0 ? {} : { obscured: covered }),
   };
+}
+
+/**
+ * The runs of samples the surface actually stops light at, asked of the surface
+ * itself.
+ *
+ * **Runs, plural, and asked rather than derived.** A spider crosses a section
+ * more than once — a three-armed one lies across the meridional plane in two
+ * places — so a single span cannot describe it. And asking `blocksAt`, which is
+ * the same function the tracer calls, is what makes the promise hold in the
+ * hard direction too: the picture cannot show an obscuration the trace does not
+ * have, or miss one it does.
+ */
+function blockedRuns(
+  points: readonly Point3[],
+  blocks: (x: number, y: number) => boolean,
+): { from: number; to: number }[] {
+  const runs: { from: number; to: number }[] = [];
+  let open = -1;
+  for (const [index, point] of points.entries()) {
+    if (blocks(point.x, point.y)) {
+      if (open === -1) {
+        open = index;
+      }
+    } else if (open !== -1) {
+      runs.push({ from: open, to: index - 1 });
+      open = -1;
+    }
+  }
+  if (open !== -1) {
+    runs.push({ from: open, to: points.length - 1 });
+  }
+  return runs;
 }
 
 /**
@@ -329,26 +358,6 @@ function drawnDisc(surface: Surface, fallback: number): Disc {
  * middle is *all* there is — and the surface is already drawn at the extent that
  * describes it.
  */
-/**
- * The disc an obscuration blocks, if the surface carries one.
- *
- * Every kind reduces to a half-extent along each axis, which is all a section
- * needs: what it draws is the span covered across the view's upright axis.
- */
-function obscurationIn(surface: Surface): Disc | undefined {
-  const aperture = surface.aperture;
-  if (aperture === undefined || !isObscuration(aperture.kind)) {
-    return undefined;
-  }
-  const circular = aperture.kind === 'CIRCULAR_OBSCURATION';
-  return {
-    radiusX: circular ? aperture.maxRadius : aperture.halfWidthX,
-    radiusY: circular ? aperture.maxRadius : aperture.halfWidthY,
-    centerX: aperture.decenterX,
-    centerY: aperture.decenterY,
-  };
-}
-
 function holeIn(surface: Surface): Hole | undefined {
   const aperture = surface.aperture;
   return aperture !== undefined && aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
@@ -447,12 +456,14 @@ export function buildLayout(
     // The outline is built in the surface's own frame and then carried into
     // global coordinates, so a tilted element is drawn tilted. For a centered
     // system this is the vertex offset it always was.
+    const aperture = surface.aperture;
     const outline = outlineInLocalFrame(
       surface.shape,
       disc,
       view,
       holeIn(surface),
-      obscurationIn(surface),
+      aperture !== undefined && isObscuration(aperture.kind),
+      (x, y) => surface.blocksAt(x, y),
     );
     const points = outline.points.map((local) => projectToPlane(pose.apply(local), view));
     profiles.push({

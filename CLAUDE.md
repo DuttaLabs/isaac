@@ -1057,10 +1057,24 @@ Two consequences, and both are why the file sets that surface's semi-diameter to
   takes it from the **aperture** first and the semi-diameter second: a stop whose `CLAP` says 25 mm is
   a 25 mm stop however large the surface is drawn.
 
-**The 3-D view cannot yet draw a decentered aperture.** A hole is made by starting the lathe at the
-inner radius, and a lathe is a surface of revolution — an off-center bore is not one. It currently
-revolves the right radius about the wrong center, which is the one silent wrongness left in this
-feature; fixing it needs a triangulated annulus with an offset inner boundary rather than a lathe.
+**A surface the lathe cannot express is drawn as a patch instead** (`three-optics/src/aperture-patch.ts`).
+A lathe is a surface of revolution, and three of the shapes the model allows are not one: a
+rectangular aperture, an elliptical one, and a circular one cut off the surface's own axis.
+Revolving those anyway drew the right size in the wrong shape or the wrong place — a rectangular
+mirror as a disc, an off-axis parabola straddling the axis — which is the quiet kind of wrong, since
+it still renders a solid and still looks like an optic.
+
+The patch is polar **about the aperture's center**, which is what lets one function cover all of
+them: at each angle the aperture reaches some boundary radius, and the material runs from its hole
+out to that boundary. A circle's boundary is constant, a rectangle's is the nearer of its two walls,
+an ellipse's is the ellipse. The **sag is still measured from the surface's own axis**, never from
+the aperture's center — an off-axis parabola is a piece of the parent and curves the way the parent
+does at that distance out.
+
+`needsAperturePatch` is the test, and a centered circle — annulus included — stays a lathe, which
+draws it better and with fewer triangles. A glass *body* whose faces need a patch is not welded into
+one solid, for the same reason a transform between the faces prevents it: the ground edge would have
+to join two boundaries of different shapes, which is a solid this cannot build yet.
 
 The live gap now is **the aperture shapes that are not a size at all**: `SPID`, the spider, whose
 radial arms hold a secondary, and `UDAD`, a polygon read from a separate file. Both are a different

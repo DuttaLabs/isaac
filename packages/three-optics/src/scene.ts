@@ -1,4 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Matrix4, Vector2 } from 'three';
+import { aperturePatch, needsAperturePatch } from './aperture-patch.ts';
 import {
   signedMediaIndices,
   surfaceProfileSag,
@@ -45,7 +46,13 @@ export interface ElementGeometry {
 /** A surface drawn on its own: an image plane, a stop, a bare air surface. */
 export interface SurfaceShellGeometry {
   surfaceIndex: number;
-  geometry: LatheGeometry;
+  /**
+   * A lathe where the surface is one of revolution, and a triangulated patch
+   * where it is not — a rectangular or elliptical aperture, or a circular one
+   * cut off the surface's own axis. `BufferGeometry` because that is what both
+   * are, and nothing downstream needs to know which it got.
+   */
+  geometry: BufferGeometry;
   isStop: boolean;
   isImage: boolean;
   /** A mirror: shaded as metal, and opaque, because nothing goes through it. */
@@ -125,6 +132,24 @@ function holeRadiusOf(surface: Surface): number {
   return aperture !== undefined && aperture.kind === 'CIRCULAR' ? aperture.minRadius : 0;
 }
 
+/**
+ * How many rings across an aperture patch. The surface is smooth, so the shape
+ * is carried by the *boundary* — which `segments` samples — rather than by the
+ * radial direction; a handful of rings is enough to curve.
+ */
+const PATCH_RINGS = 8;
+
+/**
+ * Carries geometry into place, baking the pose into the vertices.
+ *
+ * Baked rather than hung on a node because the scene is built outside React and
+ * handed over as plain geometry, with nothing to attach a transform to.
+ */
+function placed<T extends BufferGeometry>(geometry: T, pose: Transform3): T {
+  geometry.applyMatrix4(toMatrix4(pose));
+  return geometry;
+}
+
 function lathe(points: Vector2[], segments: number, pose?: Transform3): LatheGeometry {
   const geometry = new LatheGeometry(points, segments);
   // Lathe revolves about Y; the optical axis is Z.
@@ -193,6 +218,18 @@ export function buildOpticalScene(
     if (system.surfaceAt(index + 1).type === 'COORDINATE_TRANSFORM') {
       continue;
     }
+    // The same rule for the same reason: a face bounded by a rectangle, an
+    // ellipse or an off-center circle is not a surface of revolution, so the
+    // pair cannot be one lathe. Each face is drawn over its own aperture
+    // instead, and the ground edge between them is left undrawn rather than
+    // faked — an edge joining two boundaries of different shapes is a solid
+    // this has no way to build yet.
+    if (
+      needsAperturePatch(system.surfaceAt(index)) ||
+      needsAperturePatch(system.surfaceAt(index + 1))
+    ) {
+      continue;
+    }
     const frontRadius = radiusOf(index);
     const backRadius = radiusOf(index + 1);
     const frontShape = system.surfaceAt(index).shape;
@@ -247,11 +284,16 @@ export function buildOpticalScene(
     }
     surfaces.push({
       surfaceIndex: index,
-      geometry: lathe(
-        surfaceProfile(surface.shape, 0, radiusOf(index), samples, holeRadiusOf(surface)),
-        segments,
-        system.poseAt(index),
-      ),
+      geometry: needsAperturePatch(surface)
+        ? placed(
+            aperturePatch(surface, options.defaultSemiDiameter, PATCH_RINGS, segments),
+            system.poseAt(index),
+          )
+        : lathe(
+            surfaceProfile(surface.shape, 0, radiusOf(index), samples, holeRadiusOf(surface)),
+            segments,
+            system.poseAt(index),
+          ),
       isStop: surface.isStop,
       isImage: surface.type === 'IMAGE',
       isMirror: surface.reflective,

@@ -11,7 +11,13 @@ import {
   surfaceProfileSag,
   traceRays,
 } from '@isaac/optical-core';
-import { buildOpticalScene, surfaceProfile, type SceneTrace } from '../src/index.ts';
+import {
+  aperturePatch,
+  buildOpticalScene,
+  needsAperturePatch,
+  surfaceProfile,
+  type SceneTrace,
+} from '../src/index.ts';
 
 /** A biconvex singlet in air: one glass element, an image plane, nothing else. */
 function singlet(): OpticalSystem {
@@ -325,4 +331,71 @@ test('a surface with an annular aperture is revolved from its hole, not from the
   // The sag is the surface's own at every radius, hole or not — the shape is not
   // re-scaled to fit the ring it is now drawn over.
   assert.ok(Math.abs(holed[0]!.y - surfaceProfileSag(shape, 3)) < 1e-12);
+});
+
+test('an aperture that is not a circle is drawn over its own shape, not revolved', () => {
+  const shape = { curvature: 0, conic: 0, asphericCoefficients: [] as number[] };
+  const rectangular = new Surface({
+    id: 'rect',
+    type: 'STANDARD',
+    thickness: 10,
+    semiDiameter: 50,
+    aperture: { kind: 'RECTANGULAR', halfWidthX: 25, halfWidthY: 10 },
+  });
+  assert.equal(needsAperturePatch(rectangular), true);
+
+  const patch = aperturePatch(rectangular, 50, 4, 64);
+  const points = patch.getAttribute('position');
+  let maxX = 0;
+  let maxY = 0;
+  for (let i = 0; i < points.count; i += 1) {
+    maxX = Math.max(maxX, Math.abs(points.getX(i)));
+    maxY = Math.max(maxY, Math.abs(points.getY(i)));
+  }
+  // The rectangle's own proportions, not a disc of one radius: a lathe would
+  // have made both of these 25, which is the silent wrongness this replaces.
+  assert.ok(Math.abs(maxX - 25) < 0.2, `reached ${maxX} across x, expected 25`);
+  assert.ok(Math.abs(maxY - 10) < 0.2, `reached ${maxY} across y, expected 10`);
+  assert.ok(shape.curvature === 0);
+});
+
+test('a decentered aperture is drawn where the aperture is', () => {
+  const offAxis = new Surface({
+    id: 'oap',
+    type: 'STANDARD',
+    radius: -300,
+    conic: -1,
+    thickness: -100,
+    aperture: { kind: 'CIRCULAR', maxRadius: 55, decenterY: -100 },
+    reflective: true,
+  });
+  assert.equal(needsAperturePatch(offAxis), true);
+
+  const points = aperturePatch(offAxis, 50, 4, 64).getAttribute('position');
+  let lowest = Infinity;
+  let highest = -Infinity;
+  for (let i = 0; i < points.count; i += 1) {
+    lowest = Math.min(lowest, points.getY(i));
+    highest = Math.max(highest, points.getY(i));
+  }
+  // Centred on the aperture at −100, reaching 55 either side of it.
+  assert.ok(Math.abs(lowest + 155) < 0.2, `bottom at ${lowest}, expected −155`);
+  assert.ok(Math.abs(highest + 45) < 0.2, `top at ${highest}, expected −45`);
+});
+
+test('a centered circle is still a lathe, because a lathe draws it better', () => {
+  const plain = new Surface({ id: 'p', type: 'STANDARD', thickness: 5, semiDiameter: 10 });
+  assert.equal(needsAperturePatch(plain), false);
+  // An annulus is a surface of revolution too, hole and all.
+  assert.equal(
+    needsAperturePatch(plain.with({ aperture: { kind: 'CIRCULAR', minRadius: 2, maxRadius: 9 } })),
+    false,
+  );
+  // And an obscuration does not bound the surface at all, so it changes nothing.
+  assert.equal(
+    needsAperturePatch(
+      plain.with({ aperture: { kind: 'RECTANGULAR_OBSCURATION', halfWidthX: 2, halfWidthY: 3 } }),
+    ),
+    false,
+  );
 });

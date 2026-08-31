@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
-import { exportZmx, importZmx } from '@isaac/zemax-io';
+import { decodeZmx, exportZmx, importZmx } from '@isaac/zemax-io';
 import { computeFirstOrder } from './lib/analysis.ts';
 import { suppressNativeContextMenu } from './lib/context-menu.ts';
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
@@ -16,7 +16,7 @@ import { cssRect, tile } from './lib/tiling.ts';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
 import { TextCell } from './components/TextCell.tsx';
-import { describeError } from './lib/result.ts';
+import { attempt, describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { BlankPanel, ErrorNote, type PanelChoice } from './components/Panel.tsx';
 import { PANEL_TITLES } from './lib/panels.ts';
@@ -33,6 +33,7 @@ import {
   DEFAULT_LAYOUT_3D,
   DEFAULT_RAY_FAN,
   DEFAULT_SPOT,
+  DEFAULT_TEXT_EDITOR,
   settingsOf,
   type PanelSettings,
 } from './lib/panel-settings.ts';
@@ -65,6 +66,8 @@ import { Layout3DPanel } from './components/Layout3DPanel.tsx';
 import { RayFanPanel } from './components/RayFanPanel.tsx';
 import { SourcePanel } from './components/SourcePanel.tsx';
 import { SpotPanel } from './components/SpotPanel.tsx';
+import { TextEditorPanel } from './components/TextEditorPanel.tsx';
+import { languageOf } from './lib/text-documents.ts';
 
 /**
  * The development tweak panel, and `lil-gui` behind it. `import.meta.env.DEV` is
@@ -117,6 +120,16 @@ export function App() {
    * renamed, and usually is.
    */
   const [fileName, setFileName] = useState<string | undefined>(undefined);
+  /**
+   * The text of the file that was opened, kept so the text panel can show what
+   * the file actually says.
+   *
+   * Not the same thing as exporting the system: a file carries thirty-odd record
+   * types the reader does not interpret, and none of them survive the round trip
+   * into the model. Holding the original is the only way to show them, and
+   * putting the two side by side is the point of the panel.
+   */
+  const [fileText, setFileText] = useState<string | undefined>(undefined);
   /**
    * What the user has named and colored each element, keyed by the id of the
    * element's front surface. View state, like the field checkboxes and the
@@ -239,6 +252,7 @@ export function App() {
       setNotice(undefined);
       // Neither the blank system nor the sample doublet came from a file.
       setFileName(undefined);
+      setFileText(undefined);
       // Element styles are keyed by surface id, and ids are only unique within
       // one system — two files both name their first surface `surf-1`. Carrying
       // them over would paint a new design in the last one's colors.
@@ -397,6 +411,9 @@ export function App() {
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
       pushSystem(result.system);
       setFileName(file.name);
+      // Decoded by the reader's own routine, so a UTF-16 file reads as text
+      // rather than as every other character being a null.
+      setFileText(decodeZmx(bytes));
       // A different design brings different elements; see `startFrom`.
       setElementStyles({});
       // A file brings its own field list, so flags set against the previous
@@ -637,8 +654,54 @@ export function App() {
             choice={choice}
           />
         );
+      case 'textEditor':
+        return (
+          <TextEditorPanel
+            settings={settingsOf(found.settings, DEFAULT_TEXT_EDITOR)}
+            onSettings={(next) => writeSettings(found, update, next)}
+            supplied={suppliedDocuments}
+            choice={choice}
+          />
+        );
     }
   };
+
+  /**
+   * What every text panel is handed: the file this design came from, and the
+   * file it would be saved as.
+   *
+   * Two documents rather than one because they are two different things, and the
+   * difference is the interesting part. The first is what the file says,
+   * including the thirty-odd record types Isaac does not interpret; the second
+   * is what Isaac models, rebuilt from the system on every change so it is
+   * always what Save would write. A design built here has only the second.
+   *
+   * The export is attempted rather than assumed: a system with mixed field types
+   * is refused by the writer, and a panel showing the reason beats one showing
+   * nothing.
+   */
+  const suppliedDocuments = useMemo(() => {
+    const documents = [];
+    if (fileName !== undefined && fileText !== undefined) {
+      documents.push({
+        key: 'file',
+        name: fileName,
+        text: fileText,
+        readOnly: true,
+        language: languageOf(fileName),
+      });
+    }
+    const written = attempt(() => exportZmx(system, { glassCatalogs: GLASS_CATALOG_NAMES }).text);
+    documents.push({
+      key: 'export',
+      name: 'Current design.zmx',
+      text: written.ok ? written.value : `This design cannot be written yet:\n\n${written.error}`,
+      readOnly: true,
+      language: 'zmx' as const,
+      derived: true,
+    });
+    return documents;
+  }, [fileName, fileText, system]);
 
   /**
    * The three things that can be done to a pane, as opposed to its panel.

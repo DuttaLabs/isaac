@@ -27,6 +27,7 @@ export const PANELS = [
   'layout3d',
   'rayFan',
   'spot',
+  'textEditor',
 ] as const;
 
 export type PanelId = (typeof PANELS)[number];
@@ -39,4 +40,5 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   layout3d: 'Layout 3D',
   rayFan: 'Ray fan',
   spot: 'Spot diagram',
+  textEditor: 'Text',
 };

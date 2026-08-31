@@ -168,6 +168,46 @@ const APERTURE_KIND_OF: Record<string, ApertureKind> = {
   FLAP: 'FLOATING',
 };
 
+/**
+ * What this reader does with each record type, for anything that wants to *show*
+ * a file rather than import one.
+ *
+ * Exported so the editor's highlighting is the reader's own answer rather than a
+ * second list that drifts from it: a token colored as prescription is one this
+ * package genuinely interprets, and one colored as annotation is one it skips.
+ * Adding a token to the sets above therefore changes the colors too, which is
+ * the only way the two can be kept honest.
+ */
+export type ZmxTokenRole =
+  /** Read, and it shapes the system: `CURV`, `GLAS`, `CLAP`. */
+  | 'prescription'
+  /** Read, and it describes the system as a whole: `ENPD`, `WAVM`, `UNIT`. */
+  | 'system'
+  /** Structure rather than content: where a surface starts, what type it is. */
+  | 'structure'
+  /** Skipped, and its absence would change the trace — warned about per surface. */
+  | 'unmodeled'
+  /** Skipped, and nothing optical depends on it: notes, tolerancing, display. */
+  | 'annotation';
+
+/** Records that mark structure rather than carry a value. */
+const STRUCTURE_TOKENS = new Set(['SURF', 'MODE', 'TYPE', 'NAME', 'VERS', 'UNIT']);
+
+/** What role a record's token plays, for a reader or a highlighter. */
+export function zmxTokenRole(token: string): ZmxTokenRole {
+  const upper = token.toUpperCase();
+  if (STRUCTURE_TOKENS.has(upper)) {
+    return 'structure';
+  }
+  if (HANDLED_SURFACE_TOKENS.has(upper) || upper === 'PARM') {
+    return 'prescription';
+  }
+  if (HANDLED_HEADER_TOKENS.has(upper)) {
+    return 'system';
+  }
+  return UNMODELED_SURFACE_TOKENS.has(upper) ? 'unmodeled' : 'annotation';
+}
+
 const UNMODELED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
   ['SPID', 'a spider aperture'],
   ['UDAD', 'a user-defined aperture'],

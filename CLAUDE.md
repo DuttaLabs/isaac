@@ -318,6 +318,35 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   R3F measures the panel — a box around it, sized by its content, restores exactly the loop that
   leaves the canvas at its untouched 300 × 150. So `Layout3DView` takes an `overlay` prop instead.
 
+- **The Text panel reads files; it does not edit the design.** It opens with two documents supplied
+  by `App`: the `.zmx` the design came from — its *original text*, kept on `App` beside the filename —
+  and `Current design.zmx`, the live `exportZmx` output, rebuilt on every change so it is always what
+  Save would write. Those two differ, and the difference is the point: a file carries thirty-odd
+  record types the reader does not interpret, and putting what came in beside what Isaac models is
+  the fastest way to see which is which.
+
+  **The syntax colors are the reader's own answer.** `zemax-io` exports `zmxTokenRole`, built from the
+  very sets `importZmx` dispatches on, and the highlighter asks it per token. So a record colored as
+  prescription is one the importer genuinely reads, a red one is a record that *would* move a ray and
+  is not modeled (`SPID`, `UDAD`), and a muted one is annotation. A second list of keywords kept in
+  the UI would drift from the reader within a release; this one cannot.
+
+  A `.zmx` is **read-only**, and so the highlighted documents are exactly the read-only ones. That
+  makes the editing story simple rather than clever: an editable document is a plain `<textarea>`,
+  with no transparent-text-over-highlighted-`<pre>` illusion to keep aligned across fonts and zoom
+  levels. The textarea is sized to its content (`rows`) so the box around it does the scrolling and
+  the line-number gutter stays beside the right line.
+
+  Ctrl-F is bound to the panel's own subtree rather than the document, so two Text panels do not
+  fight over it and it does not fire while the lens grid has focus. Font, size, line numbers and wrap
+  are per-pane settings and ride along in the saved layout; **which file is open is not**, and
+  deliberately — a layout that reopens with the look it was left in is right, one that reopens
+  claiming a file it has not read from disk since yesterday is not. That is what the recent list is
+  for (`lib/recent-files.ts`): the names live in `localStorage` and the `FileSystemFileHandle`s live
+  in IndexedDB, which is the only store that will take them, and a handle is what lets an entry
+  reopen a file rather than merely name it. Where the File System Access API is missing the handles
+  are absent and the list is a history — said in the UI rather than hidden.
+
 - **Every analysis is a panel of its own.** The ray fan and the spot diagram were one Analysis panel
   drawing both in a grid, which meant two fans at different fields — the arrangement a fan is actually
   read in — were impossible. As panes they resize against each other, close separately, and can each

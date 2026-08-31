@@ -110,7 +110,25 @@ export interface SpotSettings extends SingleFieldSettings {
   readonly panel: 'spot';
 }
 
-export type PanelSettings = Layout2DSettings | Layout3DSettings | RayFanSettings | SpotSettings;
+/**
+ * What one text panel is set to.
+ *
+ * Reading settings rather than document settings: which file is open is not
+ * here, and deliberately. A layout reopening with the *look* it was left in —
+ * font, size, line numbers — is right; one reopening with a file it has not
+ * read from disk since yesterday, and cannot promise is still there, is not.
+ * The recent list is where that belongs, and it is stored on its own.
+ */
+export interface TextEditorSettings {
+  readonly panel: 'textEditor';
+  readonly fontFamily: 'mono' | 'system' | 'serif';
+  readonly fontSize: number;
+  readonly lineNumbers: boolean;
+  readonly wrap: boolean;
+}
+
+export type PanelSettings =
+  Layout2DSettings | Layout3DSettings | RayFanSettings | SpotSettings | TextEditorSettings;
 
 export const DEFAULT_LAYOUT_2D: Layout2DSettings = {
   panel: 'layout2d',
@@ -145,6 +163,18 @@ export const DEFAULT_SPOT: SpotSettings = {
   allWavelengths: false,
 };
 
+export const DEFAULT_TEXT_EDITOR: TextEditorSettings = {
+  panel: 'textEditor',
+  // Monospace, because a .zmx is columns of numbers and a proportional font
+  // takes the columns away. The other two are there for reading prose.
+  fontFamily: 'mono',
+  fontSize: 12,
+  lineNumbers: true,
+  // Off, because a record is one line and wrapping makes a long NOTE look like
+  // several. The reader can turn it on for prose.
+  wrap: false,
+};
+
 /**
  * What a panel starts with, or `undefined` for one that has nothing to set.
  *
@@ -162,6 +192,8 @@ export function defaultSettings(panel: PanelId): PanelSettings | undefined {
       return DEFAULT_RAY_FAN;
     case 'spot':
       return DEFAULT_SPOT;
+    case 'textEditor':
+      return DEFAULT_TEXT_EDITOR;
     default:
       return undefined;
   }

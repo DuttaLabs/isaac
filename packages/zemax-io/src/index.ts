@@ -26,3 +26,5 @@ export {
   MIRROR_GLASS_NAME,
 } from './import.ts';
 export type { ZmxImportOptions, ZmxImportResult, ZmxGlassReference } from './import.ts';
+export { zmxTokenRole } from './import.ts';
+export type { ZmxTokenRole } from './import.ts';

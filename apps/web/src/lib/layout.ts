@@ -7,6 +7,7 @@ import {
   type OpticalSystem,
   type RayTraceResult,
   type Surface,
+  type SurfaceAperture,
   type SurfaceShape,
 } from '@isaac/optical-core';
 import { projectToPlane, VIEW_PLANES, type LayoutPoint, type ViewPlane } from './view-plane.ts';
@@ -51,6 +52,17 @@ export interface SurfaceProfile {
    * aperture the trace does not have, read backwards.
    */
   obscured?: { from: number; to: number }[];
+  /**
+   * The surface's only job is to obscure, so there is no outline to stroke — only
+   * the runs above.
+   *
+   * The dummy plane carrying a Schmidt-Cassegrain's spider has no glass, no
+   * coating and no rim: its semi-diameter is a number the program computed, and
+   * an outline drawn there puts a pane in the beam that does not exist. The 3-D
+   * view drops the same surfaces for the same reason, and the two views are
+   * meant to agree about what is in the picture.
+   */
+  obscuringOnly?: boolean;
 }
 
 export interface GlassBody {
@@ -376,6 +388,33 @@ function drawnDisc(surface: Surface, fallback: number): Disc {
  * middle is *all* there is — and the surface is already drawn at the extent that
  * describes it.
  */
+/**
+ * Whether glass meets this surface on either side, which is what makes it a face
+ * of an element rather than a plane in the air.
+ */
+function touchesGlass(system: OpticalSystem, index: number): boolean {
+  const wavelength = system.primaryWavelengthNm;
+  const solid = (at: number): boolean =>
+    at >= 0 &&
+    at < system.surfaces.length &&
+    Math.abs(system.surfaceAt(at).material.indexAt(wavelength) - 1) >= 1e-9;
+  return solid(index) || solid(index - 1);
+}
+
+/** How far an obscuration reaches along one axis: all the drawing there is. */
+function obscuredReach(aperture: SurfaceAperture, axis: 'x' | 'y'): number {
+  switch (aperture.kind) {
+    case 'CIRCULAR_OBSCURATION':
+      return aperture.maxRadius;
+    case 'SPIDER':
+      // The arms run to the rim, so a spider on its own plane is as wide as the
+      // plane would have been — the outline is what goes, not the extent.
+      return Infinity;
+    default:
+      return axis === 'x' ? aperture.halfWidthX : aperture.halfWidthY;
+  }
+}
+
 function holeIn(surface: Surface): Hole | undefined {
   const aperture = surface.aperture;
   return aperture !== undefined && aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
@@ -467,17 +506,43 @@ export function buildLayout(
     }
     const pose = system.poseAt(index);
     const disc = drawnDisc(surface, defaultSemiDiameter);
+    /**
+     * A surface that does nothing but obscure: not a mirror, not a face of any
+     * glass, and carrying an aperture that stops light rather than bounding the
+     * surface. Its outline is not drawn, and — the part that shows — it does not
+     * stretch the picture either: a dummy plane whose computed semi-diameter is
+     * larger than the optics would otherwise set the scale for everything.
+     */
+    const aperture = surface.aperture;
+    const obscuringOnly =
+      aperture !== undefined &&
+      isObscuration(aperture.kind) &&
+      !surface.reflective &&
+      surface.type === 'STANDARD' &&
+      !touchesGlass(system, index);
+    // Never larger than the surface would have been: a spider's arms run to the
+    // rim, so `obscuredReach` answers `Infinity` for one and the surface's own
+    // extent is what remains.
+    const reachY = obscuringOnly
+      ? Math.min(obscuredReach(aperture, 'y'), disc.radiusY)
+      : disc.radiusY;
+    const reachX = obscuringOnly
+      ? Math.min(obscuredReach(aperture, 'x'), disc.radiusX)
+      : disc.radiusX;
     // The bound is how far the drawing reaches, which for a decentered piece is
     // its far edge rather than its radius.
-    heights.push(Math.abs(disc.centerY) + disc.radiusY, Math.abs(disc.centerX) + disc.radiusX);
+    heights.push(Math.abs(disc.centerY) + reachY, Math.abs(disc.centerX) + reachX);
+    // Sampled over what is drawn, not over the rim that is not: the points feed
+    // the drawing's own bounds, so an outline nobody sees would still set the
+    // scale for everything else if it were sampled anyway.
+    const drawn = obscuringOnly ? { ...disc, radiusX: reachX, radiusY: reachY } : disc;
 
     // The outline is built in the surface's own frame and then carried into
     // global coordinates, so a tilted element is drawn tilted. For a centered
     // system this is the vertex offset it always was.
-    const aperture = surface.aperture;
     const outline = outlineInLocalFrame(
       surface.shape,
-      disc,
+      drawn,
       view,
       holeIn(surface),
       aperture !== undefined && isObscuration(aperture.kind),
@@ -493,6 +558,7 @@ export function buildLayout(
       closed: !view.axial,
       ...(outline.hole === undefined ? {} : { hole: outline.hole }),
       ...(outline.obscured === undefined ? {} : { obscured: outline.obscured }),
+      ...(obscuringOnly ? { obscuringOnly: true } : {}),
     });
   }
 

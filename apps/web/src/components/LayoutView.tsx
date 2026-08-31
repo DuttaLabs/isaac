@@ -280,22 +280,30 @@ export function LayoutView({
             (profile.isMirror ? 'var(--mirror)' : 'var(--glass-stroke)'));
         return (
           <g key={`surface-${profile.surfaceIndex}`}>
-            <path
-              // A surface with a hole is drawn as two runs of the same outline —
-              // the material either side of it. The samples inside the hole are
-              // still in `points`, because the bounds and the stop bars read them;
-              // it is only the ink that stops.
-              d={profilePath(profile, project)}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={highlighted ? 3 : profile.isMirror ? 2.5 : profile.isImage ? 2 : 1.5}
-              // A profile and the ground edge it meets are two strokes ending at
-              // one rim point. Butt caps leave a notch on the outside of that
-              // angle; round ones overlap into a corner, at any weight.
-              strokeLinecap="round"
-            >
-              {profile.isMirror ? <title>{`Surface ${profile.surfaceIndex}: mirror`}</title> : null}
-            </path>
+            {/* No outline where the surface's only job is to obscure: the dummy
+                plane carrying a spider has no rim to draw, and a line there puts
+                a pane in the beam that does not exist. What it *does* — the runs
+                below — is drawn. */}
+            {profile.obscuringOnly === true ? null : (
+              <path
+                // A surface with a hole is drawn as two runs of the same outline —
+                // the material either side of it. The samples inside the hole are
+                // still in `points`, because the bounds and the stop bars read them;
+                // it is only the ink that stops.
+                d={profilePath(profile, project)}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={highlighted ? 3 : profile.isMirror ? 2.5 : profile.isImage ? 2 : 1.5}
+                // A profile and the ground edge it meets are two strokes ending at
+                // one rim point. Butt caps leave a notch on the outside of that
+                // angle; round ones overlap into a corner, at any weight.
+                strokeLinecap="round"
+              >
+                {profile.isMirror ? (
+                  <title>{`Surface ${profile.surfaceIndex}: mirror`}</title>
+                ) : null}
+              </path>
+            )}
             {/* An obscuration is a solid thing standing in the beam, not an edge
               of the surface — so it is drawn *over* the outline, heavier and in
               ink of its own. Without it, an obscuration smaller than its surface

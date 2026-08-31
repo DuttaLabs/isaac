@@ -554,19 +554,16 @@ test('an obscuration smaller than its surface is drawn, not left invisible', () 
   );
   assert.equal(profile?.obscured?.length, 1, 'expected one obscured run');
   const heights = profile.points.map((point) => point.v);
-  // The drawn run is the obscured middle, and the surface still reaches its own
-  // extent either side of it: an obscuration is a thing in the way, not the edge.
+  // This plane does nothing but obscure, so what is drawn *is* the obscuration:
+  // every sample is inside it, and the 20 rim — a number nobody can see — is not
+  // drawn at all. Inclusive at the edge, because the trace is: a ray arriving
+  // exactly there meets it.
   const run = profile.obscured[0]!;
-  for (let i = run.from; i <= run.to; i += 1) {
-    // Inclusive at the rim, because the trace is: a ray arriving exactly there
-    // meets the obscuration, and the drawing now says exactly what the trace does.
-    assert.ok(
-      Math.abs(heights[i]!) <= 5,
-      `sample ${i} at ${heights[i]} is outside the obscuration`,
-    );
+  assert.equal(run.from, 0);
+  assert.equal(run.to, profile.points.length - 1);
+  for (const height of heights) {
+    assert.ok(Math.abs(height) <= 5, `sample at ${height} is outside the obscuration`);
   }
-  assert.ok(Math.abs(Math.min(...heights) + 20) < 1e-9);
-  assert.ok(Math.abs(Math.max(...heights) - 20) < 1e-9);
 
   // A clear aperture leaves a hole instead, and never an obscured run.
   const holed = system.withSurfaceAt(
@@ -717,4 +714,64 @@ test('an aperture with no outer limit does not decide how large to draw the surf
       .with({ semiDiameter: Infinity, aperture: { kind: 'CIRCULAR', maxRadius: 55 } }),
   );
   assert.ok(Math.abs(buildLayout(unstated, [], DEFAULT_SEMI_DIAMETER).bounds.maxV - 55) < 1e-9);
+});
+
+test('a surface that only obscures has no outline, and does not stretch the picture', () => {
+  // The 2-D half of the same rule the 3-D view follows: the Newtonian's diagonal
+  // sits on a dummy plane whose computed semi-diameter is larger than any of the
+  // optics, so drawing its rim both invents a pane and sets the scale for
+  // everything else.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'shadow',
+        type: 'STANDARD',
+        thickness: 30,
+        semiDiameter: 78,
+        aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 42.5 },
+      }),
+      new Surface({
+        id: 'mirror',
+        type: 'STANDARD',
+        radius: -200,
+        thickness: -60,
+        semiDiameter: 50,
+        reflective: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 5 }),
+    ],
+  });
+
+  const geometry = buildLayout(system, [], DEFAULT_SEMI_DIAMETER);
+  const dummy = geometry.profiles.find((one) => one.surfaceIndex === 1);
+  assert.equal(dummy?.obscuringOnly, true);
+  assert.ok(dummy?.obscured?.length, 'what it does is still drawn');
+  // And the 78 rim no longer sets the scale: the drawing reaches the 50 mirror
+  // and the 42.5 shadow, not a plane nobody can see.
+  assert.ok(geometry.bounds.maxV <= 50.001, `drawing reaches ${geometry.bounds.maxV}`);
+
+  // A surface that is a face of some glass keeps its outline, obscuration or
+  // not: there really is a rim there.
+  const lens = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'front',
+        type: 'STANDARD',
+        radius: 100,
+        thickness: 6,
+        semiDiameter: 20,
+        aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 4 },
+        material: N_BK7,
+      }),
+      new Surface({ id: 'back', type: 'STANDARD', radius: -100, thickness: 90, semiDiameter: 20 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 5 }),
+    ],
+  });
+  const face = buildLayout(lens, [], DEFAULT_SEMI_DIAMETER).profiles.find(
+    (one) => one.surfaceIndex === 1,
+  );
+  assert.notEqual(face?.obscuringOnly, true, 'a face of glass has a rim of its own');
+  assert.ok(face?.obscured?.length, 'and the spot on it is still drawn');
 });

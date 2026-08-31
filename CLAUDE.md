@@ -232,6 +232,13 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
   *type* keeps the radii, so trying an obscuration against an aperture is one click each way; changing
   to floating drops them, because the model refuses a radius on one.
 
+  **A surface whose only job is to obscure has no outline**, in either view: a plane in the air, not a
+  mirror and not a face of any glass, carrying an aperture that stops light rather than bounding the
+  surface. Its semi-diameter is a number the program computed, so drawing its rim invents a pane —
+  and on the Newtonian, whose dummy diagonal plane is drawn at 78 where the optics reach 50, that
+  invented rim also set the scale for everything else. The outline is not merely hidden but *not
+  sampled*, since the points are what the drawing's bounds are measured from.
+
   **An obscuration is drawn as the thing it is.** It does not bound the surface — the surface keeps its
   own extent — so it is stroked *over* the outline, heavier and in ink of its own (`--obscuration`),
   across the runs it covers. **Runs, plural, and asked rather than derived**: an obscuration need not

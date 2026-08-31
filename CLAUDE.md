@@ -240,8 +240,13 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
   sampled*, since the points are what the drawing's bounds are measured from.
 
   **An obscuration is drawn as the thing it is.** It does not bound the surface — the surface keeps its
-  own extent — so it is stroked *over* the outline, heavier and in ink of its own (`--obscuration`),
-  across the runs it covers. **Runs, plural, and asked rather than derived**: an obscuration need not
+  own extent — so it is stroked *over* the outline, at three times a ray's width and in `#000000`,
+  across the runs it covers. **`--obscuration` is the one token here that does not change with the
+  theme**: black is what "light does not get through" looks like, on the dark panel and the light one
+  alike, and it is the same black the 3-D mesh and the table's icon use. Square ends, because a round
+  cap adds half a width beyond each end — on a short run that is most of the mark, and a baffle read
+  as a fat lozenge zoomed out and straightened into a bar zoomed in, while its width never changed at
+  all. **Runs, plural, and asked rather than derived**: an obscuration need not
   cross a section in one piece — a decentered spider does not — and rather than re-derive each kind's
   geometry a second time, `SurfaceProfile.obscured` is the list found by asking `Surface.blocksAt` at
   every sample, the same function the tracer calls. That is what makes the promise hold in the hard direction as

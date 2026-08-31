@@ -50,6 +50,11 @@ const WHEEL_SENSITIVITY = 0.0015;
 const TRIAD_INSET = 46;
 /** Half-length of the crosshairs standing in for an axis seen end-on. */
 const AXIS_CROSS = 14;
+/**
+ * How heavy an obscuration is drawn, as a multiple of a ray's own 1px: it is a
+ * solid thing seen edge-on, and has to read as more than one more ray.
+ */
+const OBSCURATION_WIDTH = 3;
 /** How far a stop bar reaches past the rim, in screen pixels at any zoom. */
 const STOP_BAR = 10;
 
@@ -315,8 +320,16 @@ export function LayoutView({
                 d={toPath(profile.points.slice(run.from, run.to + 1), project)}
                 fill="none"
                 stroke="var(--obscuration)"
-                strokeWidth={4}
-                strokeLinecap="round"
+                // Three times a ray's width, and — like every stroke in this
+                // drawing — a screen width rather than a drawing one, so it
+                // holds its weight at any zoom.
+                strokeWidth={OBSCURATION_WIDTH}
+                // Square ends. A round cap adds half a width beyond each end,
+                // which on a short run is most of the mark: zoomed out, a
+                // baffle read as a fat lozenge and only straightened into a bar
+                // as you zoomed in. The width was constant the whole time; the
+                // caps were what changed shape.
+                strokeLinecap="butt"
               >
                 <title>{`Surface ${profile.surfaceIndex}: obscuration`}</title>
               </path>

@@ -65,9 +65,18 @@
    * teal for prescription, indigo for system data — chosen to stay apart from
    * each other and from the amber highlight at the same time.
    */
-  /* A thing standing in the beam: opaque, and the darkest ink in the drawing.
-     It is not glass and not a fault, so it borrows neither of their colors. */
-  --obscuration: #26241f;
+  /*
+   * A thing standing in the beam: opaque, and the one mark in the drawing that
+   * is *black* rather than dark.
+   *
+   * **It does not change with the theme**, which nearly everything else here
+   * does. An obscuration is the one thing light does not get through, and black
+   * is what that looks like — against the dark panel it reads as a hole cut in
+   * the picture, and against the light one as ink. The 3-D view paints the same
+   * `#000000` for the same reason, and the lens table's icon does too, on its
+   * own white ground.
+   */
+  --obscuration: #000000;
   --syntax-structure: #6d28d9;
   --syntax-prescription: #0f766e;
   --syntax-system: #1d4ed8;
@@ -109,7 +118,6 @@
 
     --accent: #3987e5;
     --danger: #f08a84;
-    --obscuration: #cfcabe;
     --syntax-structure: #b998f5;
     --syntax-prescription: #4fd1b8;
     --syntax-system: #7ea8ff;
@@ -166,7 +174,6 @@
 
   --accent: #3987e5;
   --danger: #f08a84;
-  --obscuration: #cfcabe;
   --syntax-structure: #b998f5;
   --syntax-prescription: #4fd1b8;
   --syntax-system: #7ea8ff;

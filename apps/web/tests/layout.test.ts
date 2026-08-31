@@ -9,6 +9,7 @@ import {
   type Material,
 } from '@isaac/optical-core';
 import { buildLayout, sag } from '../src/lib/layout.ts';
+import { VIEW_PLANES } from '../src/lib/view-plane.ts';
 
 const WAVELENGTH_NM = 587.5618;
 const DEFAULT_SEMI_DIAMETER = 10;
@@ -572,3 +573,65 @@ test('an obscuration smaller than its surface is drawn, not left invisible', () 
   assert.ok(other?.hole);
   assert.equal(other.obscured, undefined);
 });
+
+test('a section through a decentered piece is cut through the piece, not the parent axis', () => {
+  // Reported from the X–Z view of Zemax's Unobscured Gregorian: the rays visibly
+  // missed the primary. The section was being cut at zero on the *other*
+  // transverse axis — through the parent parabola's own axis — while the mirror
+  // is a 55 mm circle taken 100 mm off it. The drawing was a slice of a surface
+  // the light never touches, near the parent's vertex, while the rays met the
+  // real piece far down the paraboloid.
+  const parent = { radius: -304.2598, conic: -1.0087 };
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'ct',
+        type: 'COORDINATE_TRANSFORM',
+        thickness: 0,
+        coordinateTransform: {
+          decenterX: 0,
+          decenterY: 100,
+          tiltXDeg: 0,
+          tiltYDeg: 0,
+          tiltZDeg: 0,
+          tiltFirst: false,
+        },
+      }),
+      new Surface({
+        id: 'oap',
+        type: 'STANDARD',
+        radius: parent.radius,
+        conic: parent.conic,
+        thickness: -178.59,
+        aperture: { kind: 'CIRCULAR', maxRadius: 55, decenterY: -100 },
+        reflective: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+
+  const sagittal = buildLayout(system, [], DEFAULT_SEMI_DIAMETER, VIEW_PLANES.XZ).profiles.find(
+    (one) => one.surfaceIndex === 2,
+  );
+  assert.ok(sagittal);
+
+  // The middle of the drawn section is the middle of the piece, which is 100 off
+  // the parent's axis — so its depth is the parent's sag at 100, not at 0.
+  const middle = sagittal.points[Math.floor(sagittal.points.length / 2)]!;
+  const sagAt100 = sagFromConic(parent.radius, parent.conic, 100);
+  assert.ok(
+    Math.abs(middle.h - sagAt100) < 0.5,
+    `section middle sits at ${middle.h}, expected the parent's sag at 100 (${sagAt100})`,
+  );
+  // And the ends are at the piece's rim in x, 55 either side of its center.
+  const across = sagittal.points.map((point) => point.v);
+  assert.ok(Math.abs(Math.min(...across) + 55) < 1e-6);
+  assert.ok(Math.abs(Math.max(...across) - 55) < 1e-6);
+});
+
+/** The conic sag, written out so the test does not ask the code under test. */
+function sagFromConic(radius: number, conic: number, r: number): number {
+  const c = 1 / radius;
+  return (c * r * r) / (1 + Math.sqrt(1 - (1 + conic) * c * c * r * r));
+}

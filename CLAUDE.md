@@ -1053,6 +1053,14 @@ one line: "The decentered aperture on this surface aligns the mirror with the in
 
 Two consequences, and both are why the file sets that surface's semi-diameter to **zero**:
 
+- **A section is cut through the piece, not through the parent's axis.** `outlineInLocalFrame` samples
+  along the view's upright axis at the aperture's center on the *other* transverse axis, and takes the
+  sag from the sampled point's radial distance rather than from its height in the view. Cutting at
+  zero instead drew a slice of the parent surface: in the X–Z view of the Gregorian the mirror
+  appeared as a shallow curve near the parent's vertex while the rays met the real piece far down the
+  paraboloid, and the light visibly missed the mirror. (A 2-D layout is a **cross-section**, not a
+  projection — the projection of any curved patch is a 2-D region, which is not what a lens drawing
+  has ever meant.)
 - **The aperture is the drawn extent when there is one.** `drawnDisc` in `lib/layout.ts` takes the
   radius *and the center* from the aperture, falling back to the semi-diameter and then to the view's
   default. Drawing the semi-diameter instead would draw the parent disc — a mirror nobody has,

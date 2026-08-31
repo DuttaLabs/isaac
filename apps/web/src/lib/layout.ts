@@ -197,13 +197,22 @@ function outlineInLocalFrame(
   const center = upright === 'y' ? (hole?.centerY ?? 0) : (hole?.centerX ?? 0);
   const at = (sample: number): number =>
     middle - reach + (2 * reach * sample) / (PROFILE_SAMPLES - 1);
+  // **The section is cut through the middle of the piece that exists**, which for
+  // a decentered aperture is not through the surface's axis. Cutting at zero on
+  // the other transverse axis draws a slice of the *parent* surface: on Zemax's
+  // Unobscured Gregorian, whose mirror is a 55 mm circle taken 100 mm off the
+  // parent's axis, the X–Z view drew a shallow curve near the parent's vertex
+  // while the rays met the piece far down the paraboloid — a mirror the light
+  // visibly missed.
+  const across = upright === 'y' ? disc.centerX : disc.centerY;
   const points = Array.from({ length: PROFILE_SAMPLES }, (_, sample) => {
     const height = at(sample);
     // Sag is measured from the *surface's* axis, never from the aperture's
     // center: an off-axis parabola is a piece of the parent, and it curves the
-    // way the parent does at that distance out.
-    const depth = sag(shape, height);
-    return upright === 'y' ? new Point3(0, height, depth) : new Point3(height, 0, depth);
+    // way the parent does at that distance out. Which is why this is the radial
+    // distance of the sampled point, not just its height in the view.
+    const depth = sag(shape, Math.hypot(height, across));
+    return upright === 'y' ? new Point3(across, height, depth) : new Point3(height, across, depth);
   });
   // The samples inside a hole are the ones the material is missing at, and the
   // ones inside an obscuration are where something is standing in the way. Both

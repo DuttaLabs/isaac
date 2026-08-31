@@ -1,6 +1,6 @@
 import type { OpticalSystem } from '../model/optical-system.ts';
 import type { Surface } from '../model/surface.ts';
-import { apertureOuterRadius } from '../model/aperture.ts';
+import { apertureClearRadius } from '../model/aperture.ts';
 
 /** Slopes below this are treated as parallel to the axis (afocal / telecentric). */
 const PARAXIAL_EPSILON = 1e-14;
@@ -429,10 +429,10 @@ function requireStop(system: OpticalSystem): number {
  */
 export function stopRadius(system: OpticalSystem, stopIndex: number): number {
   const surface = system.surfaceAt(stopIndex);
-  const limit = apertureOuterRadius(surface.aperture, surface.semiDiameter);
-  // `apertureOuterRadius` answers "how far out does the aperture let light
-  // through", so a surface with no aperture answers Infinity — true, and not
-  // what a stop's size is. The drawn extent is the fallback there.
+  const limit = apertureClearRadius(surface.aperture, surface.semiDiameter);
+  // `apertureClearRadius` answers "what is the largest circle this aperture
+  // passes", so a surface with no aperture answers Infinity — true, and not what
+  // a stop's size is. The drawn extent is the fallback there.
   return Number.isFinite(limit) ? limit : surface.semiDiameter;
 }
 

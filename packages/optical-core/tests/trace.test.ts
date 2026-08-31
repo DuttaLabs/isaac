@@ -6,7 +6,9 @@ import {
   OpticalSystem,
   Point3,
   Ray,
+  normalizeAperture,
   Surface,
+  type SurfaceApertureConfig,
   Vector3,
   traceRay,
 } from '../src/index.ts';
@@ -60,6 +62,11 @@ function planoConvexSinglet(semiDiameter = 25): OpticalSystem {
       new Surface({ id: 'img', type: 'IMAGE', thickness: 0, material: AIR }),
     ],
   });
+}
+
+/** A collimated ray entering at (x, y) — the off-axis corner an aperture shape turns on. */
+function collimatedRayAt(x: number, y: number): Ray {
+  return new Ray(new Point3(x, y, -10), new Vector3(0, 0, 1), { wavelengthNm: 587.5618 });
 }
 
 /** Where the outgoing segment from a given intersection crosses the optical axis. */
@@ -201,4 +208,49 @@ test('OpticalSystem validates its surface list and axial geometry', () => {
       }),
     /at least/,
   );
+});
+
+test('a rectangular aperture passes a rectangle and an ellipse an ellipse', () => {
+  const singlet = planoConvexSinglet(25);
+  const withAperture = (aperture: SurfaceApertureConfig): OpticalSystem =>
+    singlet.withSurfaceAt(1, singlet.surfaceAt(1).with({ aperture }));
+
+  // 6 across, 12 up: a slit. The corner is what tells the two shapes apart —
+  // (5, 10) is inside the rectangle and outside the ellipse that fits in the
+  // same box, which is the whole of the difference between SQAP and ELAP.
+  const slit = withAperture({ kind: 'RECTANGULAR', halfWidthX: 6, halfWidthY: 12 });
+  assert.equal(traceRay(slit, collimatedRay(11)).status, 'TERMINATED');
+  assert.equal(traceRay(slit, collimatedRay(13)).status, 'BLOCKED');
+  assert.equal(traceRay(slit, collimatedRayAt(5, 10)).status, 'TERMINATED');
+
+  const oval = withAperture({ kind: 'ELLIPTICAL', halfWidthX: 6, halfWidthY: 12 });
+  assert.equal(traceRay(oval, collimatedRay(11)).status, 'TERMINATED');
+  assert.equal(traceRay(oval, collimatedRayAt(5, 10)).status, 'BLOCKED');
+
+  // And the obscurations are each the same boundary, read the other way round.
+  const bar = withAperture({ kind: 'RECTANGULAR_OBSCURATION', halfWidthX: 6, halfWidthY: 12 });
+  assert.equal(traceRay(bar, collimatedRay(11)).status, 'BLOCKED');
+  assert.equal(traceRay(bar, collimatedRay(13)).status, 'TERMINATED');
+
+  const blob = withAperture({ kind: 'ELLIPTICAL_OBSCURATION', halfWidthX: 6, halfWidthY: 12 });
+  assert.equal(traceRay(blob, collimatedRayAt(5, 10)).status, 'TERMINATED');
+  assert.equal(traceRay(blob, collimatedRay(11)).status, 'BLOCKED');
+});
+
+test('a radius and a half-width are different quantities, and cannot be mixed', () => {
+  // The same rule that stops a PARAXIAL surface carrying a radius: two
+  // contradictory statements of one size, silently keeping whichever the code
+  // happens to read, is how a file comes back as a different lens.
+  assert.throws(
+    () => normalizeAperture({ kind: 'RECTANGULAR', halfWidthX: 5, halfWidthY: 5, maxRadius: 9 }),
+    /bounded by half-widths, not by radii/,
+  );
+  assert.throws(
+    () => normalizeAperture({ kind: 'CIRCULAR', maxRadius: 9, halfWidthX: 5 }),
+    /bounded by radii, not by half-widths/,
+  );
+  // But a normalized aperture is handed back to the same function every time a
+  // Surface is copied, and it carries zeros for the family it is not in.
+  const rectangle = normalizeAperture({ kind: 'ELLIPTICAL', halfWidthX: 3, halfWidthY: 4 })!;
+  assert.deepEqual(normalizeAperture(rectangle), rectangle);
 });

@@ -1,5 +1,6 @@
 import {
   Point3,
+  apertureHalfExtents,
   signedMediaIndices,
   surfaceProfileSag,
   type OpticalSystem,
@@ -157,21 +158,27 @@ function outlineInLocalFrame(
     // End-on, a hole is a second rim rather than a gap in the first: the inner
     // circle is appended to the outer one, and the index it starts at is what
     // tells the view where to break the path.
-    const outer = rimSamples(shape, disc.radius, disc.centerX, disc.centerY);
+    const outer = rimSamples(shape, disc);
     if (hole === undefined) {
       return { points: outer };
     }
-    const inner = rimSamples(shape, hole.radius, hole.centerX, hole.centerY);
+    const inner = rimSamples(shape, {
+      radiusX: hole.radius,
+      radiusY: hole.radius,
+      centerX: hole.centerX,
+      centerY: hole.centerY,
+    });
     return { points: [...outer, ...inner], hole: { from: outer.length, to: outer.length } };
   }
 
   const upright = view.vertical;
-  // The section runs across the disc that exists, which is not always centered
-  // on the surface's own axis.
+  // The section runs across the piece that exists, which is not always centered
+  // on the surface's own axis and not always as wide one way as the other.
   const middle = upright === 'y' ? disc.centerY : disc.centerX;
+  const reach = upright === 'y' ? disc.radiusY : disc.radiusX;
   const center = upright === 'y' ? (hole?.centerY ?? 0) : (hole?.centerX ?? 0);
   const at = (sample: number): number =>
-    middle - disc.radius + (2 * disc.radius * sample) / (PROFILE_SAMPLES - 1);
+    middle - reach + (2 * reach * sample) / (PROFILE_SAMPLES - 1);
   const points = Array.from({ length: PROFILE_SAMPLES }, (_, sample) => {
     const height = at(sample);
     // Sag is measured from the *surface's* axis, never from the aperture's
@@ -202,15 +209,30 @@ function outlineInLocalFrame(
   return from === -1 ? { points } : { points, hole: { from, to } };
 }
 
-/** A disc in a surface's own frame: how big, and how far off its axis. */
+/**
+ * The piece of a surface that exists, in the surface's own frame: how far it
+ * reaches along each axis, and how far off the axis it sits.
+ *
+ * Two radii rather than one because an aperture need not be round — a
+ * rectangular or elliptical one reaches a different distance along x than along
+ * y, and a Newtonian's diagonal is an ellipse whose major axis is √2 times its
+ * minor for exactly that reason.
+ */
 interface Disc {
+  radiusX: number;
+  radiusY: number;
+  centerX: number;
+  centerY: number;
+  /** Drawn with corners rather than as an ellipse. Only matters end-on. */
+  rectangular?: boolean;
+}
+
+/** A hole in a surface: round, since only a circular aperture has an inner radius. */
+interface Hole {
   radius: number;
   centerX: number;
   centerY: number;
 }
-
-/** A hole in a surface: the same thing, subtracted rather than added. */
-type Hole = Disc;
 
 /**
  * The piece of surface that actually exists, as a disc in the surface's frame.
@@ -230,11 +252,22 @@ type Hole = Disc;
 function drawnDisc(surface: Surface, fallback: number): Disc {
   const extent = Number.isFinite(surface.semiDiameter) ? surface.semiDiameter : fallback;
   const aperture = surface.aperture;
-  if (aperture === undefined || aperture.kind === 'CIRCULAR_OBSCURATION') {
-    return { radius: extent, centerX: 0, centerY: 0 };
+  // `apertureHalfExtents` answers `undefined` for anything that does not bound
+  // the surface — an obscuration, or no aperture — which is where the drawn
+  // extent takes over.
+  const half = apertureHalfExtents(aperture, extent);
+  if (aperture === undefined || half === undefined) {
+    return { radiusX: extent, radiusY: extent, centerX: 0, centerY: 0 };
   }
-  const radius = aperture.kind === 'FLOATING' ? extent : aperture.maxRadius;
-  return { radius, centerX: aperture.decenterX, centerY: aperture.decenterY };
+  return {
+    radiusX: Number.isFinite(half.x) ? half.x : extent,
+    radiusY: Number.isFinite(half.y) ? half.y : extent,
+    centerX: aperture.decenterX,
+    centerY: aperture.decenterY,
+    // A rectangle drawn end-on is a rectangle. Every other kind here is round,
+    // and the section through any of them is the same either way.
+    rectangular: aperture.kind === 'RECTANGULAR' || aperture.kind === 'RECTANGULAR_OBSCURATION',
+  };
 }
 
 /**
@@ -252,21 +285,48 @@ function holeIn(surface: Surface): Hole | undefined {
     : undefined;
 }
 
-function rimSamples(
-  shape: SurfaceShape,
-  radius: number,
-  centerX: number,
-  centerY: number,
-): Point3[] {
-  const rimSag = sag(shape, radius);
+/**
+ * The rim of a piece of surface, seen end-on.
+ *
+ * The sag is taken **per sample**, from each point's own distance to the
+ * surface's axis, rather than once for the whole rim. On a circle centered on
+ * the axis those are the same number, which is what the earlier version relied
+ * on; on a decentered, rectangular or elliptical rim they are not, and a single
+ * sag would draw a flat outline where the real rim rises and falls around the
+ * curve it is cut from.
+ */
+function rimSamples(shape: SurfaceShape, disc: Disc): Point3[] {
   return Array.from({ length: RIM_SAMPLES + 1 }, (_, sample) => {
-    const angle = (2 * Math.PI * sample) / RIM_SAMPLES;
-    return new Point3(
-      centerX + radius * Math.cos(angle),
-      centerY + radius * Math.sin(angle),
-      rimSag,
-    );
+    const fraction = sample / RIM_SAMPLES;
+    const { x, y } =
+      disc.rectangular === true
+        ? rectanglePoint(disc, fraction)
+        : {
+            x: disc.centerX + disc.radiusX * Math.cos(2 * Math.PI * fraction),
+            y: disc.centerY + disc.radiusY * Math.sin(2 * Math.PI * fraction),
+          };
+    return new Point3(x, y, sag(shape, Math.hypot(x, y)));
   });
+}
+
+/** A point `fraction` of the way round a rectangle, corners included. */
+function rectanglePoint(disc: Disc, fraction: number): { x: number; y: number } {
+  const side = Math.min(Math.floor(fraction * 4), 3);
+  const along = fraction * 4 - side;
+  const x = disc.radiusX;
+  const y = disc.radiusY;
+  const corners = [
+    [x, -y],
+    [x, y],
+    [-x, y],
+    [-x, -y],
+  ];
+  const from = corners[side]!;
+  const to = corners[(side + 1) % 4]!;
+  return {
+    x: disc.centerX + from[0]! + (to[0]! - from[0]!) * along,
+    y: disc.centerY + from[1]! + (to[1]! - from[1]!) * along,
+  };
 }
 
 /**
@@ -311,7 +371,7 @@ export function buildLayout(
     const disc = drawnDisc(surface, defaultSemiDiameter);
     // The bound is how far the drawing reaches, which for a decentered piece is
     // its far edge rather than its radius.
-    heights.push(Math.abs(disc.centerY) + disc.radius, Math.abs(disc.centerX) + disc.radius);
+    heights.push(Math.abs(disc.centerY) + disc.radiusY, Math.abs(disc.centerX) + disc.radiusX);
 
     // The outline is built in the surface's own frame and then carried into
     // global coordinates, so a tilted element is drawn tilted. For a centered

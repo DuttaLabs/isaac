@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react';
-import type { ApertureKind, SurfaceAperture } from '@isaac/optical-core';
+import {
+  isCircularAperture,
+  isObscuration,
+  normalizeAperture,
+  type ApertureKind,
+  type SurfaceAperture,
+} from '@isaac/optical-core';
 import { useTweaks } from '../dev/tweaks.ts';
 import { NumericCell } from './NumericCell.tsx';
 
@@ -52,6 +58,10 @@ const OBSCURATION = SIDE / 4;
 export const APERTURE_KIND_LABELS: Record<ApertureKind, string> = {
   CIRCULAR: 'Circular aperture',
   CIRCULAR_OBSCURATION: 'Circular obscuration',
+  RECTANGULAR: 'Rectangular aperture',
+  RECTANGULAR_OBSCURATION: 'Rectangular obscuration',
+  ELLIPTICAL: 'Elliptical aperture',
+  ELLIPTICAL_OBSCURATION: 'Elliptical obscuration',
   FLOATING: 'Floating (semi-diameter)',
 };
 
@@ -59,21 +69,13 @@ export const APERTURE_KIND_LABELS: Record<ApertureKind, string> = {
 export const APERTURE_KIND_HINTS: Record<ApertureKind, string> = {
   CIRCULAR: 'Light passes between the two radii and is stopped outside them (Zemax CLAP).',
   CIRCULAR_OBSCURATION: 'Light is stopped between the two radii and passes elsewhere (Zemax OBSC).',
+  RECTANGULAR: 'Light passes inside the rectangle and is stopped outside it (Zemax SQAP).',
+  RECTANGULAR_OBSCURATION:
+    'Light is stopped inside the rectangle and passes outside it (Zemax SQOB).',
+  ELLIPTICAL: 'Light passes inside the ellipse and is stopped outside it (Zemax ELAP).',
+  ELLIPTICAL_OBSCURATION: 'Light is stopped inside the ellipse and passes outside it (Zemax ELOB).',
   FLOATING: 'A circular aperture that follows the semi-diameter (Zemax FLAP).',
 };
-
-/**
- * Where to draw a decentered obscuration. Its own disc is a fixed size, so the
- * offset is measured against the obscuration's *radius* — a baffle decentered by
- * its own radius sits with its edge on the axis, which is what the icon shows.
- */
-function obscurationOffset(decenter: number, radius: number): number {
-  if (decenter === 0 || !Number.isFinite(radius) || radius <= 0) {
-    return 0;
-  }
-  const shift = (OBSCURATION * decenter) / radius;
-  return Math.max(-CENTER, Math.min(CENTER, shift));
-}
 
 export function apertureSummary(aperture: SurfaceAperture | undefined): string {
   if (aperture === undefined) {
@@ -85,6 +87,10 @@ export function apertureSummary(aperture: SurfaceAperture | undefined): string {
       : '';
   if (aperture.kind === 'FLOATING') {
     return `${APERTURE_KIND_LABELS.FLOATING}${where}`;
+  }
+  if (!isCircularAperture(aperture.kind)) {
+    const size = `${aperture.halfWidthX} × ${aperture.halfWidthY} half-widths`;
+    return `${APERTURE_KIND_LABELS[aperture.kind]}, ${size}${where}`;
   }
   const ring =
     aperture.minRadius > 0
@@ -135,27 +141,28 @@ export function ApertureIcon({
     );
   }
 
-  const hole =
-    aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
-      ? DISC * Math.min(aperture.minRadius / aperture.maxRadius, 0.8)
-      : 0;
+  const glyph = glyphFor(aperture);
   /**
-   * A decentered aperture is drawn decentered, in the same proportion its radius
-   * is: the icon's disc stands for `maxRadius`, so a decenter of half that moves
-   * it half a disc across. The whole aperture moves, not only its hole — an
-   * off-axis parabola is a circle cut well to one side of the parent's axis, and
-   * an icon that drew it centered would say the opposite of the truth.
+   * A decentered aperture is drawn decentered, in the proportion the glyph
+   * already stands in: the glyph's half-size is the aperture's half-size, so a
+   * decenter of half that moves it half a glyph across. The whole aperture
+   * moves, not only its hole — an off-axis parabola is a circle cut well to one
+   * side of the parent's axis, and an icon that drew it centered would say the
+   * opposite of the truth.
    *
    * Clamped to the square, because those decenters are routinely larger than the
    * aperture itself (Zemax's off-axis Gregorian is 55 mm cut 100 mm off axis)
-   * and a disc drawn faithfully at that distance would be off the icon
+   * and a glyph drawn faithfully at that distance would be off the icon
    * altogether. Clamped, it sits against the edge it went out of, which is the
    * thing worth seeing; the tooltip carries the numbers.
    */
-  const offset = (decenter: number): number =>
-    !Number.isFinite(aperture.maxRadius) || aperture.maxRadius <= 0
+  const shift = (decenter: number, glyphHalf: number, systemHalf: number): number =>
+    decenter === 0 || !Number.isFinite(systemHalf) || systemHalf <= 0
       ? 0
-      : Math.max(-DISC, Math.min(DISC, (DISC * decenter) / aperture.maxRadius));
+      : Math.max(-CENTER, Math.min(CENTER, (glyphHalf * decenter) / systemHalf));
+  const cx = CENTER + shift(aperture.decenterX, glyph.rx, glyph.refX);
+  const cy = CENTER - shift(aperture.decenterY, glyph.ry, glyph.refY);
+  const stopping = isObscuration(aperture.kind);
 
   return (
     <svg
@@ -165,39 +172,87 @@ export function ApertureIcon({
       aria-hidden="true"
     >
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
-      {aperture.kind === 'CIRCULAR_OBSCURATION' ? (
-        <circle
-          cx={CENTER + obscurationOffset(aperture.decenterX, aperture.maxRadius)}
-          cy={CENTER - obscurationOffset(aperture.decenterY, aperture.maxRadius)}
-          r={OBSCURATION}
-          className="aperture-obscuration"
+      {glyph.rectangular ? (
+        <rect
+          x={cx - glyph.rx}
+          y={cy - glyph.ry}
+          width={2 * glyph.rx}
+          height={2 * glyph.ry}
+          fill={stopping ? undefined : color}
+          className={stopping ? 'aperture-obscuration' : 'aperture-disc'}
         />
       ) : (
-        <>
-          <circle
-            cx={CENTER + offset(aperture.decenterX)}
-            cy={CENTER - offset(aperture.decenterY)}
-            r={DISC}
-            fill={color}
-            className="aperture-disc"
-            // A floating aperture has no radius of its own — it is wherever the
-            // semi-diameter is — so its rim is drawn as one that can move.
-            strokeDasharray={aperture.kind === 'FLOATING' ? '2 2' : undefined}
-          />
-          {hole > 0 ? (
-            <circle
-              // Screen y grows downward, so a hole decentered toward +y is drawn
-              // toward the top of the square — the same way the layout draws it.
-              cx={CENTER + offset(aperture.decenterX)}
-              cy={CENTER - offset(aperture.decenterY)}
-              r={hole}
-              className="aperture-hole"
-            />
-          ) : null}
-        </>
+        <ellipse
+          cx={cx}
+          cy={cy}
+          rx={glyph.rx}
+          ry={glyph.ry}
+          fill={stopping ? undefined : color}
+          className={stopping ? 'aperture-obscuration' : 'aperture-disc'}
+          // A floating aperture has no size of its own — it is wherever the
+          // semi-diameter is — so its rim is drawn as one that can move.
+          strokeDasharray={aperture.kind === 'FLOATING' ? '2 2' : undefined}
+        />
       )}
+      {glyph.hole > 0 ? <circle cx={cx} cy={cy} r={glyph.hole} className="aperture-hole" /> : null}
     </svg>
   );
+}
+
+/**
+ * The glyph for one aperture: half-sizes in the icon's own units, the aperture
+ * half-sizes they stand for, and whether it has corners.
+ *
+ * **Aspect ratio is kept**, so a 25 by 40 rectangle is drawn taller than it is
+ * wide and a square one square — the same reasoning as the hole, whose size is
+ * `minRadius / maxRadius` of the disc. What is *not* kept is absolute scale:
+ * the larger half-width fills the glyph, because the icon has nothing to be a
+ * proportion of but itself.
+ *
+ * An obscuration is drawn smaller than an aperture, on a fixed size rather than
+ * a proportional one: it is a thing in the way rather than the edge of the
+ * surface, so there is no outer bound in the icon for it to be measured
+ * against.
+ */
+function glyphFor(aperture: SurfaceAperture): {
+  rx: number;
+  ry: number;
+  refX: number;
+  refY: number;
+  rectangular: boolean;
+  hole: number;
+} {
+  const stopping = isObscuration(aperture.kind);
+  const full = stopping ? OBSCURATION : DISC;
+  const rectangular =
+    aperture.kind === 'RECTANGULAR' || aperture.kind === 'RECTANGULAR_OBSCURATION';
+
+  if (isCircularAperture(aperture.kind)) {
+    const hole =
+      aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
+        ? full * Math.min(aperture.minRadius / aperture.maxRadius, 0.8)
+        : 0;
+    return {
+      rx: full,
+      ry: full,
+      refX: aperture.maxRadius,
+      refY: aperture.maxRadius,
+      rectangular: false,
+      hole,
+    };
+  }
+
+  const largest = Math.max(aperture.halfWidthX, aperture.halfWidthY);
+  return {
+    rx: (full * aperture.halfWidthX) / largest,
+    ry: (full * aperture.halfWidthY) / largest,
+    refX: aperture.halfWidthX,
+    refY: aperture.halfWidthY,
+    rectangular,
+    // Only a circular aperture has an inner radius; the file format gives the
+    // rectangular and elliptical forms no equivalent.
+    hole: 0,
+  };
 }
 
 /**
@@ -236,38 +291,63 @@ export function SurfaceApertureDialog({
 
   const kind = aperture?.kind;
   /**
-   * Changing the type keeps the radii, so trying an obscuration against an
-   * aperture is one click each way rather than a retyping exercise. A floating
-   * one drops them, because it has none — the model refuses a radius on it.
+   * Changing the type keeps the size where the two types measure size the same
+   * way, so trying an obscuration against an aperture — or an ellipse against a
+   * rectangle — is one click each way rather than a retyping exercise. Crossing
+   * between the families cannot carry the numbers across, because a radius and
+   * a half-width are different quantities; the new one starts from the surface's
+   * own size instead. A floating aperture drops both, having neither.
    */
   const setKind = (next: ApertureKind | 'NONE'): void => {
     if (next === 'NONE') {
       onCommit(undefined);
       return;
     }
+    const decenterX = aperture?.decenterX ?? 0;
+    const decenterY = aperture?.decenterY ?? 0;
     if (next === 'FLOATING') {
-      onCommit({
-        kind: 'FLOATING',
-        minRadius: 0,
-        maxRadius: Infinity,
-        decenterX: aperture?.decenterX ?? 0,
-        decenterY: aperture?.decenterY ?? 0,
-      });
+      onCommit(normalizeAperture({ kind: 'FLOATING', decenterX, decenterY })!);
       return;
     }
-    const maxRadius =
-      aperture !== undefined && Number.isFinite(aperture.maxRadius) && aperture.maxRadius > 0
-        ? aperture.maxRadius
-        : Number.isFinite(semiDiameter)
-          ? semiDiameter
-          : 1;
-    onCommit({
-      kind: next,
-      minRadius: Math.min(aperture?.minRadius ?? 0, maxRadius / 2),
-      maxRadius,
-      decenterX: aperture?.decenterX ?? 0,
-      decenterY: aperture?.decenterY ?? 0,
-    });
+    // Something to start from when there is nothing to carry over: the surface's
+    // own drawn size, or a unit if even that is unset.
+    const fallback = Number.isFinite(semiDiameter) && semiDiameter > 0 ? semiDiameter : 1;
+
+    if (isCircularAperture(next)) {
+      const carried =
+        aperture !== undefined && isCircularAperture(aperture.kind) && aperture.maxRadius > 0
+          ? aperture.maxRadius
+          : undefined;
+      const maxRadius = carried ?? fallback;
+      onCommit(
+        normalizeAperture({
+          kind: next,
+          minRadius: Math.min(aperture?.minRadius ?? 0, maxRadius / 2),
+          maxRadius,
+          decenterX,
+          decenterY,
+        })!,
+      );
+      return;
+    }
+
+    const carriedX =
+      aperture !== undefined && !isCircularAperture(aperture.kind)
+        ? aperture.halfWidthX
+        : undefined;
+    const carriedY =
+      aperture !== undefined && !isCircularAperture(aperture.kind)
+        ? aperture.halfWidthY
+        : undefined;
+    onCommit(
+      normalizeAperture({
+        kind: next,
+        halfWidthX: carriedX ?? fallback,
+        halfWidthY: carriedY ?? fallback,
+        decenterX,
+        decenterY,
+      })!,
+    );
   };
 
   const change = (part: Partial<SurfaceAperture>): void => {
@@ -279,6 +359,8 @@ export function SurfaceApertureDialog({
 
   const floating = kind === 'FLOATING';
   const none = aperture === undefined;
+  /** Bounded by half-widths rather than radii: a rectangle or an ellipse. */
+  const sized = aperture !== undefined && !isCircularAperture(aperture.kind);
 
   return (
     <dialog
@@ -324,25 +406,52 @@ export function SurfaceApertureDialog({
         {kind === undefined ? 'Nothing is stopped here.' : APERTURE_KIND_HINTS[kind]}
       </p>
 
+      {/* The two families take different numbers, so the fields follow the type
+          rather than sitting there greyed: a rectangle has no radius to give,
+          and a row of dead inputs teaches nobody which fields this aperture
+          actually has. */}
       <div className="aperture-grid">
-        <label className="aperture-field">
-          <span>Min radius ({units})</span>
-          <NumericCell
-            value={none || floating ? 0 : aperture.minRadius}
-            disabled={none || floating}
-            ariaLabel={`Aperture minimum radius of surface ${surfaceLabel}`}
-            onCommit={(next) => change({ minRadius: next })}
-          />
-        </label>
-        <label className="aperture-field">
-          <span>Max radius ({units})</span>
-          <NumericCell
-            value={floating ? semiDiameter : none ? 0 : aperture.maxRadius}
-            disabled={none || floating}
-            ariaLabel={`Aperture maximum radius of surface ${surfaceLabel}`}
-            onCommit={(next) => change({ maxRadius: next })}
-          />
-        </label>
+        {sized ? (
+          <>
+            <label className="aperture-field">
+              <span>X half-width ({units})</span>
+              <NumericCell
+                value={aperture.halfWidthX}
+                ariaLabel={`Aperture x half-width of surface ${surfaceLabel}`}
+                onCommit={(next) => change({ halfWidthX: next })}
+              />
+            </label>
+            <label className="aperture-field">
+              <span>Y half-width ({units})</span>
+              <NumericCell
+                value={aperture.halfWidthY}
+                ariaLabel={`Aperture y half-width of surface ${surfaceLabel}`}
+                onCommit={(next) => change({ halfWidthY: next })}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="aperture-field">
+              <span>Min radius ({units})</span>
+              <NumericCell
+                value={none || floating ? 0 : aperture.minRadius}
+                disabled={none || floating}
+                ariaLabel={`Aperture minimum radius of surface ${surfaceLabel}`}
+                onCommit={(next) => change({ minRadius: next })}
+              />
+            </label>
+            <label className="aperture-field">
+              <span>Max radius ({units})</span>
+              <NumericCell
+                value={floating ? semiDiameter : none ? 0 : aperture.maxRadius}
+                disabled={none || floating}
+                ariaLabel={`Aperture maximum radius of surface ${surfaceLabel}`}
+                onCommit={(next) => change({ maxRadius: next })}
+              />
+            </label>
+          </>
+        )}
         <label className="aperture-field">
           <span>Decenter X ({units})</span>
           <NumericCell

@@ -37,7 +37,8 @@
 
 import {
   ModelGlassMaterial,
-  apertureOuterRadius,
+  isCircularAperture,
+  type ApertureKind,
   type LinearUnit,
   type Material,
   type OpticalSystem,
@@ -333,21 +334,30 @@ function surfaceBlock(
  * separate record, and writing `OBDC 0 0` on every apertured surface would add a
  * line to the file that says nothing.
  */
+const APERTURE_TOKEN_OF: Record<ApertureKind, string> = {
+  CIRCULAR: 'CLAP',
+  CIRCULAR_OBSCURATION: 'OBSC',
+  FLOATING: 'FLAP',
+  RECTANGULAR: 'SQAP',
+  RECTANGULAR_OBSCURATION: 'SQOB',
+  ELLIPTICAL: 'ELAP',
+  ELLIPTICAL_OBSCURATION: 'ELOB',
+};
+
 function surfaceApertureRecords(surface: Surface): ZmxRecord[] {
   const aperture = surface.aperture;
   if (aperture === undefined) {
     return [];
   }
-  const radius = apertureOuterRadius(aperture, surface.semiDiameter);
-  const token =
-    aperture.kind === 'CIRCULAR'
-      ? 'CLAP'
-      : aperture.kind === 'CIRCULAR_OBSCURATION'
-        ? 'OBSC'
-        : 'FLAP';
-  const records = [
-    record(token, number(aperture.minRadius), number(Number.isFinite(radius) ? radius : 0), '0'),
-  ];
+  const token = APERTURE_TOKEN_OF[aperture.kind];
+  // Every one of these records is two numbers and the undocumented third: two
+  // radii for the circular kinds, two half-widths for the rest. `FLAP` writes
+  // the radius that floated, which for us is the semi-diameter it is defined as.
+  const floated = Number.isFinite(surface.semiDiameter) ? surface.semiDiameter : 0;
+  const [first, second] = isCircularAperture(aperture.kind)
+    ? [aperture.minRadius, aperture.kind === 'FLOATING' ? floated : aperture.maxRadius]
+    : [aperture.halfWidthX, aperture.halfWidthY];
+  const records = [record(token, number(first), number(second), '0')];
   if (aperture.decenterX !== 0 || aperture.decenterY !== 0) {
     records.push(record('OBDC', number(aperture.decenterX), number(aperture.decenterY)));
   }

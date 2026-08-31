@@ -11,6 +11,8 @@ import {
   type Field,
   type LinearUnit,
   type CoordinateTransform,
+  isCircularAperture,
+  type ApertureKind,
   type Material,
   type SurfaceApertureConfig,
   type SurfaceType,
@@ -121,6 +123,10 @@ const HANDLED_SURFACE_TOKENS = new Set([
   'CONI',
   'CLAP',
   'OBSC',
+  'SQAP',
+  'SQOB',
+  'ELAP',
+  'ELOB',
   'FLAP',
   'OBDC',
 ]);
@@ -149,13 +155,21 @@ const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH', 'COORDB
  * by calling one a system aperture and the other a surface aperture, and so does
  * this file.
  */
-const SURFACE_APERTURE_TOKENS = ['CLAP', 'OBSC', 'FLAP'] as const;
+const SURFACE_APERTURE_TOKENS = ['CLAP', 'OBSC', 'SQAP', 'SQOB', 'ELAP', 'ELOB', 'FLAP'] as const;
+
+/** Which kind each record names. Verified against Chapter 29's keyword table. */
+const APERTURE_KIND_OF: Record<string, ApertureKind> = {
+  CLAP: 'CIRCULAR',
+  OBSC: 'CIRCULAR_OBSCURATION',
+  SQAP: 'RECTANGULAR',
+  SQOB: 'RECTANGULAR_OBSCURATION',
+  ELAP: 'ELLIPTICAL',
+  ELOB: 'ELLIPTICAL_OBSCURATION',
+  FLAP: 'FLOATING',
+};
 
 const UNMODELED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
-  ['SQAP', 'a rectangular aperture'],
-  ['SQOB', 'a rectangular obscuration'],
-  ['ELAP', 'an elliptical aperture'],
-  ['ELOB', 'an elliptical obscuration'],
+  ['SPID', 'a spider aperture'],
   ['UDAD', 'a user-defined aperture'],
   ['USAP', 'a user-defined aperture'],
   ['PKUP', 'a pickup solve'],
@@ -508,8 +522,27 @@ function readSurfaceAperture(
     return { kind: 'FLOATING', decenterX, decenterY };
   }
 
-  const minRadius = numericValue(record!.values[0]) ?? 0;
-  const maxRadius = numericValue(record!.values[1]) ?? 0;
+  const kind = APERTURE_KIND_OF[token]!;
+  const first = numericValue(record!.values[0]) ?? 0;
+  const second = numericValue(record!.values[1]) ?? 0;
+
+  if (!isCircularAperture(kind)) {
+    // `SQAP xwid ywid` and `ELAP xwid ywid` are **half**-widths, which the
+    // corpus settles rather than the manual: `SQAP 25 25` sits on a surface
+    // whose semi-diameter is 35.36 — exactly 25√2, the circle circumscribing
+    // that rectangle. Reading them as full widths would halve every such
+    // aperture and still trace.
+    if (first <= 0 || second <= 0 || !Number.isFinite(first) || !Number.isFinite(second)) {
+      context.warnings.push(
+        `Surface ${number} has ${token} ${first} ${second}, an aperture of no extent; ignoring it.`,
+      );
+      return undefined;
+    }
+    return { kind, halfWidthX: first, halfWidthY: second, decenterX, decenterY };
+  }
+
+  const minRadius = first;
+  const maxRadius = second;
   // An aperture of zero radius has no extent, which is the literal reading of a
   // record left at its defaults: one file in the corpus carries `OBSC 0 0 0`,
   // plainly a leftover from an edit. Saying so beats both refusing to open the
@@ -526,13 +559,7 @@ function readSurfaceAperture(
       `Surface ${number} has ${token} ${minRadius} ${maxRadius}, which bounds no ring.`,
     );
   }
-  return {
-    kind: token === 'OBSC' ? 'CIRCULAR_OBSCURATION' : 'CIRCULAR',
-    minRadius,
-    maxRadius,
-    decenterX,
-    decenterY,
-  };
+  return { kind, minRadius, maxRadius, decenterX, decenterY };
 }
 
 function readCoordinateTransform(

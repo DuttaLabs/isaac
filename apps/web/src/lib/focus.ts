@@ -1,5 +1,5 @@
 import {
-  apertureOuterRadius,
+  apertureClearRadius,
   withImageAtParaxialFocus,
   type OpticalSystem,
 } from '@isaac/optical-core';
@@ -183,7 +183,7 @@ export function measureSpot(system: OpticalSystem, gridCount = DEFAULT_GRID_COUN
   // the image surface is drawn, and only an aperture on it stops a ray. A
   // detector with no aperture catches everything, so there is nothing to charge.
   const image = system.surfaceAt(system.surfaces.length - 1);
-  const imageRadius = apertureOuterRadius(image.aperture, image.semiDiameter);
+  const imageRadius = apertureClearRadius(image.aperture, image.semiDiameter);
   const lostRadius = Number.isFinite(imageRadius) ? imageRadius : undefined;
   const fieldCount = Math.max(system.fields.length, 1);
   const droppedFields: number[] = [];

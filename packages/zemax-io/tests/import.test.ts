@@ -210,14 +210,15 @@ test('a model glass without usable numbers is refused, not guessed at', () => {
 });
 
 test('surface records that would change the geometry become warnings', () => {
-  // A rectangular aperture is a real limit this reader cannot yet express, so
-  // ignoring it silently would trace rays the real lens vignettes away.
-  const withSquare = importDoublet(
-    DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""', '  SQAP 5 5 0\n  DIAM 1.5E+1 1 0 0 1 ""'),
+  // A spider is a real limit this reader cannot yet express — a set of radial
+  // arms rather than a size — so ignoring it silently would trace rays the real
+  // lens vignettes away.
+  const withSpider = importDoublet(
+    DOUBLET.replace('  DIAM 1.5E+1 1 0 0 1 ""', '  SPID 3 2 0\n  DIAM 1.5E+1 1 0 0 1 ""'),
   );
   assert.ok(
-    withSquare.warnings.some((warning) => /Surface 1 has a SQAP record/.test(warning)),
-    `expected a SQAP warning, got ${JSON.stringify(withSquare.warnings)}`,
+    withSpider.warnings.some((warning) => /Surface 1 has a SPID record/.test(warning)),
+    `expected a SPID warning, got ${JSON.stringify(withSpider.warnings)}`,
   );
 
   // Records that only annotate the surface stay quiet.
@@ -233,6 +234,8 @@ test('a circular aperture, an obscuration and a floating one are read onto the s
     kind: 'FLOATING',
     minRadius: 0,
     maxRadius: Infinity,
+    halfWidthX: 0,
+    halfWidthY: 0,
     decenterX: 0,
     decenterY: 0,
   });
@@ -244,6 +247,8 @@ test('a circular aperture, an obscuration and a floating one are read onto the s
     kind: 'CIRCULAR',
     minRadius: 0.2,
     maxRadius: 1.21,
+    halfWidthX: 0,
+    halfWidthY: 0,
     decenterX: 0.5,
     decenterY: -0.25,
   });
@@ -257,6 +262,35 @@ test('a circular aperture, an obscuration and a floating one are read onto the s
   const drawnOnly = importDoublet(DOUBLET.replace('  FLAP', '  COMM "no aperture"'));
   assert.equal(drawnOnly.system.surfaces[1]!.aperture, undefined);
   assert.equal(drawnOnly.system.surfaces[1]!.semiDiameter, 15);
+});
+
+test('rectangular and elliptical apertures are read as half-widths', () => {
+  // The corpus settles the units where the manual only says "xwid ywid":
+  // `SQAP 25 25` sits on a surface whose semi-diameter is 35.36, which is 25√2 —
+  // the circle circumscribing that rectangle. Full widths would halve every one
+  // of these and still trace.
+  const rectangle = importDoublet(DOUBLET.replace('  FLAP', '  SQAP 25 40 0')).system.surfaces[1]!;
+  assert.equal(rectangle.aperture?.kind, 'RECTANGULAR');
+  assert.equal(rectangle.aperture?.halfWidthX, 25);
+  assert.equal(rectangle.aperture?.halfWidthY, 40);
+  // Half-widths and radii are different families, and a rectangle carries none
+  // of the second.
+  assert.equal(rectangle.aperture?.maxRadius, 0);
+
+  // The Newtonian idiom: a diagonal flat, whose major axis is √2 times its minor
+  // because it is used at 45°.
+  const diagonal = importDoublet(DOUBLET.replace('  FLAP', '  ELAP 27.5 39.1 0')).system.surfaces[1]!;
+  assert.equal(diagonal.aperture?.kind, 'ELLIPTICAL');
+  assert.equal(diagonal.aperture?.halfWidthX, 27.5);
+  assert.equal(diagonal.aperture?.halfWidthY, 39.1);
+
+  for (const [token, kind] of [
+    ['SQOB', 'RECTANGULAR_OBSCURATION'],
+    ['ELOB', 'ELLIPTICAL_OBSCURATION'],
+  ]) {
+    const blocked = importDoublet(DOUBLET.replace('  FLAP', `  ${token} 3 4 0`)).system.surfaces[1]!;
+    assert.equal(blocked.aperture?.kind, kind);
+  }
 });
 
 test('two aperture records on one surface: the first is taken and the rest are reported', () => {

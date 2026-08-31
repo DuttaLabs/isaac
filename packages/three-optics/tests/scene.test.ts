@@ -15,6 +15,7 @@ import {
   aperturePatch,
   buildOpticalScene,
   needsAperturePatch,
+  obscurationGeometry,
   surfaceProfile,
   type SceneTrace,
 } from '../src/index.ts';
@@ -398,4 +399,41 @@ test('a centered circle is still a lathe, because a lathe draws it better', () =
     ),
     false,
   );
+});
+
+test('an obscuration is geometry of its own, and a spider is its arms', () => {
+  const shape = { curvature: 0, conic: 0, asphericCoefficients: [] as number[] };
+  const baffle = new Surface({
+    id: 'baffle',
+    type: 'STANDARD',
+    thickness: 10,
+    semiDiameter: 20,
+    aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 5 },
+  });
+  const disc = obscurationGeometry(baffle, 20, 4, 32);
+  assert.ok(disc, 'expected the obscuration to be drawn');
+  const points = disc.getAttribute('position');
+  let furthest = 0;
+  for (let i = 0; i < points.count; i += 1) {
+    furthest = Math.max(furthest, Math.hypot(points.getX(i), points.getY(i)));
+  }
+  // It covers what it blocks and no more: the surface keeps its own 20.
+  assert.ok(Math.abs(furthest - 5) < 0.05, `reached ${furthest}, expected the 5 it obscures`);
+
+  // A spider is drawn as arms, so its geometry reaches the rim while covering
+  // almost none of the surface between them.
+  const spider = baffle.with({ aperture: { kind: 'SPIDER', armCount: 3, armWidth: 2 } });
+  const vanes = obscurationGeometry(spider, 20, 4, 32)!;
+  const arms = vanes.getAttribute('position');
+  let reach = 0;
+  for (let i = 0; i < arms.count; i += 1) {
+    reach = Math.max(reach, Math.hypot(arms.getX(i), arms.getY(i)));
+  }
+  assert.ok(reach > 19, `arms reached ${reach}, expected the 20 rim`);
+  // Three arms, two triangles per step: far fewer vertices than a full patch.
+  assert.ok(arms.count < 4 * 32, `${arms.count} vertices reads more like a disc than three vanes`);
+
+  // A surface with no obscuring aperture has nothing to draw.
+  assert.equal(obscurationGeometry(baffle.with({ aperture: undefined }), 20, 4, 32), undefined);
+  assert.ok(shape.curvature === 0);
 });

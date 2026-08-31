@@ -41,12 +41,38 @@ export function aperturePatch(
     ? surface.semiDiameter
     : fallbackSemiDiameter;
   const half = apertureHalfExtents(aperture, extent) ?? { x: extent, y: extent };
-  const centerX = aperture?.decenterX ?? 0;
-  const centerY = aperture?.decenterY ?? 0;
-  // Only a circular aperture has an inner radius; the file format gives the
-  // rectangular and elliptical forms no equivalent.
-  const inner = aperture !== undefined && aperture.kind === 'CIRCULAR' ? aperture.minRadius : 0;
+  return patchOver(surface, rings, segments, {
+    centerX: aperture?.decenterX ?? 0,
+    centerY: aperture?.decenterY ?? 0,
+    // Only a circular aperture has an inner radius; the file format gives the
+    // rectangular and elliptical forms no equivalent.
+    inner: aperture !== undefined && aperture.kind === 'CIRCULAR' ? aperture.minRadius : 0,
+    boundary: (cos, sin) => boundaryRadius(aperture, half, cos, sin),
+  });
+}
 
+/** A ring of surface between two boundaries, in the surface's own frame. */
+interface PatchRegion {
+  centerX: number;
+  centerY: number;
+  inner: number;
+  boundary: (cos: number, sin: number) => number;
+}
+
+/**
+ * The triangulated patch itself: a grid in (angle, radius) laid on the surface.
+ *
+ * Taken apart from {@link aperturePatch} because an obscuration wants the very
+ * same mesh over a different region — the disc it *blocks* rather than the one
+ * it leaves open — and building that a second way is how the two would come to
+ * disagree about where a decentered aperture sits.
+ */
+function patchOver(
+  surface: Surface,
+  rings: number,
+  segments: number,
+  region: PatchRegion,
+): BufferGeometry {
   const positions: number[] = [];
   const indices: number[] = [];
 
@@ -56,10 +82,10 @@ export function aperturePatch(
       const angle = (2 * Math.PI * segment) / segments;
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
-      const outer = boundaryRadius(aperture, half, cos, sin);
-      const radius = inner + (outer - inner) * t;
-      const x = centerX + radius * cos;
-      const y = centerY + radius * sin;
+      const outer = region.boundary(cos, sin);
+      const radius = region.inner + (outer - region.inner) * t;
+      const x = region.centerX + radius * cos;
+      const y = region.centerY + radius * sin;
       positions.push(x, y, surfaceProfileSag(surface.shape, Math.hypot(x, y)));
     }
   }
@@ -70,6 +96,91 @@ export function aperturePatch(
       const a = ring * stride + segment;
       const b = a + stride;
       indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * The part of a surface an obscuration blocks, as geometry in its own right.
+ *
+ * Drawn at all because otherwise it is drawn *nowhere*: an obscuration does not
+ * bound the surface, so the surface comes out at its full semi-diameter and the
+ * thing standing in the beam is invisible. Seven of the twenty-two obscurations
+ * in the sample corpus are smaller than the surface they sit on.
+ *
+ * `undefined` where there is nothing to draw, which is every surface without an
+ * obscuring aperture.
+ */
+export function obscurationGeometry(
+  surface: Surface,
+  fallbackSemiDiameter: number,
+  rings: number,
+  segments: number,
+): BufferGeometry | undefined {
+  const aperture = surface.aperture;
+  if (aperture === undefined || !isObscuration(aperture.kind)) {
+    return undefined;
+  }
+  const extent = Number.isFinite(surface.semiDiameter)
+    ? surface.semiDiameter
+    : fallbackSemiDiameter;
+
+  if (aperture.kind === 'SPIDER') {
+    return spiderGeometry(surface, aperture, extent, segments);
+  }
+  const circular = aperture.kind === 'CIRCULAR_OBSCURATION';
+  const half = circular
+    ? { x: aperture.maxRadius, y: aperture.maxRadius }
+    : { x: aperture.halfWidthX, y: aperture.halfWidthY };
+  return patchOver(surface, rings, segments, {
+    centerX: aperture.decenterX,
+    centerY: aperture.decenterY,
+    inner: circular ? aperture.minRadius : 0,
+    boundary: (cos, sin) => boundaryRadius(aperture, half, cos, sin),
+  });
+}
+
+/**
+ * A spider's vanes: one strip per arm, running from the center out to the rim.
+ *
+ * Laid on the surface rather than drawn flat, so a vane across a curved mirror
+ * follows it — the same reason every other patch here takes its sag from the
+ * surface it belongs to.
+ */
+function spiderGeometry(
+  surface: Surface,
+  aperture: SurfaceAperture,
+  extent: number,
+  samples: number,
+): BufferGeometry {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const half = aperture.armWidth / 2;
+  const steps = Math.max(4, Math.floor(samples / 8));
+
+  for (let arm = 0; arm < aperture.armCount; arm += 1) {
+    // The first arm along +x, the rest spaced equally from it.
+    const angle = (2 * Math.PI * arm) / aperture.armCount;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const base = positions.length / 3;
+    for (let step = 0; step <= steps; step += 1) {
+      const along = (extent * step) / steps;
+      for (const across of [-half, half]) {
+        const x = aperture.decenterX + along * cos - across * sin;
+        const y = aperture.decenterY + along * sin + across * cos;
+        positions.push(x, y, surfaceProfileSag(surface.shape, Math.hypot(x, y)));
+      }
+    }
+    for (let step = 0; step < steps; step += 1) {
+      const a = base + step * 2;
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
   }
 

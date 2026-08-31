@@ -1081,6 +1081,16 @@ Two consequences, and both are why the file sets that surface's semi-diameter to
   takes it from the **aperture** first and the semi-diameter second: a stop whose `CLAP` says 25 mm is
   a 25 mm stop however large the surface is drawn.
 
+**What an aperture blocks is drawn too, opaque and black.** `obscurationGeometry` builds the region an
+obscuration covers — a disc, a rectangle, an ellipse, or a spider's vanes — from the same
+`patchOver` mesh the surface itself uses, so the two cannot disagree about where a decentered
+aperture sits. Black rather than a theme token, and deliberately: it is the one thing in the picture
+light does not get through, every other material there being translucent or metallic, and it is the
+only mark that means the same in both themes without being given two values. The material carries
+`polygonOffset`, because an obscuration lies *exactly* on the surface it blocks — same sag, same
+frame — and the depth buffer has no way to choose between them; without the offset a spider's vanes
+flicker against the mirror they are bolted to.
+
 **A surface the lathe cannot express is drawn as a patch instead** (`three-optics/src/aperture-patch.ts`).
 A lathe is a surface of revolution, and three of the shapes the model allows are not one: a
 rectangular aperture, an elliptical one, and a circular one cut off the surface's own axis.

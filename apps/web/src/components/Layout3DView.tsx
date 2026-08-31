@@ -408,6 +408,32 @@ export function Layout3DView({
             </mesh>
           ))}
 
+          {/* What an aperture *blocks*, drawn opaque and black.
+              Black rather than a theme color, and deliberately: it is the one
+              thing in the picture light does not get through, and every other
+              material here is translucent or metallic. It is also the only mark
+              that means the same in both themes without being given two
+              values. */}
+          {scene.obscurations.map((blocked) => (
+            <mesh key={`obscuration-${blocked.surfaceIndex}`} geometry={blocked.geometry}>
+              <meshStandardMaterial
+                color="#000000"
+                roughness={0.9}
+                metalness={0}
+                side={DoubleSide}
+                // An obscuration lies *exactly* on the surface it blocks — same
+                // sag, same frame — so the depth buffer has no way to choose
+                // between them and the two flicker against each other. The
+                // offset biases this one toward the camera in depth alone,
+                // which is what it is for: nothing moves, and the vane stops
+                // fighting the mirror it is bolted to.
+                polygonOffset
+                polygonOffsetFactor={-1}
+                polygonOffsetUnits={-1}
+              />
+            </mesh>
+          ))}
+
           {scene.rays.map((bundle, index) => {
             // Color by field, as the 2-D view does. There is no dash pattern in a
             // line material to carry the wavelength as well, so in three

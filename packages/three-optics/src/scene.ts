@@ -1,5 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Matrix4, Vector2 } from 'three';
-import { aperturePatch, needsAperturePatch } from './aperture-patch.ts';
+import { aperturePatch, needsAperturePatch, obscurationGeometry } from './aperture-patch.ts';
 import {
   signedMediaIndices,
   surfaceProfileSag,
@@ -43,6 +43,19 @@ export interface ElementGeometry {
   crossed: boolean;
 }
 
+/**
+ * The part of a surface an obscuration blocks, drawn in its own right.
+ *
+ * Its own list rather than a flag on the surface it sits on, because it is drawn
+ * differently in every way that matters: opaque where surfaces are translucent,
+ * black where they take the element's color, and present only where a surface
+ * carries an obscuring aperture.
+ */
+export interface ObscurationGeometry {
+  surfaceIndex: number;
+  geometry: BufferGeometry;
+}
+
 /** A surface drawn on its own: an image plane, a stop, a bare air surface. */
 export interface SurfaceShellGeometry {
   surfaceIndex: number;
@@ -78,6 +91,8 @@ export interface RayBundleGeometry {
 export interface OpticalScene {
   elements: ElementGeometry[];
   surfaces: SurfaceShellGeometry[];
+  /** The parts of surfaces that stop light: drawn opaque and black. */
+  obscurations: ObscurationGeometry[];
   rays: RayBundleGeometry[];
   /** Axis-aligned extent of everything drawn, for framing a camera. */
   bounds: { min: [number, number, number]; max: [number, number, number] };
@@ -268,6 +283,7 @@ export function buildOpticalScene(
   }
 
   const surfaces: SurfaceShellGeometry[] = [];
+  const obscurations: ObscurationGeometry[] = [];
   // From 0, so a finite object plane is drawn like the image plane at the other
   // end. An object at infinity has no pose to build one on, and no plane either.
   for (let index = 0; index < system.surfaces.length; index += 1) {
@@ -298,6 +314,19 @@ export function buildOpticalScene(
       isImage: surface.type === 'IMAGE',
       isMirror: surface.reflective,
     });
+
+    // What the surface's aperture *blocks*, where it blocks rather than bounds.
+    // Drawn separately because it is opaque and black where the surface is
+    // neither, and because it exists only on the surfaces that carry one.
+    const blocked = obscurationGeometry(
+      surface,
+      options.defaultSemiDiameter,
+      PATCH_RINGS,
+      segments,
+    );
+    if (blocked !== undefined) {
+      obscurations.push({ surfaceIndex: index, geometry: placed(blocked, system.poseAt(index)) });
+    }
   }
 
   const rays = buildRayBundles(traces);
@@ -305,6 +334,7 @@ export function buildOpticalScene(
   return {
     elements,
     surfaces,
+    obscurations,
     rays,
     bounds: sceneBounds(system, traces, radiusOf),
     dispose(): void {
@@ -313,6 +343,9 @@ export function buildOpticalScene(
       }
       for (const shell of surfaces) {
         shell.geometry.dispose();
+      }
+      for (const blocked of obscurations) {
+        blocked.geometry.dispose();
       }
       for (const bundle of rays) {
         bundle.geometry.dispose();

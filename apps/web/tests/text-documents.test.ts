@@ -35,7 +35,11 @@ test('a highlighted line is the line: every character survives, in order', () =>
 test('the color of a token is what the reader does with it', () => {
   // Not a list kept here: `zmxTokenRole` is the importer's own answer, so a
   // record that gains a meaning gains its color in the same commit.
-  assert.equal(tokenRole('SURF 4'), 'structure');
+  // SURF and STOP are picked out for the eye rather than by the reader: both are
+  // records the importer interprets, and which of them is worth finding at a
+  // glance is a question about *reading* a file.
+  assert.equal(tokenRole('SURF 4'), 'surface');
+  assert.equal(tokenRole('  STOP'), 'stop');
   assert.equal(tokenRole('  CURV 0.5 0 0'), 'prescription');
   assert.equal(tokenRole('  CLAP 0 55 0'), 'prescription');
   assert.equal(tokenRole('ENPD 100'), 'system');

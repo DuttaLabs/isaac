@@ -711,6 +711,23 @@ body {
  * question a designer looking at a lens file in this app actually has. They come
  * from `zmxTokenRole`, so a record that gains a meaning gains its color with it.
  */
+/*
+ * `SURF` in the layout's own highlight amber: it is where one surface ends and
+ * the next begins, and it is the line you scroll a lens file looking for. The
+ * same color marks the highlighted row in the 2-D layout, which is the same
+ * idea — *this surface, here*.
+ */
+.zmx-surface {
+  color: var(--surface-highlight);
+  font-weight: 700;
+}
+
+/* `STOP` is one line in the whole file, and it decides the pupil. */
+.zmx-stop {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .zmx-structure {
   color: var(--syntax-structure);
   font-weight: 650;
@@ -726,10 +743,16 @@ body {
   font-weight: 650;
 }
 
-/* Skipped, and its absence would change the trace: the one color that warns. */
+/*
+ * Skipped, and its absence would change the trace. It shares `STOP`'s red — one
+ * warning hue is better than two — and is told apart by the underline, which is
+ * what a thing being *wrong* looks like rather than a thing being important.
+ */
 .zmx-unmodeled {
   color: var(--danger);
   font-weight: 650;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 
 /* Skipped, and nothing optical depends on it. Present, and out of the way. */

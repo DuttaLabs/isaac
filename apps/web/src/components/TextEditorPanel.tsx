@@ -61,6 +61,7 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [matchIndex, setMatchIndex] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -116,7 +117,13 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
    * list reopen a file rather than merely name it.
    */
   const pickFile = useCallback(async () => {
-    const withPicker = window as unknown as {
+    // **The window this panel is in**, not the global one. A panel sent to the
+    // second window lives in another realm, and the opener has no user
+    // activation to show a picker with — which is exactly the error Chrome
+    // gives: "must be handling a user gesture". `saveTextToFile` takes a
+    // `target` for the same reason; this is the same rule, missed once.
+    const view = root.current?.ownerDocument.defaultView ?? window;
+    const withPicker = view as unknown as {
       showOpenFilePicker?: (options?: object) => Promise<FileSystemFileHandle[]>;
     };
     if (withPicker.showOpenFilePicker === undefined) {
@@ -124,7 +131,7 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
       return;
     }
     try {
-      const [handle] = await withPicker.showOpenFilePicker({ multiple: false });
+      const [handle] = await withPicker.showOpenFilePicker.call(view, { multiple: false });
       if (handle === undefined) {
         return;
       }
@@ -132,9 +139,14 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
     } catch (problem) {
       // Closing the dialog is not failing, and reporting it would put a red
       // notice in front of someone who simply changed their mind.
-      if (!(problem instanceof DOMException && problem.name === 'AbortError')) {
-        setError(problem instanceof Error ? problem.message : String(problem));
+      if (problem instanceof DOMException && problem.name === 'AbortError') {
+        return;
       }
+      // Anything else — a refused gesture, a browser that has the method and
+      // will not use it — falls back to the plain file input, which needs no
+      // activation. The user asked for a file dialog; they get one either way,
+      // and lose only the handle that would have made this a recent entry.
+      picker.current?.click();
     }
   }, [openFile]);
 
@@ -224,7 +236,7 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
 
   return (
     <Panel
-      title="Text"
+      title="Text editor"
       choice={choice}
       actions={
         <>
@@ -325,7 +337,7 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
         }}
       />
 
-      <div className="text-editor" onKeyDown={onKeyDown}>
+      <div className="text-editor" ref={root} onKeyDown={onKeyDown}>
         <div className="text-tabs" role="tablist" aria-label="Open documents">
           {documents.map((document) => (
             <button

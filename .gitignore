@@ -18,3 +18,7 @@ SupportingMaterial/
 # Lenses saved from Isaac itself while working. The corpus beside them is
 # tracked on purpose; this folder is scratch, and is not.
 ZMX files/myZMXfiles/
+
+# Lens files collected from published papers — third-party supplementary
+# material, kept on disk for testing Isaac against real designs, not pushed.
+ZMX files/Papers/

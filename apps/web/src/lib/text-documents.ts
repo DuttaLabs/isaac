@@ -40,7 +40,19 @@ export interface TextSpan {
   readonly role: SpanRole;
 }
 
-export type SpanRole = ZmxTokenRole | 'number' | 'string' | 'text';
+export type SpanRole = ZmxTokenRole | 'surface' | 'stop' | 'number' | 'string' | 'text';
+
+/**
+ * Two records the eye should find without reading: `SURF`, which is where one
+ * surface ends and the next begins, and `STOP`, which is the single line in the
+ * file saying where the aperture stop is.
+ *
+ * Their own roles rather than colors added to `zmxTokenRole`, because this is a
+ * *presentation* distinction: the reader is right that both are records it
+ * interprets, and which of them deserves to be picked out at a glance is a
+ * question about reading a file, not about importing one.
+ */
+const OWN_ROLE: Record<string, SpanRole> = { SURF: 'surface', STOP: 'stop' };
 
 const ZMX_EXTENSIONS = ['.zmx', '.zda', '.agf'];
 
@@ -77,7 +89,7 @@ export function highlightZmxLine(line: string): TextSpan[] {
 
   const tokenEnd = rest.search(/\s/);
   const token = tokenEnd === -1 ? rest : rest.slice(0, tokenEnd);
-  spans.push({ text: token, role: zmxTokenRole(token) });
+  spans.push({ text: token, role: OWN_ROLE[token.toUpperCase()] ?? zmxTokenRole(token) });
   if (tokenEnd === -1) {
     return spans;
   }

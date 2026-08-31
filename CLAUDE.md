@@ -234,10 +234,10 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
 
   **An obscuration is drawn as the thing it is.** It does not bound the surface — the surface keeps its
   own extent — so it is stroked *over* the outline, heavier and in ink of its own (`--obscuration`),
-  across the runs it covers. **Runs, plural, and asked rather than derived**: a three-armed spider
-  lies across the meridional plane in two places, so one span cannot describe it, and
-  `SurfaceProfile.obscured` is a list of them found by asking `Surface.blocksAt` at every sample —
-  the same function the tracer calls. That is what makes the promise hold in the hard direction as
+  across the runs it covers. **Runs, plural, and asked rather than derived**: an obscuration need not
+  cross a section in one piece — a decentered spider does not — and rather than re-derive each kind's
+  geometry a second time, `SurfaceProfile.obscured` is the list found by asking `Surface.blocksAt` at
+  every sample, the same function the tracer calls. That is what makes the promise hold in the hard direction as
   well: the picture cannot show an obscuration the trace does not have, nor miss one it does.
   Without that, an obscuration smaller than its surface is drawn nowhere at all: **seven of the
   twenty-two in the sample corpus are**, including both Newtonians' diagonals and the Flat-field
@@ -1065,9 +1065,13 @@ Two consequences, and both are why the file sets that surface's semi-diameter to
   paraboloid, and the light visibly missed the mirror. (A 2-D layout is a **cross-section**, not a
   projection — the projection of any curved patch is a 2-D region, which is not what a lens drawing
   has ever meant.)
-- **The aperture is the drawn extent when there is one.** `drawnDisc` in `lib/layout.ts` takes the
-  radius *and the center* from the aperture, falling back to the semi-diameter and then to the view's
-  default. Drawing the semi-diameter instead would draw the parent disc — a mirror nobody has,
+- **The aperture is the drawn extent where it is the smaller statement, or the only one.** `drawnDisc`
+  in `lib/layout.ts` takes the radius *and the center* from the aperture, but never draws a surface
+  larger than a stated semi-diameter: `Schmidt-Cassegrain spider obscuration.zmx` carries
+  `CLAP 4 1e+10`, which is how a file writes an annulus with no outer limit, and taking that as the
+  extent drew the surface ten billion inches tall and squeezed a 92-inch telescope into a vertical
+  line. Where the semi-diameter states nothing — `DIAM 0`, the off-axis case — the aperture is all
+  there is. Drawing the semi-diameter instead would draw the parent disc — a mirror nobody has,
   straddling the axis the design exists to keep clear. An obscuration is the exception and falls
   through, since it is something in the way of a surface rather than the bound of one.
 - **A stop can have no size of its own.** That file's stop is a bare plane whose pupil is declared by

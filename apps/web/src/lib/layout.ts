@@ -339,9 +339,27 @@ function drawnDisc(surface: Surface, fallback: number): Disc {
   if (aperture === undefined || half === undefined) {
     return { radiusX: extent, radiusY: extent, centerX: 0, centerY: 0 };
   }
+  /**
+   * The aperture states the extent only where it is the *smaller* statement, or
+   * where there is no other.
+   *
+   * A surface with a stated semi-diameter is drawn no larger than that, whatever
+   * its aperture claims: `Schmidt-Cassegrain spider obscuration.zmx` carries
+   * `CLAP 4 1e+10` on a surface drawn at 12.18, which is how a file says "an
+   * annulus with no outer limit". Taking the aperture's word for it drew that
+   * surface ten billion inches tall and squeezed the whole 92-inch telescope
+   * into a vertical line. Where the semi-diameter is unstated the aperture is
+   * all there is, which is the off-axis case the rule was built for.
+   */
+  const bounded = (fromAperture: number): number =>
+    Number.isFinite(surface.semiDiameter)
+      ? Math.min(fromAperture, surface.semiDiameter)
+      : Number.isFinite(fromAperture)
+        ? fromAperture
+        : extent;
   return {
-    radiusX: Number.isFinite(half.x) ? half.x : extent,
-    radiusY: Number.isFinite(half.y) ? half.y : extent,
+    radiusX: bounded(half.x),
+    radiusY: bounded(half.y),
     centerX: aperture.decenterX,
     centerY: aperture.decenterY,
     // A rectangle drawn end-on is a rectangle. Every other kind here is round,

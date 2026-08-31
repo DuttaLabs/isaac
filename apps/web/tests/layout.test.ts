@@ -682,3 +682,39 @@ function sagFromConic(radius: number, conic: number, r: number): number {
   const c = 1 / radius;
   return (c * r * r) / (1 + Math.sqrt(1 - (1 + conic) * c * c * r * r));
 }
+
+test('an aperture with no outer limit does not decide how large to draw the surface', () => {
+  // `Schmidt-Cassegrain spider obscuration.zmx` carries `CLAP 4 1e+10` on a
+  // surface drawn at 12.18: that is how a file says "an annulus with no outer
+  // limit". Taking the aperture's word for the extent drew the surface ten
+  // billion units tall and squeezed the whole telescope into a vertical line.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'unbounded',
+        type: 'STANDARD',
+        thickness: 40,
+        semiDiameter: 12.18,
+        aperture: { kind: 'CIRCULAR', minRadius: 4, maxRadius: 1e10 },
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 5 }),
+    ],
+  });
+
+  const geometry = buildLayout(system, [], DEFAULT_SEMI_DIAMETER);
+  assert.ok(geometry.bounds.maxV < 13, `drawn to ${geometry.bounds.maxV}, expected the 12.18 rim`);
+  // The inner radius still applies: it is a real hole, and only the outer bound
+  // was a stand-in for "no limit".
+  assert.ok(geometry.profiles.find((one) => one.surfaceIndex === 1)?.hole);
+
+  // Where the semi-diameter states nothing, the aperture is still all there is —
+  // which is the off-axis case the rule was built for.
+  const unstated = system.withSurfaceAt(
+    1,
+    system
+      .surfaceAt(1)
+      .with({ semiDiameter: Infinity, aperture: { kind: 'CIRCULAR', maxRadius: 55 } }),
+  );
+  assert.ok(Math.abs(buildLayout(unstated, [], DEFAULT_SEMI_DIAMETER).bounds.maxV - 55) < 1e-9);
+});

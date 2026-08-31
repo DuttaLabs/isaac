@@ -1,6 +1,7 @@
 import {
   Point3,
   apertureHalfExtents,
+  isObscuration,
   signedMediaIndices,
   surfaceProfileSag,
   type OpticalSystem,
@@ -38,6 +39,18 @@ export interface SurfaceProfile {
    * the index the inner rim's samples begin at.
    */
   hole?: { from: number; to: number };
+  /**
+   * The run of the outline an obscuration covers — something *in the way* of the
+   * surface rather than a piece missing from it, so the samples are stroked
+   * over rather than skipped.
+   *
+   * Without this an obscuration smaller than the surface it sits on is drawn
+   * nowhere at all: seven of the twenty-two in the sample corpus are, including
+   * both Newtonians' diagonals and the Schmidt's. The trace stops those rays and
+   * the picture showed nothing stopping them, which is the fault of drawing an
+   * aperture the trace does not have, read backwards.
+   */
+  obscured?: { from: number; to: number };
 }
 
 export interface GlassBody {
@@ -153,7 +166,12 @@ function outlineInLocalFrame(
   disc: Disc,
   view: ViewPlane,
   hole: Hole | undefined,
-): { points: Point3[]; hole?: { from: number; to: number } } {
+  obscuration: Disc | undefined,
+): {
+  points: Point3[];
+  hole?: { from: number; to: number };
+  obscured?: { from: number; to: number };
+} {
   if (!view.axial) {
     // End-on, a hole is a second rim rather than a gap in the first: the inner
     // circle is appended to the outer one, and the index it starts at is what
@@ -187,26 +205,50 @@ function outlineInLocalFrame(
     const depth = sag(shape, height);
     return upright === 'y' ? new Point3(0, height, depth) : new Point3(height, 0, depth);
   });
-  if (hole === undefined) {
-    return { points };
-  }
-
-  // The samples inside the hole are the ones the material is missing at. They
+  // The samples inside a hole are the ones the material is missing at, and the
+  // ones inside an obscuration are where something is standing in the way. Both
   // are left in `points` — the bounds, the body and the stop bars all read them
-  // — and only the *stroke* skips them, which is the one thing a hole changes
-  // about a cross-section.
-  const inside = (sample: number): boolean => Math.abs(at(sample) - center) < hole.radius;
+  // — and only the *ink* changes: a hole is skipped, an obscuration drawn over.
+  const covered =
+    obscuration === undefined
+      ? undefined
+      : coveredSamples(
+          at,
+          upright === 'y' ? obscuration.centerY : obscuration.centerX,
+          upright === 'y' ? obscuration.radiusY : obscuration.radiusX,
+        );
+  if (hole === undefined) {
+    return covered === undefined ? { points } : { points, obscured: covered };
+  }
+  const span = coveredSamples(at, center, hole.radius);
+  return {
+    points,
+    ...(span === undefined ? {} : { hole: span }),
+    ...(covered === undefined ? {} : { obscured: covered }),
+  };
+}
+
+/**
+ * Which samples fall within `radius` of `center` along the sampled axis, as a
+ * first and last index — the form both a hole and an obscuration want, one being
+ * the run to leave out and the other the run to draw over.
+ */
+function coveredSamples(
+  at: (sample: number) => number,
+  center: number,
+  radius: number,
+): { from: number; to: number } | undefined {
   let from = -1;
   let to = -1;
   for (let sample = 0; sample < PROFILE_SAMPLES; sample += 1) {
-    if (inside(sample)) {
+    if (Math.abs(at(sample) - center) < radius) {
       if (from === -1) {
         from = sample;
       }
       to = sample;
     }
   }
-  return from === -1 ? { points } : { points, hole: { from, to } };
+  return from === -1 ? undefined : { from, to };
 }
 
 /**
@@ -278,6 +320,26 @@ function drawnDisc(surface: Surface, fallback: number): Disc {
  * middle is *all* there is — and the surface is already drawn at the extent that
  * describes it.
  */
+/**
+ * The disc an obscuration blocks, if the surface carries one.
+ *
+ * Every kind reduces to a half-extent along each axis, which is all a section
+ * needs: what it draws is the span covered across the view's upright axis.
+ */
+function obscurationIn(surface: Surface): Disc | undefined {
+  const aperture = surface.aperture;
+  if (aperture === undefined || !isObscuration(aperture.kind)) {
+    return undefined;
+  }
+  const circular = aperture.kind === 'CIRCULAR_OBSCURATION';
+  return {
+    radiusX: circular ? aperture.maxRadius : aperture.halfWidthX,
+    radiusY: circular ? aperture.maxRadius : aperture.halfWidthY,
+    centerX: aperture.decenterX,
+    centerY: aperture.decenterY,
+  };
+}
+
 function holeIn(surface: Surface): Hole | undefined {
   const aperture = surface.aperture;
   return aperture !== undefined && aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
@@ -376,7 +438,13 @@ export function buildLayout(
     // The outline is built in the surface's own frame and then carried into
     // global coordinates, so a tilted element is drawn tilted. For a centered
     // system this is the vertex offset it always was.
-    const outline = outlineInLocalFrame(surface.shape, disc, view, holeIn(surface));
+    const outline = outlineInLocalFrame(
+      surface.shape,
+      disc,
+      view,
+      holeIn(surface),
+      obscurationIn(surface),
+    );
     const points = outline.points.map((local) => projectToPlane(pose.apply(local), view));
     profiles.push({
       surfaceIndex: index,
@@ -386,6 +454,7 @@ export function buildLayout(
       isMirror: surface.reflective,
       closed: !view.axial,
       ...(outline.hole === undefined ? {} : { hole: outline.hole }),
+      ...(outline.obscured === undefined ? {} : { obscured: outline.obscured }),
     });
   }
 

@@ -232,6 +232,14 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
   *type* keeps the radii, so trying an obscuration against an aperture is one click each way; changing
   to floating drops them, because the model refuses a radius on one.
 
+  **An obscuration is drawn as the thing it is.** It does not bound the surface — the surface keeps its
+  own extent — so it is stroked *over* the outline, heavier and in ink of its own
+  (`--obscuration`), across the run it covers (`SurfaceProfile.obscured`, indices like `hole`'s).
+  Without that, an obscuration smaller than its surface is drawn nowhere at all: **seven of the
+  twenty-two in the sample corpus are**, including both Newtonians' diagonals and the Flat-field
+  Schmidt's, and the trace stopped those rays while the picture showed nothing stopping them. That is
+  the same fault as drawing an aperture the trace does not have, read backwards.
+
   **Both layout views draw the hole.** In 2-D a holed surface is stroked as two runs of the same
   outline with the middle left out (`SurfaceProfile.hole` is where, as indices into the samples the
   bounds and the stop bars still read); end-on it is a second rim. A rectangular or elliptical

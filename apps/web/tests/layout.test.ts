@@ -528,3 +528,47 @@ test('a decentered aperture is drawn where the aperture is, not where the axis i
   // And no hole: this aperture has no inner radius, decentered or not.
   assert.equal(profile.hole, undefined);
 });
+
+test('an obscuration smaller than its surface is drawn, not left invisible', () => {
+  // Seven of the twenty-two obscurations in the sample corpus are smaller than
+  // the surface they sit on — both Newtonians' diagonals among them — and every
+  // one of those was drawn nowhere at all: the trace stopped the rays and the
+  // picture showed nothing stopping them.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'baffled',
+        type: 'STANDARD',
+        thickness: 40,
+        semiDiameter: 20,
+        aperture: { kind: 'CIRCULAR_OBSCURATION', maxRadius: 5 },
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 20 }),
+    ],
+  });
+
+  const profile = buildLayout(system, [], DEFAULT_SEMI_DIAMETER).profiles.find(
+    (one) => one.surfaceIndex === 1,
+  );
+  assert.ok(profile?.obscured, 'expected the obscuration to be drawn');
+  const heights = profile.points.map((point) => point.v);
+  // The drawn run is the obscured middle, and the surface still reaches its own
+  // extent either side of it: an obscuration is a thing in the way, not the edge.
+  for (let i = profile.obscured.from; i <= profile.obscured.to; i += 1) {
+    assert.ok(Math.abs(heights[i]!) < 5, `sample ${i} at ${heights[i]} is outside the obscuration`);
+  }
+  assert.ok(Math.abs(Math.min(...heights) + 20) < 1e-9);
+  assert.ok(Math.abs(Math.max(...heights) - 20) < 1e-9);
+
+  // A clear aperture leaves a hole instead, and never an obscured run.
+  const holed = system.withSurfaceAt(
+    1,
+    system.surfaceAt(1).with({ aperture: { kind: 'CIRCULAR', minRadius: 5, maxRadius: 20 } }),
+  );
+  const other = buildLayout(holed, [], DEFAULT_SEMI_DIAMETER).profiles.find(
+    (one) => one.surfaceIndex === 1,
+  );
+  assert.ok(other?.hole);
+  assert.equal(other.obscured, undefined);
+});

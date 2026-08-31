@@ -6,7 +6,24 @@ import { Ray, type RayStatus } from '../model/ray.ts';
 import type { Material } from '../model/material.ts';
 import type { Surface } from '../model/surface.ts';
 import { angleOfIncidence, reflect, refract } from './optics.ts';
-import { surfacePower } from './paraxial.ts';
+import { signedMediaIndices, surfacePower } from './paraxial.ts';
+
+/**
+ * Whether the prescription itself puts this surface behind the one before it.
+ *
+ * Measured along the axis and **against the direction of travel**, so it means
+ * the same thing in a reflecting arm: after a mirror the thicknesses are
+ * negative and the light runs −Z, and the product of the two is positive, which
+ * is ordinary forward propagation. Only a step that goes back against the light
+ * — the remote-stop idiom — comes out negative.
+ */
+function stepsBackward(system: OpticalSystem, index: number): boolean {
+  if (index === 0) {
+    return false;
+  }
+  const travel = Math.sign(signedMediaIndices(system, system.primaryWavelengthNm)[index - 1] ?? 1);
+  return travel * (system.axialPositionAt(index) - system.axialPositionAt(index - 1)) < 0;
+}
 
 /** What happened to the ray at one surface. */
 export type InteractionKind = 'REFRACT' | 'REFLECT' | 'RECORD' | 'PARAXIAL';
@@ -78,7 +95,23 @@ export function traceRay(system: OpticalSystem, inputRay: Ray): RayTraceResult {
     const localDirection = pose.toLocalDirection(ray.direction);
     const hit = intersectSurface(localOrigin, localDirection, surface.shape);
 
-    if (hit === null || hit.distance < -DISTANCE_EPSILON) {
+    // A ray may step *backwards* to a surface, but only when the prescription
+    // says the surface is backwards.
+    //
+    // A negative thickness puts the next surface behind the one before it, and
+    // that is how a **remote stop** is written: the aperture stop of a
+    // telecentric system sits far downstream, and the file steps back to where
+    // the glass actually is. The paper file that turned this up opens with a
+    // surface commented "Telecentric Degree", a stop 1200 mm out, and a −1200
+    // step home; every ray in it reaches the fourth surface by a negative
+    // distance, and refusing that reports a design that traces perfectly in
+    // OpticStudio as 34 surfaces of `MISSED`.
+    //
+    // What is *not* allowed is a backward hit where the prescription steps
+    // forward, or nowhere: that is a ray which cannot reach a surface nominally
+    // ahead of it — an image plane buried inside the last lens, say — and
+    // reporting it as a hit gives a focus search a fake perfect score to find.
+    if (hit === null || (hit.distance < -DISTANCE_EPSILON && !stepsBackward(system, index))) {
       return finish(inputRay, ray, intersections, 'MISSED', index);
     }
 

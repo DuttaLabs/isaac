@@ -254,3 +254,54 @@ test('a radius and a half-width are different quantities, and cannot be mixed', 
   const rectangle = normalizeAperture({ kind: 'ELLIPTICAL', halfWidthX: 3, halfWidthY: 4 })!;
   assert.deepEqual(normalizeAperture(rectangle), rectangle);
 });
+
+test('a remote stop is traced through: the prescription may step backwards', () => {
+  // The telecentric idiom, and the reason it exists: putting the aperture stop
+  // far downstream makes the chief ray parallel to the axis in object space. The
+  // file writes it as a step out to the stop and a negative step back to where
+  // the glass is — which means every ray reaches the surface after the stop by a
+  // *negative* distance. A microscopy design from a Nature Protocols paper opens
+  // exactly this way, and refusing the backward step reported all 34 of its
+  // surfaces as MISSED.
+  const remoteStop = new OpticalSystem({
+    name: 'Remote stop',
+    wavelengthsNm: [587.5618],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({ id: 'out', type: 'STANDARD', thickness: 1200 }),
+      new Surface({ id: 'stop', type: 'STANDARD', thickness: -1200, isStop: true }),
+      new Surface({
+        id: 'lens',
+        type: 'STANDARD',
+        radius: 100,
+        thickness: 6,
+        semiDiameter: 25,
+        material: GLASS,
+      }),
+      new Surface({ id: 'back', type: 'STANDARD', thickness: 190, semiDiameter: 25 }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+
+  const result = traceRay(remoteStop, collimatedRay(4));
+  assert.equal(result.status, 'TERMINATED');
+  // The step home is genuinely backwards: the lens sits 1200 before the stop.
+  assert.equal(remoteStop.vertexZAt(2), 1200);
+  assert.equal(remoteStop.vertexZAt(3), 0);
+  const atLens = result.intersections.find((one) => one.surfaceIndex === 3);
+  assert.ok(atLens, 'the ray reaches the lens after stepping back');
+});
+
+test('a surface the prescription puts ahead is still missed when the ray cannot reach it', () => {
+  // The other half of the rule, and what keeps a focus search honest: an image
+  // plane buried inside the last surface is nominally *ahead*, so a ray that can
+  // only meet it behind itself has not met it. Reporting a hit there hands the
+  // search a fake perfect score — one ray on axis, scoring zero.
+  const buried = planoConvexSinglet(25);
+  const collapsed = buried.withSurfaceAt(2, buried.surfaceAt(2).with({ thickness: 0 }));
+
+  // The rim of the curved front surface is downstream of the flat rear one's
+  // vertex, so a marginal ray exits past the image plane.
+  assert.equal(traceRay(collapsed, collimatedRay(24)).status, 'MISSED');
+});

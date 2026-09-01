@@ -2065,6 +2065,21 @@ input.coefficient {
  * end does not, and a column whose contents shift sideways at the top and bottom
  * of the table reads as two columns that happen to be adjacent.
  */
+/*
+ * The bounds of the drawing: how far the design itself reaches, as against the
+ * panel it is drawn in. Worth a line precisely when the two differ most — zoomed
+ * out, where the picture is a small thing adrift in a large empty box.
+ *
+ * A hairline in the border color, not an axis color: it is a fact about the
+ * frame rather than about the optics, and it must not read as something light
+ * does. `non-scaling-stroke` comes from the blanket `svg.layout *` rule, so it
+ * stays a hairline at every zoom rather than swelling into a bar.
+ */
+.plot-extent {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
 .element-body {
   position: relative;
 }

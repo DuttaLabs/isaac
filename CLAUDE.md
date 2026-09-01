@@ -796,10 +796,20 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   than looked at, because a view panned into empty space renders perfectly and shows nothing, which
   reads as a blank panel rather than as a bug.
 
-  Marking the drawing area's border was the other idea, and it is **not worth drawing**: the box fills
-  the panel body, so its top edge is the header's own rule and its sides are the panel's own border. A
-  line there would trace what is already on screen. The only unmarked edge is the bottom one, where
-  the drawing meets the legends.
+  **How far the design reaches is drawn, as a hairline** (`.plot-extent`). Two different lines were
+  confused here for a while, and only one is worth having. Marking the *drawing area* is not: that box
+  fills the panel body, so its top edge is the header's own rule and its sides are the panel's own
+  border, and a line there traces what is already on screen. Marking *the design's own bounds* is,
+  because the two coincide only at the fitted zoom — wind the wheel back and the system becomes a
+  small thing adrift in a large empty panel with nothing saying where it went. The pan clamp does stop
+  you at the edge, but a wall you find by walking into it is not the same as being shown the room.
+
+  It is built from the **turned** bounds mapped with `project`'s own scale and centers, *not* passed
+  through `project`, which would turn them a second time. `scale` is the smaller of the two fits, so
+  this is not the drawing area inset by `PADDING`: one axis fills it and the other does not, and which
+  one is the whole point. Pinned by rendering it in every plane and turn and asserting that no drawn
+  path falls outside it — a frame that does not actually bound the drawing is worse than none, and it
+  looks perfectly plausible.
 
   **`.layout-3d` is `flex: 1 1 0`, and the `0` is load-bearing.** It used to hold a fixed
   `aspect-ratio` so that toggling to 3D did not make the panel jump; with no toggle left, a fixed

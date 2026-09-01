@@ -38,18 +38,19 @@
 }
 
 /*
-  The frame meter. Bottom-left, which is the one corner nothing else claims —
-  the app bar and the tweak panel are both along the top, and the layout
-  panels' own controls sit in their headers. Above the panels so it is readable
-  over a drawing, below the tweak panel that switches it on.
+  The frame meter, on the top row beside the tweak panel that switches it on —
+  `right` clears that panel's 300px and its own 12px inset, so the two read as
+  one strip whether or not the panel is open. Side by side rather than stacked:
+  up here a tall block would hang down over a layout, and 160px across is
+  narrower than the panel it sits next to.
 */
 .dev-stats {
   position: fixed;
-  bottom: 12px;
-  left: 12px;
+  top: 52px;
+  right: 324px;
   z-index: 150;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 2px;
 }
 

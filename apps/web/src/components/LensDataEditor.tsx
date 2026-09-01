@@ -53,6 +53,7 @@ import {
   hasChosenColor,
   hasChosenEndColor,
   hasChosenMirrorColor,
+  isHidden,
   mirrorColor,
   systemEnds,
   type ElementStyles,
@@ -93,7 +94,10 @@ export function LensDataEditor({
   /** Labels and colors the user has given elements, keyed by front surface id. */
   elementStyles: ElementStyles;
   /** Records one change; `undefined` clears that part back to the default. */
-  onElementStyle: (key: string, change: { label?: string; color?: string | undefined }) => void;
+  onElementStyle: (
+    key: string,
+    change: { label?: string; color?: string | undefined; hidden?: boolean },
+  ) => void;
   /** Reports the surface the user is on, so the layout can point it out. */
   onHighlight: (surfaceIndex: number | undefined) => void;
   /** The surface currently pointed out, which the arrow keys step through. */
@@ -299,6 +303,7 @@ export function LensDataEditor({
     }
     const name = elementLabel(element, elementStyles);
     const isMirror = element.kind === 'MIRROR';
+    const shown = !isHidden(element, elementStyles);
     return (
       <td className="element-cell" rowSpan={elementRowSpan(element)}>
         <TextCell
@@ -316,6 +321,27 @@ export function LensDataEditor({
             views already draw them as two bodies. A mirror has no glass in it
             and no body to fill, so its one color belongs to the element itself. */}
         <div className="element-swatches">
+          {/* In or out of the light. A switch rather than a checkbox because it
+              turns one thing on and off, and it sits with the color because both
+              are things done *to* this element rather than to a surface.
+
+              Lit when the element is in the beam, hollow when it is not — the
+              off state is the one that has to be visible from across the table,
+              since a design missing an element otherwise looks like a design
+              that never had one. */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={shown}
+            className={shown ? 'element-power on' : 'element-power'}
+            aria-label={`${name} in the light`}
+            title={
+              shown
+                ? `Take ${name} out of the light. Its rows stay; rays cross it as if it were air.`
+                : `Put ${name} back in the light.`
+            }
+            onClick={() => onElementStyle(element.key, { hidden: shown })}
+          />
           {isMirror
             ? swatch(
                 element.key,

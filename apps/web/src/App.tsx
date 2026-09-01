@@ -9,6 +9,7 @@ import { renameSystem } from './lib/edits.ts';
 import {
   elementColorsBySurface,
   surfaceColorsBySurface,
+  systemAsTraced,
   type ElementStyles,
 } from './lib/elements.ts';
 import { Splitter } from './components/Splitter.tsx';
@@ -340,7 +341,26 @@ export function App() {
     [system, elementStyles],
   );
 
-  const firstOrder = useMemo(() => computeFirstOrder(system), [system]);
+  /**
+   * The system as it is **traced**, which is the design with every hidden element
+   * taken out of the light.
+   *
+   * Two systems, and the split is the point. The lens grid and the source panel
+   * read the *design*: hiding an element must not make its rows disappear, since
+   * the whole use of the switch is to compare with it and without. Everything
+   * that draws or traces reads this one, so a hidden lens is absent from the
+   * picture, from the fans, and from the first-order numbers alike — which is
+   * what "ignore its effect" has to mean if the comparison is to be worth
+   * anything.
+   *
+   * Derived rather than stored, so switching an element back on restores exactly
+   * what was there and nothing lands on the undo stack.
+   */
+  const tracedSystem = useMemo(
+    () => systemAsTraced(system, elementStyles),
+    [system, elementStyles],
+  );
+  const firstOrder = useMemo(() => computeFirstOrder(tracedSystem), [tracedSystem]);
   const pupilRadius = firstOrder.ok ? firstOrder.value.entrancePupilRadius : 10;
 
   // Padded rather than required to match: a system arriving from a file, an
@@ -497,15 +517,23 @@ export function App() {
    */
   const setElementStyle = (
     key: string,
-    change: { label?: string; color?: string | undefined },
+    change: { label?: string; color?: string | undefined; hidden?: boolean },
   ): void => {
     setElementStyles((current) => {
-      const entry: { label?: string; color?: string } = { ...current[key], ...change };
+      const entry: { label?: string; color?: string; hidden?: boolean } = {
+        ...current[key],
+        ...change,
+      };
       if (entry.color === undefined) {
         delete entry.color;
       }
       if (entry.label === undefined || entry.label.trim() === '') {
         delete entry.label;
+      }
+      // `false` is the default, so an element switched back on carries nothing —
+      // which is what lets the whole entry be dropped when it holds no choices.
+      if (entry.hidden !== true) {
+        delete entry.hidden;
       }
       const next = { ...current, [key]: entry };
       if (Object.keys(entry).length === 0) {
@@ -605,13 +633,13 @@ export function App() {
       case 'firstOrder':
         return (
           <ErrorBoundary label="First order">
-            <FirstOrderPanel system={system} firstOrder={firstOrder} choice={choice} />
+            <FirstOrderPanel system={tracedSystem} firstOrder={firstOrder} choice={choice} />
           </ErrorBoundary>
         );
       case 'layout2d':
         return (
           <Layout2DPanel
-            system={system}
+            system={tracedSystem}
             settings={settingsOf(found.settings, DEFAULT_LAYOUT_2D)}
             onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
@@ -625,7 +653,7 @@ export function App() {
       case 'layout3d':
         return (
           <Layout3DPanel
-            system={system}
+            system={tracedSystem}
             settings={settingsOf(found.settings, DEFAULT_LAYOUT_3D)}
             onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
@@ -639,7 +667,7 @@ export function App() {
       case 'rayFan':
         return (
           <RayFanPanel
-            system={system}
+            system={tracedSystem}
             settings={settingsOf(found.settings, DEFAULT_RAY_FAN)}
             onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
@@ -648,7 +676,7 @@ export function App() {
       case 'spot':
         return (
           <SpotPanel
-            system={system}
+            system={tracedSystem}
             settings={settingsOf(found.settings, DEFAULT_SPOT)}
             onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}

@@ -2088,6 +2088,35 @@ input.coefficient {
  * spanning the cell reads as a property of the whole element, and after a
  * doublet showed two of them it read as a progress bar cut in half.
  */
+/*
+ * Whether an element is in the light. Round like the stop's radio, because it is
+ * the same kind of mark — a small state you read down a column — and yellow
+ * because it is neither a color of the element nor a fault: it is a switch.
+ *
+ * Hollow when off, and that is the state worth seeing: a design missing an
+ * element looks exactly like a design that never had one, so the row has to say
+ * which it is.
+ */
+.element-power {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--surface-highlight);
+  background: transparent;
+  cursor: pointer;
+}
+
+.element-power.on {
+  background: var(--surface-highlight);
+}
+
+.element-power:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .element-swatches {
   display: flex;
   justify-content: center;

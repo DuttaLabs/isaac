@@ -500,6 +500,22 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   combined map would quietly paint every lens face in its body's color. In the 3-D view it is read
   *before* the mirror and stop defaults, not after, or a mirror could never be given a color at all.
 
+- **An element can be switched out of the light.** The yellow ring in the Element cell takes it out of
+  the *traced* system while leaving every row where it is — a "what does this element do?" control,
+  which only works if the before and after are comparable. So nothing moves: the surfaces keep their
+  positions and every thickness downstream is untouched, and a hidden lens simply becomes **air**,
+  which a surface with the same medium on both sides is indifferent to whatever its radius. A hidden
+  *mirror* stops reflecting and the light carries on, which usually leaves the rest of a folded
+  design somewhere the beam no longer goes — the honest answer to "what if this mirror were not
+  there", said out loud rather than prevented.
+
+  `App` therefore holds **two systems**: `system`, the design, which the lens grid and the source
+  panel read; and `tracedSystem` (`systemAsTraced`), which everything that draws or traces reads. A
+  hidden element is absent from the pictures, the fans *and* the first-order numbers alike — switch
+  the doublet out and the focal length reads `Inf`, which is the truth about a system with no power.
+  Derived on every render, so switching back on restores exactly what was there and nothing lands on
+  the undo stack.
+
 - **Element names and colors are view state**, in `App` beside the field checkboxes and the filename,
   keyed by the **id of the front surface** — of the element for a name, of the gap for a color — so
   they survive an insert above them. They are not on `OpticalSystem` because a `.zmx` has nowhere to

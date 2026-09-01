@@ -11,6 +11,7 @@ import {
   elementLabel,
   elementRowSpan,
   findElements,
+  systemAsTraced,
   gapColor,
   hasChosenColor,
   hasChosenEndColor,
@@ -496,4 +497,63 @@ test('a colored mirror is offered for reuse, but only with a theme to read', () 
   const elements = findElements(folded);
   assert.ok(colorsInUse(elements, {}, [], '#9fb4c4').includes('#9fb4c4'));
   assert.ok(!colorsInUse(elements, {}, []).includes('#9fb4c4'));
+});
+
+test('a hidden element is taken out of the light without moving anything', () => {
+  const doublet = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      glassFace('front', 60, 6),
+      glassFace('mid', -40, 4),
+      airFace('back', 100, 90),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+  const [element] = findElements(doublet);
+  assert.ok(element);
+
+  const traced = systemAsTraced(doublet, { [element.key]: { hidden: true } });
+
+  // Nothing moved: every surface sits exactly where it did, so the before and
+  // after are comparable.
+  for (let i = 0; i < doublet.surfaces.length; i += 1) {
+    assert.equal(traced.vertexZAt(i), doublet.vertexZAt(i), `surface ${i} moved`);
+    assert.equal(traced.surfaceAt(i).radius, doublet.surfaceAt(i).radius);
+  }
+  // But there is no glass left, so no element and no power.
+  assert.deepEqual(findElements(traced), []);
+  const index = traced.primaryWavelengthNm;
+  for (const surface of traced.surfaces) {
+    assert.ok(Math.abs(surface.material.indexAt(index) - 1) < 1e-9);
+  }
+
+  // And the design itself is untouched — this is a question asked of it.
+  assert.equal(findElements(doublet).length, 1);
+  // Switching it back on is the absence of the flag, not a second state.
+  assert.equal(systemAsTraced(doublet, { [element.key]: {} }), doublet);
+});
+
+test('a hidden mirror stops reflecting, which is what "not there" means for one', () => {
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'm',
+        type: 'STANDARD',
+        radius: -100,
+        thickness: -50,
+        semiDiameter: 20,
+        reflective: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+  const [mirror] = findElements(system);
+  assert.equal(mirror?.kind, 'MIRROR');
+
+  const traced = systemAsTraced(system, { [mirror.key]: { hidden: true } });
+  assert.equal(traced.surfaceAt(1).reflective, false);
+  // Its radius and place are still its own: only the reflection is gone.
+  assert.equal(traced.surfaceAt(1).radius, -100);
+  assert.equal(traced.vertexZAt(2), system.vertexZAt(2));
 });

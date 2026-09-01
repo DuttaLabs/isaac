@@ -1,4 +1,4 @@
-import type { Material, OpticalSystem } from '@isaac/optical-core';
+import { AIR, type Material, type OpticalSystem } from '@isaac/optical-core';
 
 /**
  * Which surfaces are the two faces of one piece of glass.
@@ -201,6 +201,20 @@ export interface ElementStyle {
   label?: string;
   /** A CSS color the user picked. Absent means the theme's own glass color. */
   color?: string;
+  /**
+   * Taken out of the light while left in the table.
+   *
+   * A "what does this element do?" switch: the rows stay exactly where they are,
+   * and the *traced* system has the element's glass replaced by air, so rays
+   * cross the space it occupied without being bent by it. Nothing moves — the
+   * surfaces keep their positions and every thickness downstream is untouched —
+   * which is what makes the before-and-after comparable.
+   *
+   * View state, like the label and the color, and for the same reason: it is a
+   * question being asked of the design, not a change to it, so it must not land
+   * on the undo stack or be written into a file.
+   */
+  hidden?: boolean;
 }
 
 export type ElementStyles = Readonly<Record<string, ElementStyle>>;
@@ -229,6 +243,49 @@ export function gapColor(gap: ElementGap, styles: ElementStyles): string {
 /** The palette entry a gap starts with, by its position in the system. */
 export function defaultGapColor(gap: ElementGap): string {
   return ELEMENT_PALETTE[gap.colorIndex % ELEMENT_PALETTE.length]!;
+}
+
+/** True when this element has been switched out of the light. */
+export function isHidden(element: OpticalElement, styles: ElementStyles): boolean {
+  return styles[element.key]?.hidden === true;
+}
+
+/**
+ * The system as it is *traced*, with every hidden element taken out of the light.
+ *
+ * A hidden lens becomes air: its faces stay where they are, and a surface with
+ * the same medium either side has no power whatever its radius, so rays cross it
+ * undeviated. A hidden **mirror** stops reflecting, and the light simply carries
+ * on — which usually leaves the rest of a folded design somewhere the beam no
+ * longer goes. That is the honest answer to "what if this mirror were not
+ * there", and the picture says so rather than hiding it.
+ *
+ * The design itself is never touched: this is derived on every render from the
+ * system and the styles, so switching an element back on restores exactly what
+ * was there.
+ */
+export function systemAsTraced(system: OpticalSystem, styles: ElementStyles): OpticalSystem {
+  const hidden = findElements(system).filter((element) => isHidden(element, styles));
+  if (hidden.length === 0) {
+    return system;
+  }
+  let traced = system;
+  for (const element of hidden) {
+    if (element.kind === 'MIRROR') {
+      const surface = traced.surfaceAt(element.firstIndex);
+      traced = traced.withSurfaceAt(element.firstIndex, surface.with({ reflective: false }));
+      continue;
+    }
+    // Air across every gap the element is made of. The *last* face of a run
+    // carries the medium after the element, which belongs to whatever follows
+    // and is left alone.
+    for (const gap of element.gaps) {
+      for (let index = gap.frontIndex; index < gap.backIndex; index += 1) {
+        traced = traced.withSurfaceAt(index, traced.surfaceAt(index).with({ material: AIR }));
+      }
+    }
+  }
+  return traced;
 }
 
 /** True when the user has overridden this gap's color. */

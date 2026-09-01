@@ -116,6 +116,6 @@ test('other surface types are still refused, and say so by name', () => {
     (error: unknown) =>
       error instanceof ZmxImportError &&
       /is TYPE TOROIDAL/.test(error.message) &&
-      /only STANDARD, PARAXIAL, EVENASPH, COORDBRK surfaces are supported/.test(error.message),
+      /only STANDARD, PARAXIAL, EVENASPH, TILTSURF, COORDBRK surfaces are supported/.test(error.message),
   );
 });

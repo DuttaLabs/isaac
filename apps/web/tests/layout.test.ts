@@ -775,3 +775,46 @@ test('a surface that only obscures has no outline, and does not stretch the pict
   assert.notEqual(face?.obscuringOnly, true, 'a face of glass has a rim of its own');
   assert.ok(face?.obscured?.length, 'and the spot on it is still drawn');
 });
+
+test('a tilted plane is drawn slanted in the plane it is tilted in, and square in the other', () => {
+  // Zemax's TILTSURF: `z = x·tx + y·ty`. A wedge tilted about y alone leans in
+  // the meridional view and stands square in the sagittal one — which is the
+  // whole reason the sag has to be asked for at a *point* rather than at a
+  // height, since a height cannot tell the two apart.
+  const wedge = Math.tan((3 * Math.PI) / 180);
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'front',
+        type: 'STANDARD',
+        thickness: 10,
+        semiDiameter: 12,
+        material: N_BK7,
+      }),
+      new Surface({
+        id: 'back',
+        type: 'TILTED',
+        tiltTangents: { x: 0, y: wedge },
+        thickness: 40,
+        semiDiameter: 12,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 12 }),
+    ],
+  });
+
+  const meridional = buildLayout(system, [], DEFAULT_SEMI_DIAMETER, VIEW_PLANES.YZ).profiles.find(
+    (one) => one.surfaceIndex === 2,
+  )!;
+  const top = meridional.points[meridional.points.length - 1]!;
+  const bottom = meridional.points[0]!;
+  // The face leans by its tangent across the full aperture: 12 either side.
+  assert.ok(Math.abs(top.h - bottom.h - 2 * 12 * wedge) < 1e-6, `leaned ${top.h - bottom.h}`);
+
+  const sagittal = buildLayout(system, [], DEFAULT_SEMI_DIAMETER, VIEW_PLANES.XZ).profiles.find(
+    (one) => one.surfaceIndex === 2,
+  )!;
+  const spread =
+    Math.max(...sagittal.points.map((p) => p.h)) - Math.min(...sagittal.points.map((p) => p.h));
+  assert.ok(spread < 1e-9, `a tilt about y should be invisible in x–z, but spread ${spread}`);
+});

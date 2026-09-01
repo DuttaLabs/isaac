@@ -368,7 +368,7 @@ test('geometry the core cannot model is rejected rather than approximated', () =
       importDoublet(
         DOUBLET.replace('  TYPE STANDARD\n  CURV 1.07', '  TYPE TOROIDAL\n  CURV 1.07'),
       ),
-    /only STANDARD, PARAXIAL, EVENASPH, COORDBRK surfaces/,
+    /only STANDARD, PARAXIAL, EVENASPH, TILTSURF, COORDBRK surfaces/,
   );
   assert.throws(
     () => importDoublet('MODE SEQ\nSURF 0\n  DISZ 0\n'),

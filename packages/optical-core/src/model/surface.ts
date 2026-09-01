@@ -34,7 +34,13 @@ import {
  * TOROIDAL and other Zemax-compatible types are planned but intentionally absent.
  */
 export type SurfaceType =
-  'OBJECT' | 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL' | 'COORDINATE_TRANSFORM' | 'IMAGE';
+  | 'OBJECT'
+  | 'STANDARD'
+  | 'EVEN_ASPHERE'
+  | 'PARAXIAL'
+  | 'TILTED'
+  | 'COORDINATE_TRANSFORM'
+  | 'IMAGE';
 
 /** The types that may carry aspheric polynomial coefficients. */
 export const ASPHERIC_SURFACE_TYPES: readonly SurfaceType[] = ['EVEN_ASPHERE'];
@@ -126,6 +132,19 @@ export interface SurfaceConfig {
    */
   focalLength?: number;
   /**
+   * The two tangents of a `TILTED` surface: `z = x·tiltTangents.x + y·tiltTangents.y`.
+   *
+   * Required on one and rejected on every other type, the same rule a `PARAXIAL`
+   * surface's focal length follows. Zemax's `TILTSURF`, whose first two
+   * parameters these are.
+   *
+   * **Not a substitute for a coordinate break**, and Zemax's own manual says so:
+   * a tilted surface bends the light at a tilted *plane* while leaving the axis
+   * where it was, which is what a prism face or a tilted detector does. A fold
+   * mirror moves the axis, and that is a transform.
+   */
+  tiltTangents?: { x: number; y: number };
+  /**
    * The decenter and tilt applied by a `COORDINATE_TRANSFORM` surface. Required on
    * one, and rejected on every other type — a tilt has no meaning on a surface
    * that also has a shape, which is the one thing this type does not have.
@@ -167,6 +186,8 @@ export class Surface {
   public readonly aperture: SurfaceAperture | undefined;
   /** Ideal-lens focal length; defined only on a `PARAXIAL` surface. */
   public readonly focalLength: number | undefined;
+  /** The two tangents; defined only on a `TILTED` surface. */
+  public readonly tiltTangents: { x: number; y: number } | undefined;
   /** Decenter and tilt; defined only on a `COORDINATE_TRANSFORM` surface. */
   public readonly coordinateTransform: CoordinateTransform | undefined;
   /** Medium immediately after the surface (toward +Z). */
@@ -232,6 +253,28 @@ export class Surface {
       throw new RangeError('focalLength is only meaningful on a PARAXIAL surface.');
     }
 
+    // A tilted surface is a *plane* at an angle: the tangents are its whole
+    // shape, so a radius, a conic or a polynomial would be a second and
+    // contradictory one. Refused rather than ignored, exactly as a PARAXIAL
+    // surface refuses a radius.
+    if (config.type === 'TILTED') {
+      if (config.tiltTangents === undefined) {
+        throw new TypeError('A TILTED surface requires its two tangents.');
+      }
+      const { x, y } = config.tiltTangents;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new RangeError('TILTED tangents must be finite numbers.');
+      }
+      if (Number.isFinite(radius)) {
+        throw new RangeError('A TILTED surface is a plane; it cannot have a radius.');
+      }
+      if (conic !== 0) {
+        throw new RangeError('A TILTED surface is a plane; it cannot have a conic constant.');
+      }
+    } else if (config.tiltTangents !== undefined) {
+      throw new RangeError('tiltTangents are only meaningful on a TILTED surface.');
+    }
+
     // A coordinate transform has no shape, no glass boundary and no aperture: it is
     // a change of frame wearing a surface's clothes. Anything that would give it
     // optical behavior is refused rather than ignored, because a tilted surface
@@ -291,6 +334,7 @@ export class Surface {
     this.conic = conic;
     this.asphericCoefficients = asphericCoefficients;
     this.focalLength = config.focalLength;
+    this.tiltTangents = config.tiltTangents;
     this.coordinateTransform = config.coordinateTransform;
     this.thickness = config.thickness;
     this.semiDiameter = semiDiameter;
@@ -308,6 +352,7 @@ export class Surface {
       curvature: Number.isFinite(radius) ? 1 / radius : 0,
       conic,
       asphericCoefficients,
+      ...(config.tiltTangents === undefined ? {} : { tilt: { ...config.tiltTangents } }),
     });
   }
 
@@ -326,6 +371,7 @@ export class Surface {
       // `in` distinguishes and `??` cannot.
       aperture: 'aperture' in changes ? changes.aperture : this.aperture,
       focalLength: changes.focalLength ?? this.focalLength,
+      tiltTangents: 'tiltTangents' in changes ? changes.tiltTangents : this.tiltTangents,
       coordinateTransform: changes.coordinateTransform ?? this.coordinateTransform,
       material: changes.material ?? this.material,
       reflective: changes.reflective ?? this.reflective,

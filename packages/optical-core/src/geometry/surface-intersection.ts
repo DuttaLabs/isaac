@@ -2,6 +2,7 @@ import { Point3 } from './point3.ts';
 import { Vector3 } from './vector3.ts';
 import {
   type SurfaceShape,
+  isTilted,
   sphericalShape,
   surfaceSag,
   surfaceSlopeOverRadius,
@@ -43,6 +44,13 @@ export function intersectSurface(
   direction: Vector3,
   shape: SurfaceShape,
 ): SurfaceHit | null {
+  // A tilted plane is met exactly, in one step, and has one normal everywhere —
+  // so it never touches the quadric solve or the Newton refinement below. It is
+  // also the only shape here that is not a figure of revolution, which is why it
+  // is answered before anything assumes it is.
+  if (isTilted(shape)) {
+    return intersectTiltedPlane(origin, direction, shape.tilt!);
+  }
   const conicDistance = intersectConic(origin, direction, shape.curvature, shape.conic);
 
   const distance =
@@ -224,4 +232,33 @@ function normalAt(shape: SurfaceShape, point: Point3): Vector3 | null {
     1,
   ).normalized();
   return vertexCurvature(shape) > 0 ? gradient.negate() : gradient;
+}
+
+/**
+ * Where a ray meets `z = x·tx + y·ty`, and the normal there.
+ *
+ * The plane through the origin whose normal is `(−tx, −ty, 1)`: substituting the
+ * ray into the plane equation gives a linear equation in the distance, so there
+ * is one root and no cancellation to guard against. A ray travelling *along* the
+ * plane never meets it, which is the `null`.
+ *
+ * The normal points generally toward +z, which is the same choice the spherical
+ * case makes for a plane. Refraction and reflection are indifferent to its sign;
+ * it matters only to what a consumer of `Intersection.normal` sees.
+ */
+function intersectTiltedPlane(
+  origin: Point3,
+  direction: Vector3,
+  tilt: { x: number; y: number },
+): SurfaceHit | null {
+  const normal = new Vector3(-tilt.x, -tilt.y, 1).normalized();
+  const along = direction.dot(normal);
+  if (Math.abs(along) < 1e-12) {
+    return null;
+  }
+  const distance = -(origin.x * normal.x + origin.y * normal.y + origin.z * normal.z) / along;
+  if (!Number.isFinite(distance)) {
+    return null;
+  }
+  return { distance, point: origin.add(direction.scale(distance)), normal };
 }

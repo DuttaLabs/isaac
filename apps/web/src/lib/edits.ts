@@ -37,6 +37,28 @@ export function updateSurface(
 }
 
 /**
+ * Aims a tilted surface: the tangents of its angles about x and y.
+ *
+ * Tangents rather than degrees, because that is what the file holds and what the
+ * sag is written in — `z = x·tx + y·ty`. The editor shows the angle beside them,
+ * which is the number a designer thinks in, but the model keeps the file's own
+ * quantity for the same reason it keeps the file's field names.
+ */
+export function updateTilt(
+  system: OpticalSystem,
+  index: number,
+  changes: { x?: number; y?: number },
+): Result<OpticalSystem> {
+  return attempt(() => {
+    const current = system.surfaceAt(index).tiltTangents ?? ZERO_TILT;
+    return system.withSurfaceAt(
+      index,
+      system.surfaceAt(index).with({ tiltTangents: { ...current, ...changes } }),
+    );
+  });
+}
+
+/**
  * Sets — or removes — what stops light at one surface.
  *
  * Its own edit rather than a field on {@link updateSurface}, because removing an
@@ -83,7 +105,11 @@ export function renameSystem(system: OpticalSystem, name: string): Result<Optica
 export const DEFAULT_PARAXIAL_FOCAL_LENGTH = 100;
 
 /** The surface types a user can choose between; OBJECT and IMAGE are fixed by position. */
-export type EditableSurfaceType = 'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL' | 'COORDINATE_TRANSFORM';
+export type EditableSurfaceType =
+  'STANDARD' | 'EVEN_ASPHERE' | 'PARAXIAL' | 'TILTED' | 'COORDINATE_TRANSFORM';
+
+/** A tilted surface starts square to the axis, and is aimed afterwards. */
+export const ZERO_TILT = { x: 0, y: 0 } as const;
 
 /** A coordinate transform starts flat: it is added first and aimed afterwards. */
 export const ZERO_COORDINATE_TRANSFORM: CoordinateTransform = {
@@ -148,7 +174,11 @@ export function setSurfaceType(
     }
 
     const shaped =
-      surface.type !== 'PARAXIAL' && surface.type !== 'COORDINATE_TRANSFORM' && type !== 'PARAXIAL';
+      surface.type !== 'PARAXIAL' &&
+      surface.type !== 'COORDINATE_TRANSFORM' &&
+      surface.type !== 'TILTED' &&
+      type !== 'PARAXIAL' &&
+      type !== 'TILTED';
     return system.withSurfaceAt(
       index,
       new Surface({
@@ -162,7 +192,11 @@ export function setSurfaceType(
         comment: surface.comment,
         ...(type === 'PARAXIAL'
           ? { focalLength: DEFAULT_PARAXIAL_FOCAL_LENGTH }
-          : { radius: shaped ? surface.radius : Infinity, conic: shaped ? surface.conic : 0 }),
+          : type === 'TILTED'
+            ? // A plane at an angle: its tangents are its whole shape, so it keeps
+              // whatever tilt it had and starts square if it had none.
+              { tiltTangents: surface.tiltTangents ?? ZERO_TILT }
+            : { radius: shaped ? surface.radius : Infinity, conic: shaped ? surface.conic : 0 }),
         ...(type === 'EVEN_ASPHERE' ? { asphericCoefficients: surface.asphericCoefficients } : {}),
       }),
     );

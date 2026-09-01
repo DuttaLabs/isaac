@@ -33,11 +33,47 @@ export interface SurfaceShape {
   conic: number;
   /** `α₁…αₙ`, the coefficients on r², r⁴, … r^(2n). Empty for a plain conic. */
   asphericCoefficients: readonly number[];
+  /**
+   * The tangents of a *tilted plane*: `z = x·tilt.x + y·tilt.y`.
+   *
+   * **The first shape here that is not a function of `r` alone**, and the reason
+   * {@link surfaceSagAt} exists beside {@link surfaceProfileSag}. Everything else
+   * in this file is rotationally symmetric — that is what lets a profile be
+   * revolved, a quadric be solved in one variable, and a sag be asked for at a
+   * height. A tilt breaks all three, so it is allowed only on a plane, where the
+   * geometry stays exact and simple: a ray meets it in closed form and the
+   * normal is the same everywhere.
+   *
+   * Zemax's `TILTSURF`, whose two parameters are these tangents. Its own manual
+   * says not to use it for fold mirrors — a coordinate break is for those; this
+   * is for tilted object and image planes, and for the faces of a prism.
+   */
+  tilt?: { x: number; y: number };
 }
 
 /** The shape of a plain sphere or plane. */
 export function sphericalShape(curvature: number): SurfaceShape {
   return { curvature, conic: 0, asphericCoefficients: [] };
+}
+
+/** True when the shape is a plane tilted off the axis rather than a figure of revolution. */
+export function isTilted(shape: SurfaceShape): boolean {
+  return shape.tilt !== undefined && (shape.tilt.x !== 0 || shape.tilt.y !== 0);
+}
+
+/**
+ * The sag at a *point*, which is what a tilt makes necessary.
+ *
+ * For every rotationally symmetric shape this is `surfaceProfileSag` at the
+ * point's radial height, and nothing has changed. A tilted plane adds its two
+ * linear terms, which depend on where the point is rather than how far out.
+ *
+ * Drawing code should ask this rather than the radial form: a profile sampled at
+ * a height alone cannot see a tilt, and would draw a tilted plane flat.
+ */
+export function surfaceSagAt(shape: SurfaceShape, x: number, y: number): number {
+  const symmetric = surfaceProfileSag(shape, Math.hypot(x, y));
+  return shape.tilt === undefined ? symmetric : symmetric + x * shape.tilt.x + y * shape.tilt.y;
 }
 
 /**

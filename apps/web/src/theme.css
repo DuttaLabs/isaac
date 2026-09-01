@@ -1692,6 +1692,22 @@ svg.layout * {
   text-align: left;
 }
 
+/* Two tangents and the angles they stand for, in the cell the shape columns
+   would otherwise fill. */
+.tilt-fields {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tilt-fields .numeric {
+  width: 88px;
+}
+
+.tilt-angles {
+  font-family: var(--mono);
+}
+
 .asphere-dialog,
 .aperture-dialog,
 .color-dialog {

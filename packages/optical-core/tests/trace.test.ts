@@ -305,3 +305,79 @@ test('a surface the prescription puts ahead is still missed when the ray cannot 
   // vertex, so a marginal ray exits past the image plane.
   assert.equal(traceRay(collapsed, collimatedRay(24)).status, 'MISSED');
 });
+
+test('a tilted surface is a plane at an angle, and refracts like one', () => {
+  // Zemax's TILTSURF: `z = x·tx + y·ty`, the two tangents being the whole shape.
+  // A 3° wedge is `tan 3° = 0.0524`, which is exactly what the sample prism
+  // writes.
+  const wedge = Math.tan((3 * Math.PI) / 180);
+  const prism = new OpticalSystem({
+    name: 'Wedge',
+    wavelengthsNm: [587.5618],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      new Surface({
+        id: 'front',
+        type: 'STANDARD',
+        thickness: 10,
+        semiDiameter: 12,
+        material: GLASS,
+      }),
+      new Surface({
+        id: 'back',
+        type: 'TILTED',
+        tiltTangents: { x: 0, y: wedge },
+        thickness: 50,
+        semiDiameter: 12,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+
+  // The axial ray meets the tilted face at the vertex, where the plane passes
+  // through the origin, and is deviated because the face is not square to it.
+  const axial = traceRay(prism, collimatedRay(0));
+  assert.equal(axial.status, 'TERMINATED');
+  const atFace = axial.intersections.find((one) => one.surfaceIndex === 2)!;
+  assert.ok(
+    Math.abs(atFace.point.z - 10) < 1e-9,
+    'the vertex of a tilted plane is still its vertex',
+  );
+  // Deviated by the wedge: n·tan for a thin wedge, so roughly (n − 1)·3°.
+  const deviation = Math.atan2(axial.finalRay.direction.y, axial.finalRay.direction.z);
+  const expected = ((GLASS.indexAt(587.5618) - 1) * (3 * Math.PI)) / 180;
+  assert.ok(
+    Math.abs(Math.abs(deviation) - expected) < 0.002,
+    `deviated ${deviation} rad, expected about ${expected}`,
+  );
+
+  // Off the axis the face has moved along z, by the tangent times the height:
+  // that is what makes it tilted rather than merely a plane.
+  const high = traceRay(prism, collimatedRay(6));
+  const atHigh = high.intersections.find((one) => one.surfaceIndex === 2)!;
+  assert.ok(
+    Math.abs(atHigh.point.z - (10 + 6 * wedge)) < 1e-9,
+    `met the face at z=${atHigh.point.z}`,
+  );
+});
+
+test('a tilted surface has no shape but its tangents', () => {
+  const make = (changes: object) => () =>
+    new Surface({
+      id: 't',
+      type: 'TILTED',
+      thickness: 5,
+      tiltTangents: { x: 0, y: 0.1 },
+      ...changes,
+    });
+  assert.throws(make({ radius: 100 }), /cannot have a radius/);
+  assert.throws(make({ conic: -1 }), /cannot have a conic/);
+  assert.throws(
+    () => new Surface({ id: 't', type: 'TILTED', thickness: 5 }),
+    /requires its two tangents/,
+  );
+  assert.throws(
+    () => new Surface({ id: 's', type: 'STANDARD', thickness: 5, tiltTangents: { x: 0, y: 1 } }),
+    /only meaningful on a TILTED surface/,
+  );
+});

@@ -136,7 +136,7 @@ const HANDLED_SURFACE_TOKENS = new Set([
  * Zemax surface types this reader maps onto the model. Everything else is
  * refused by name rather than approximated as a sphere.
  */
-const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH', 'COORDBRK']);
+const SUPPORTED_ZMX_TYPES = new Set(['STANDARD', 'PARAXIAL', 'EVENASPH', 'TILTSURF', 'COORDBRK']);
 
 /**
  * Surface records that carry *geometry* this reader does not model, mapped to a
@@ -355,6 +355,9 @@ function toSurface(
   // name 3-D graphics gives it. This is where the two vocabularies meet, so the
   // file's word survives here and nowhere else.
   const isCoordinateTransform = surfaceType === 'COORDBRK';
+  // Zemax's `TILTSURF`: a plane at an angle, its two parameters being the
+  // tangents of that angle about x and y.
+  const isTiltedSurface = surfaceType === 'TILTSURF';
 
   const conic = numericValue(firstValue(records, 'CONI')) ?? 0;
   if (!Number.isFinite(conic)) {
@@ -379,9 +382,11 @@ function toSurface(
         ? 'PARAXIAL'
         : isEvenAsphere
           ? 'EVEN_ASPHERE'
-          : isCoordinateTransform
-            ? 'COORDINATE_TRANSFORM'
-            : 'STANDARD';
+          : isTiltedSurface
+            ? 'TILTED'
+            : isCoordinateTransform
+              ? 'COORDINATE_TRANSFORM'
+              : 'STANDARD';
 
   // An aspheric object or image surface is not refused — a curved detector is a
   // real thing — but the polynomial belongs to a surface that bends rays, and
@@ -397,6 +402,19 @@ function toSurface(
   if (isParaxial && (isObject || isImage)) {
     throw new ZmxImportError(
       `Surface ${number} is TYPE PARAXIAL but is the ${isObject ? 'object' : 'image'} surface.`,
+    );
+  }
+
+  // A tilted *object or image* plane is exactly what this surface type is for —
+  // Zemax's own manual says so — and it is the one thing Isaac cannot yet
+  // express, because `OBJECT` and `IMAGE` are surface *types* here rather than
+  // positions in the list, so a surface cannot be both. Refused with the reason
+  // rather than imported as an untilted plane, which would be the wrong lens
+  // quietly.
+  if (isTiltedSurface && (isObject || isImage)) {
+    throw new ZmxImportError(
+      `Surface ${number} is TYPE TILTSURF but is the ${isObject ? 'object' : 'image'} surface; ` +
+        'Isaac models those two as surface types rather than as positions, so it cannot yet tilt them.',
     );
   }
 
@@ -442,6 +460,21 @@ function toSurface(
       type,
       coordinateTransform: readCoordinateTransform(records, number),
       thickness,
+      isStop,
+      comment: readComment(records),
+    });
+  }
+
+  if (type === 'TILTED') {
+    return new Surface({
+      id: `surf-${number}`,
+      type,
+      tiltTangents: readTiltTangents(records, number),
+      thickness,
+      semiDiameter,
+      aperture: readSurfaceAperture(records, number, context),
+      material: reflective ? AIR : readMaterial(records, number, context),
+      reflective,
       isStop,
       comment: readComment(records),
     });
@@ -710,6 +743,46 @@ function readAsphericCoefficients(records: readonly ZmxRecord[], surfaceNumber: 
  * it does not move a ray, so it is left to `ignoredTokens`. Any other parameter
  * on a paraxial surface is unverified, and is refused rather than guessed at.
  */
+/**
+ * The two tangents of a `TILTSURF`, from `PARM 1` and `PARM 2`.
+ *
+ * Chapter 14: "The tilted surface is simply a plane that makes an angle with
+ * respect to the x and y axes… uses the first two parameters to define the
+ * tangents of the x and y angles." Any *other* parameter there is refused rather
+ * than guessed at, exactly as on a paraxial surface — a column whose meaning is
+ * unverified is not a column to read.
+ *
+ * Both default to zero, so a `TILTSURF` with one parameter is a plane tilted
+ * about one axis, which is how a wedge is written.
+ */
+function readTiltTangents(
+  records: readonly ZmxRecord[],
+  surfaceNumber: number,
+): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  for (const record of findRecords(records, 'PARM')) {
+    const parameter = numericValue(record.values[0]);
+    const value = numericValue(record.values[1]) ?? 0;
+    if (parameter === 1) {
+      x = value;
+    } else if (parameter === 2) {
+      y = value;
+    } else {
+      throw new ZmxImportError(
+        `Surface ${surfaceNumber} is TYPE TILTSURF with an unrecognized PARM ${record.values[0]}; ` +
+          'only PARM 1 and PARM 2, the x and y tangents, are understood.',
+      );
+    }
+  }
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new ZmxImportError(
+      `Surface ${surfaceNumber} is TYPE TILTSURF with tangents ${x}, ${y}, which describe no plane.`,
+    );
+  }
+  return { x, y };
+}
+
 function readParaxialFocalLength(records: readonly ZmxRecord[], surfaceNumber: number): number {
   let focalLength: number | undefined;
   for (const record of findRecords(records, 'PARM')) {

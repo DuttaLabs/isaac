@@ -3,7 +3,8 @@ import {
   apertureHalfExtents,
   isCircularAperture,
   isObscuration,
-  surfaceProfileSag,
+  isTilted,
+  surfaceSagAt,
   type Surface,
   type SurfaceAperture,
 } from '@isaac/optical-core';
@@ -86,7 +87,7 @@ function patchOver(
       const radius = region.inner + (outer - region.inner) * t;
       const x = region.centerX + radius * cos;
       const y = region.centerY + radius * sin;
-      positions.push(x, y, surfaceProfileSag(surface.shape, Math.hypot(x, y)));
+      positions.push(x, y, surfaceSagAt(surface.shape, x, y));
     }
   }
 
@@ -175,7 +176,7 @@ function spiderGeometry(
       for (const across of [-half, half]) {
         const x = aperture.decenterX + along * cos - across * sin;
         const y = aperture.decenterY + along * sin + across * cos;
-        positions.push(x, y, surfaceProfileSag(surface.shape, Math.hypot(x, y)));
+        positions.push(x, y, surfaceSagAt(surface.shape, x, y));
       }
     }
     for (let step = 0; step < steps; step += 1) {
@@ -229,6 +230,11 @@ function boundaryRadius(
  * the shape drawn and stays with the lathe.
  */
 export function needsAperturePatch(surface: Surface): boolean {
+  // A tilted plane is not a figure of revolution either, so a lathe cannot draw
+  // it however ordinary its aperture is.
+  if (isTilted(surface.shape)) {
+    return true;
+  }
   const aperture = surface.aperture;
   if (aperture === undefined || isObscuration(aperture.kind)) {
     return false;

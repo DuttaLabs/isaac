@@ -4,6 +4,7 @@ import {
   isObscuration,
   signedMediaIndices,
   surfaceProfileSag,
+  surfaceSagAt,
   type OpticalSystem,
   type RayTraceResult,
   type Surface,
@@ -118,6 +119,15 @@ export function sag(shape: SurfaceShape, y: number): number {
 }
 
 /**
+ * The sag at a *point* rather than at a height, which is what a tilted plane
+ * needs: its `z = x·tx + y·ty` depends on where the point is, not how far out.
+ * Identical to {@link sag} for every rotationally symmetric shape.
+ */
+export function sagAt(shape: SurfaceShape, x: number, y: number): number {
+  return surfaceSagAt(shape, x, y);
+}
+
+/**
  * Least axial distance between two consecutive surfaces, over the aperture they
  * share. Negative means the rear surface has crossed in front of the front one:
  * the element would have to be thinner than nothing somewhere, which is a real
@@ -226,7 +236,7 @@ function outlineInLocalFrame(
     // center: an off-axis parabola is a piece of the parent, and it curves the
     // way the parent does at that distance out. Which is why this is the radial
     // distance of the sampled point, not just its height in the view.
-    const depth = sag(shape, Math.hypot(height, across));
+    const depth = upright === 'y' ? sagAt(shape, across, height) : sagAt(shape, height, across);
     return upright === 'y' ? new Point3(across, height, depth) : new Point3(height, across, depth);
   });
   // The samples inside a hole are the ones the material is missing at, and the
@@ -442,7 +452,7 @@ function rimSamples(shape: SurfaceShape, disc: Disc): Point3[] {
             x: disc.centerX + disc.radiusX * Math.cos(2 * Math.PI * fraction),
             y: disc.centerY + disc.radiusY * Math.sin(2 * Math.PI * fraction),
           };
-    return new Point3(x, y, sag(shape, Math.hypot(x, y)));
+    return new Point3(x, y, sagAt(shape, x, y));
   });
 }
 

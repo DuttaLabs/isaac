@@ -12,6 +12,8 @@ export {
   maximumSagRadius,
   surfaceSag,
   surfaceProfileSag,
+  surfaceSagAt,
+  isTilted,
   surfaceSlopeOverRadius,
   vertexCurvature,
 } from './geometry/surface-sag.ts';

@@ -102,6 +102,7 @@ const ZMX_TYPE_NAMES: Readonly<Record<string, string>> = {
   STANDARD: 'STANDARD',
   EVEN_ASPHERE: 'EVENASPH',
   PARAXIAL: 'PARAXIAL',
+  TILTED: 'TILTSURF',
   COORDINATE_TRANSFORM: 'COORDBRK',
   IMAGE: 'STANDARD',
 };
@@ -387,6 +388,14 @@ function parameterRecords(surface: Surface): ZmxRecord[] {
     return surface.asphericCoefficients.map((coefficient, index) =>
       record('PARM', index + 1, number(coefficient)),
     );
+  }
+  if (surface.type === 'TILTED') {
+    // PARM 1 and PARM 2 are the tangents of the x and y angles.
+    const tilt = surface.tiltTangents;
+    if (tilt === undefined) {
+      throw new ZmxExportError(`Surface ${surface.id} is tilted with no tangents on it.`);
+    }
+    return [record('PARM', '1', number(tilt.x)), record('PARM', '2', number(tilt.y))];
   }
   if (surface.type === 'COORDINATE_TRANSFORM') {
     const transform = surface.coordinateTransform;

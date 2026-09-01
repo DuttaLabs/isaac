@@ -32,6 +32,28 @@ The core is layered, and imports flow one direction: `geometry` → `model` → 
 **`ModelGlassMaterial`** is a glass described the way a patent describes one — `nd` and the Abbe number, optionally `ΔPg,F` — rather than by measured Sellmeier coefficients. It is a two-term expansion in Buchdahl's chromatic coordinate `ω = (λ − λd)/(1 + 2.5(λ − λd))`, with `ν₁`/`ν₂` fixed by `nF − nC = (nd − 1)/Vd` and `nG − nF = Pg,F(nF − nC)`. **It is not OpticStudio's model glass**, whose formula is proprietary and unpublished; do not try to reproduce that one. Accuracy is pinned by `glass-catalog`'s `model-glass-accuracy.test.ts`, which rebuilds all 365 g-line-covered SCHOTT glasses from three numbers each and holds the median drift under 5e-5 and the worst under 5e-4 across 400–700 nm. `normalLinePartialDispersion` is the K7–F2 line (`0.6438 − 0.001682·Vd`); recomputing it from those two glasses' real fits gives `0.6442 − 0.001688·Vd`, which is where the constants are verified.
 **`PARAXIAL` surfaces** are ideal thin lenses: a plane that bends rays by the paraxial law and nothing else, used as a placeholder for a lens group not yet designed. Power comes from `focalLength` (φ = 1/f), which is *required* on a `PARAXIAL` surface and rejected on every other type; a radius is refused rather than ignored, since it would be a second, contradictory source of the same power. The real trace applies `n'u' = nu − yφ` to the ray's two transverse **slopes** (`dx/dz`, `dy/dz`), not to its direction cosines — that is what makes the surface *ideal*: a collimated bundle lands at exactly `f·u` however wide the aperture, so the surface contributes first-order power and no aberration. Because f is read as `1/φ`, a paraxial surface between unequal media focuses at `n'·f`; the two readings coincide in air, which is how these surfaces are actually used, and `zemax-io` refuses an immersed one rather than pick a convention.
 
+**Tilted surfaces.** A `TILTED` surface is Zemax's `TILTSURF`: a *plane at an angle*, whose whole
+shape is the two tangents in `tiltTangents` — `z = x·tx + y·ty`, taken from `PARM 1` and `PARM 2`.
+A radius or a conic is refused on one, the same way a `PARAXIAL` surface refuses a radius: the
+tangents are already the shape, and a second statement of it would contradict them.
+
+**It is the first shape in the model that is not a figure of revolution**, and that is what it costs.
+Everything else here is a function of `r` alone — which is what lets a profile be revolved, a quadric
+be solved in one variable, and a sag be asked for at a *height*. So a tilt is allowed only on a plane,
+where the geometry stays exact: `intersectSurface` answers it in closed form before the quadric solve
+is reached, and the normal is the same everywhere. Drawing asks `surfaceSagAt(shape, x, y)` rather
+than `surfaceProfileSag(shape, r)` — a profile sampled at a height alone cannot see a tilt and would
+draw a wedge flat — and `needsAperturePatch` is true for one, since a lathe cannot revolve it either.
+
+**Not a substitute for a coordinate break**, and the manual says so outright: a tilted surface bends
+light at a tilted plane while leaving the axis where it was, which is a prism face or a tilted
+detector. A fold mirror *moves the axis*, and that is a transform.
+
+**A tilted object or image plane is refused for now**, with the reason named: those two are surface
+*types* here rather than positions in the list, so a surface cannot be both `OBJECT` and `TILTED`.
+Two sample files need it (`Tilted object.zmx`, `Example 6, tilted image plane.ZMX`), and it is what
+the `OBJECT`/`IMAGE`-as-a-position refactor is for.
+
 **Conics and aspheres.** `conic` (the `k` in the sag) lives on any surface that has a radius, and is refused on a `PARAXIAL` one, which is a plane by definition. Aspheric polynomial coefficients need the `EVEN_ASPHERE` type and are refused everywhere else — the same grouping Zemax uses, and for the same reason: a conic is a change of *shape*, a polynomial is a change of *kind*. Trailing zeros are trimmed from `asphericCoefficients`, so "no polynomial" has one spelling and the tracer's closed-form path is taken whenever it applies; interior zeros stay, because they are positions in the series.
 
 Two things about this are easy to get wrong, and both are pinned by tests:
@@ -1014,12 +1036,12 @@ The goal is to replicate **most of what OpticStudio does** (see `Architecture.md
 PSF are all wanted, and non-sequential tracing is wanted eventually. What follows is the *current
 state*, not a fence.
 
-Implemented today: plane, spherical, conic and even-aspheric surfaces, Snell refraction, mirrors
+Implemented today: plane, spherical, conic, even-aspheric and **tilted** surfaces, Snell refraction, mirrors
 (traced, paraxially analyzed, and drawn), **coordinate transforms**, **surface apertures and
 obscurations — circular, rectangular and elliptical**, sequential tracing, and first-order/paraxial
 analysis. Surface types are
-`OBJECT`/`STANDARD`/`EVEN_ASPHERE`/`PARAXIAL`/`COORDINATE_TRANSFORM`/`IMAGE`, with reflection a flag on
-a surface rather than a type of its own.
+`OBJECT`/`STANDARD`/`EVEN_ASPHERE`/`PARAXIAL`/`TILTED`/`COORDINATE_TRANSFORM`/`IMAGE`, with reflection a
+flag on a surface rather than a type of its own.
 
 The discipline is **completeness, not restraint**: a capability lands modeled, traced, *paraxially
 analyzed*, tested, and shown in the UI — not stubbed. A half-built feature that silently returns

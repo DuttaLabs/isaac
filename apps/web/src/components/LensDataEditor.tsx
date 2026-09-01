@@ -21,6 +21,7 @@ import {
   setStop,
   setSurfaceAperture,
   setSurfaceType,
+  updateTilt,
   updateCoordinateTransform,
   updateSurface,
   type EditableSurfaceType,
@@ -341,6 +342,10 @@ export function LensDataEditor({
     );
   };
 
+  const headerIsTilted =
+    highlightedSurface !== undefined &&
+    highlightedSurface < system.surfaces.length &&
+    system.surfaceAt(highlightedSurface).type === 'TILTED';
   const headerIsTransform =
     highlightedSurface !== undefined &&
     highlightedSurface < system.surfaces.length &&
@@ -616,7 +621,11 @@ export function LensDataEditor({
                   while the cursor is on that row. On a coordinate transform the
                   four shape columns hold nothing, and saying "Radius" over an
                   empty span is worse than saying what is actually there. */}
-              {headerIsTransform ? (
+              {headerIsTilted ? (
+                <th colSpan={SHAPE_COLUMNS} className="transform-header">
+                  Tilt tangents
+                </th>
+              ) : headerIsTransform ? (
                 <th colSpan={SHAPE_COLUMNS} className="transform-header">
                   Coordinate Transform
                 </th>
@@ -641,6 +650,10 @@ export function LensDataEditor({
               const isImage = surface.type === 'IMAGE';
               const isParaxial = surface.type === 'PARAXIAL';
               const isTransform = surface.type === 'COORDINATE_TRANSFORM';
+              // A tilted surface has no radius, conic, polynomial or focal
+              // length either: two tangents are its whole shape, so they take
+              // the same spanned cell the transform's parameters do.
+              const isTilted = surface.type === 'TILTED';
               const isFixed = isObject || isImage;
               const modelParameters = modelGlassText(surface.material);
               // Every surface is its own number, with no exceptions: the object
@@ -752,7 +765,37 @@ export function LensDataEditor({
                       thing it does have. The header follows suit while the cursor
                       is on the row, which is the only time a shared header can
                       honestly name one row's contents. */}
-                  {isTransform ? (
+                  {isTilted ? (
+                    <td colSpan={SHAPE_COLUMNS} className="transform-cell">
+                      <span className="tilt-fields">
+                        <label className="inline">
+                          <span className="hint">tan x</span>
+                          <NumericCell
+                            value={surface.tiltTangents?.x ?? 0}
+                            ariaLabel={`X tangent of surface ${label}`}
+                            title="Tangent of the tilt about x. The file's own quantity; the angle is beside it."
+                            onCommit={(next) => apply(updateTilt(system, index, { x: next }))}
+                          />
+                        </label>
+                        <label className="inline">
+                          <span className="hint">tan y</span>
+                          <NumericCell
+                            value={surface.tiltTangents?.y ?? 0}
+                            ariaLabel={`Y tangent of surface ${label}`}
+                            title="Tangent of the tilt about y."
+                            onCommit={(next) => apply(updateTilt(system, index, { y: next }))}
+                          />
+                        </label>
+                        {/* The angle a designer thinks in, alongside the tangent
+                            the file holds. Read-only: two spellings of one number
+                            that can both be typed into is two places to disagree. */}
+                        <span className="hint tilt-angles">
+                          {degreesOf(surface.tiltTangents?.x ?? 0)},{' '}
+                          {degreesOf(surface.tiltTangents?.y ?? 0)}
+                        </span>
+                      </span>
+                    </td>
+                  ) : isTransform ? (
                     <td colSpan={SHAPE_COLUMNS} className="transform-cell">
                       {surface.coordinateTransform !== undefined ? (
                         <CoordinateTransformSummaryButton
@@ -1025,10 +1068,16 @@ export function LensDataEditor({
 const SHAPE_COLUMNS = 4;
 
 /** The types a user may pick between, in the order they appear in the dropdown. */
+/** A tangent as the angle it stands for, which is how a tilt is specified. */
+function degreesOf(tangent: number): string {
+  return `${((Math.atan(tangent) * 180) / Math.PI).toFixed(3)}°`;
+}
+
 const EDITABLE_SURFACE_TYPES: readonly EditableSurfaceType[] = [
   'STANDARD',
   'EVEN_ASPHERE',
   'PARAXIAL',
+  'TILTED',
   'COORDINATE_TRANSFORM',
 ];
 

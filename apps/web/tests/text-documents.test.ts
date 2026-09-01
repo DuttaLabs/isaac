@@ -7,7 +7,7 @@ import {
   linesOf,
   stepMatch,
 } from '../src/lib/text-documents.ts';
-import { readRecents, withRecent } from '../src/lib/recent-files.ts';
+import { MENU_LIMIT, lensFileRecents, readRecents, withRecent } from '../src/lib/recent-files.ts';
 
 /** The role of the record's token — the first span that is not the indent. */
 const tokenRole = (line: string): string | undefined =>
@@ -121,4 +121,31 @@ test('a recent list that has been tampered with does not take the panel down', (
   // Entries that are the right shape survive; the rest are dropped.
   const mixed = readRecents('[{"key":"a","name":"a.zmx","openedAt":1},{"key":2},null]');
   assert.deepEqual(mixed, [{ key: 'a', name: 'a.zmx', openedAt: 1 }]);
+});
+
+test('the app bar is offered lens files only, and never more than a menu holds', () => {
+  // One list serves both the app bar and the text panel, so it holds whatever
+  // either has opened. The app bar loads a *design*, and a .txt offered here
+  // would promise a lens that is not there and fail after the click.
+  const mixed = [
+    { key: 'file:notes.txt', name: 'notes.txt', openedAt: 3 },
+    { key: 'file:Hubble.zmx', name: 'Hubble.zmx', openedAt: 2 },
+    { key: 'file:Gregorian.ZMX', name: 'Gregorian.ZMX', openedAt: 1 },
+  ];
+  assert.deepEqual(
+    lensFileRecents(mixed).map((one) => one.name),
+    // Upper case too: a .zmx is a .zmx however the file happens to spell it,
+    // and half the sample corpus shouts it.
+    ['Hubble.zmx', 'Gregorian.ZMX'],
+  );
+
+  // The stored list is longer than any menu precisely so that filtering it
+  // still fills one — a run of text files must not empty the app bar's ten.
+  const many = Array.from({ length: 25 }, (_, index) => ({
+    key: `file:lens${index}.zmx`,
+    name: `lens${index}.zmx`,
+    openedAt: index,
+  }));
+  assert.equal(lensFileRecents(many).length, MENU_LIMIT);
+  assert.equal(lensFileRecents(many)[0]?.name, 'lens0.zmx');
 });

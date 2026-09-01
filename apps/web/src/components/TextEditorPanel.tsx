@@ -9,6 +9,7 @@ import {
   type TextSpan,
 } from '../lib/text-documents.ts';
 import {
+  MENU_LIMIT,
   loadRecents,
   readHandle,
   recallHandle,
@@ -373,7 +374,7 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
 
         {showRecents ? (
           <ul className="text-recents">
-            {recents.map((recent) => (
+            {recents.slice(0, MENU_LIMIT).map((recent) => (
               <li key={recent.key}>
                 <button type="button" onClick={() => void reopen(recent)}>
                   <span className="text-recent-name">{recent.name}</span>

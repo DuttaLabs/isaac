@@ -391,7 +391,8 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   for (`lib/recent-files.ts`): the names live in `localStorage` and the `FileSystemFileHandle`s live
   in IndexedDB, which is the only store that will take them, and a handle is what lets an entry
   reopen a file rather than merely name it. Where the File System Access API is missing the handles
-  are absent and the list is a history — said in the UI rather than hidden.
+  are absent and the list is a history — said in the UI rather than hidden. **The app bar shares that
+  list**; see "Opening is a recent-files menu".
 
 - **Every analysis is a panel of its own.** The ray fan and the spot diagram were one Analysis panel
   drawing both in a grid, which meant two fans at different fields — the arrangement a fan is actually
@@ -703,6 +704,35 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   `AbortError` when the dialog is closed, and reporting that would put a red notice in front of
   someone who simply changed their mind. The write itself is outside that catch, because a failure to
   write *is* a failure and swallowing it would report a save that did not happen.
+
+- **Opening is a recent-files menu, and Open is the first item in it.** The app bar held a bare
+  `<input type="file">` — 190px spent on the words "No file chosen", and no way back to a file
+  already opened, which meant hunting through the corpus for a lens that had been on screen an hour
+  earlier. It is now one button putting up the same `ContextMenu` the lens grid uses: **Open .zmx…**,
+  a rule, then the ten most recent. Open stays *inside* it because a menu reads down the page and
+  Open Recent under Open is where every editor puts it — and because removing Open outright would
+  leave a fresh install, whose list is empty, unable to open anything at all.
+
+  **One list serves the app bar and the Text panel**, since "what have I had open?" is one question
+  and a file read in one is very often the file wanted in the other. Each end filters it: the app bar
+  loads a *design*, so `lensFileRecents` keeps `.zmx` only — offering a `.txt` there would promise a
+  lens that is not there and fail after the click. That is why the stored list (30) is longer than
+  any menu (`MENU_LIMIT`, 10): a run of text files must not be able to push every lens file out of
+  the app bar's ten.
+
+  **An entry with no handle is ghosted, with the reason on hover.** A recent is only a shortcut if a
+  `FileSystemFileHandle` was kept for it; without one it is a *name*, and clicking it can only produce
+  an error. `keysWithHandles()` reads them all in one transaction whenever the list changes — before
+  the menu is drawn, not when it opens, since resolving it on open would ghost half the entries a
+  moment after they appeared. The recent is recorded **only once the import has succeeded**: a file
+  that could not be read is not one to offer reopening, and putting it at the top of the list would
+  make the next session's first click a repeat of the same error.
+
+  **The picker is a plain function, not a `useCallback`.** Memoizing it with `[]` captured the first
+  render's `loadFile` and with it an empty `recents`, so every file opened through
+  `showOpenFilePicker` reset the list to itself. The fallback `<input type="file">` never showed it,
+  because its handler is written inline and is fresh every render — which is exactly the shape of bug
+  that survives a test driving only the fallback path.
 
 - **The layout is two panels, not one panel with a switch.** `Layout 2D` and `Layout 3D` are separate
   entries in `PANELS`, so both can be on screen at once. They were one panel with a 2D/3D button, and

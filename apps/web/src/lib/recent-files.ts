@@ -1,5 +1,8 @@
 /**
- * The files the text panel has been shown, most recent first.
+ * The files Isaac has opened, most recent first — the app bar's lens files and
+ * the text panel's documents in one list, because they are one question ("what
+ * have I had open?") and a file inspected in one is very often the file wanted
+ * in the other. Each consumer filters the list to what *it* can open.
  *
  * Two halves, because a browser gives them separately. The **list** is plain
  * data and goes in `localStorage`, so the names survive a reload. The **handles**
@@ -15,8 +18,15 @@
 const STORAGE_KEY = 'isaac.recentFiles.v1';
 const DATABASE = 'isaac';
 const STORE = 'recent-file-handles';
-/** Enough to be useful, few enough to scan. */
-const LIMIT = 12;
+/**
+ * What is *stored*, which is deliberately more than any menu shows. The list is
+ * shared and each menu filters it, so a run of text files must not be able to
+ * push every `.zmx` out of the app bar's ten.
+ */
+const LIMIT = 30;
+
+/** What a menu *shows*: enough to be useful, few enough to scan without one. */
+export const MENU_LIMIT = 10;
 
 export interface RecentFile {
   /** The key a handle is stored under, and React's key. */
@@ -68,6 +78,15 @@ export function readRecents(raw: string | null): RecentFile[] {
 export function withRecent(recents: readonly RecentFile[], name: string, at: number): RecentFile[] {
   const key = `file:${name}`;
   return [{ key, name, openedAt: at }, ...recents.filter((one) => one.key !== key)].slice(0, LIMIT);
+}
+
+/**
+ * The entries the app bar can act on. It loads a design, so a `.txt` the text
+ * panel opened is not one of them — offering it would promise a lens file where
+ * there is none, and the failure would arrive after the click.
+ */
+export function lensFileRecents(recents: readonly RecentFile[]): RecentFile[] {
+  return recents.filter((one) => /\.zmx$/i.test(one.name)).slice(0, MENU_LIMIT);
 }
 
 export function loadRecents(): RecentFile[] {
@@ -125,6 +144,35 @@ export async function rememberHandle(key: string, handle: unknown): Promise<void
   } finally {
     database.close();
   }
+}
+
+/**
+ * Which entries have a handle kept for them, in one read rather than one per
+ * entry. A menu needs this *before* it is drawn: an entry with no handle cannot
+ * reopen anything, and offering it as though it could turns a click into an
+ * error message.
+ */
+export async function keysWithHandles(): Promise<ReadonlySet<string>> {
+  const database = await openDatabase();
+  if (database === undefined) {
+    return new Set();
+  }
+  return new Promise((resolve) => {
+    try {
+      const request = database.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+      request.onsuccess = () => {
+        database.close();
+        resolve(new Set(request.result.map(String)));
+      };
+      request.onerror = () => {
+        database.close();
+        resolve(new Set());
+      };
+    } catch {
+      database.close();
+      resolve(new Set());
+    }
+  });
 }
 
 /** The handle for a recent entry, if one was kept and can still be read. */

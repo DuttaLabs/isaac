@@ -1,9 +1,21 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import { decodeZmx, exportZmx, importZmx } from '@isaac/zemax-io';
 import { computeFirstOrder } from './lib/analysis.ts';
-import { suppressNativeContextMenu } from './lib/context-menu.ts';
+import { suppressNativeContextMenu, type MenuPoint } from './lib/context-menu.ts';
+import { ContextMenu, type MenuItem } from './components/ContextMenu.tsx';
+import {
+  keysWithHandles,
+  lensFileRecents,
+  loadRecents,
+  readHandle,
+  recallHandle,
+  rememberHandle,
+  saveRecents,
+  withRecent,
+  type RecentFile,
+} from './lib/recent-files.ts';
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
 import {
@@ -132,6 +144,31 @@ export function App() {
    * putting the two side by side is the point of the panel.
    */
   const [fileText, setFileText] = useState<string | undefined>(undefined);
+  /**
+   * The lens files opened before, so one can be reopened without going and
+   * finding it again. Shared with the text panel — it is one list of what Isaac
+   * has had open, and a file read there is very often the file wanted here.
+   *
+   * Read once in a lazy initializer, since `localStorage` is synchronous and an
+   * effect would render an empty menu and then fill it.
+   */
+  const [recents, setRecents] = useState<RecentFile[]>(loadRecents);
+  /** Where the recents menu is, or `undefined` while it is shut. */
+  const [recentsAt, setRecentsAt] = useState<MenuPoint | undefined>(undefined);
+  const recentsButton = useRef<HTMLButtonElement>(null);
+  /**
+   * The fallback for a browser with no `showOpenFilePicker`. Kept mounted and
+   * hidden rather than created on demand: a click has to reach it inside the
+   * user's own gesture, and an element added in that moment is not yet there.
+   */
+  const filePicker = useRef<HTMLInputElement>(null);
+  /**
+   * The recent entries that can actually reopen — the ones a handle was kept
+   * for. Read whenever the list changes, so it is in hand *before* the menu is
+   * drawn: resolving it on open would ghost half the entries a moment after
+   * they appeared, which is worse than either state on its own.
+   */
+  const [reopenable, setReopenable] = useState<ReadonlySet<string>>(() => new Set());
   /**
    * What the user has named and colored each element, keyed by the id of the
    * element's front surface. View state, like the field checkboxes and the
@@ -435,7 +472,7 @@ export function App() {
     setFieldVisibility(next);
   };
 
-  const loadFile = async (file: File): Promise<void> => {
+  const loadFile = async (file: File, handle?: FileSystemFileHandle): Promise<void> => {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
@@ -450,6 +487,16 @@ export function App() {
       // design mean nothing against this one. Everything starts visible.
       setFieldVisibility([]);
       setCycleBase(undefined);
+      // Recorded only once the import has succeeded. A file that could not be
+      // read is not one to offer reopening, and putting it at the top of the
+      // list would make the next session's first click a repeat of this error.
+      const next = withRecent(recents, file.name, Date.now());
+      setRecents(next);
+      saveRecents(next);
+      if (handle !== undefined) {
+        void rememberHandle(`file:${file.name}`, handle);
+      }
+
       const { system: loaded, warnings, ignoredTokens } = result;
       setNotice({
         kind: 'info',
@@ -463,6 +510,131 @@ export function App() {
       setNotice({ kind: 'error', text: `${file.name}: ${describeError(error)}` });
     }
   };
+
+  /**
+   * The file dialog where the browser has one, and a plain file input where it
+   * does not. Only the first hands back a **handle**, which is what lets a
+   * recent entry reopen a file rather than merely name it — so the fallback path
+   * still opens the lens, and loses only the shortcut.
+   *
+   * A plain function, like `loadFile` and `reopenRecent` beside it. Nothing
+   * depends on its identity, and memoizing it captured the first render's
+   * `loadFile` — and with it an empty `recents`, so every file opened through
+   * the picker reset the list to itself. The fallback input never showed it,
+   * because its handler is written inline and is fresh every render.
+   */
+  const pickLensFile = async (): Promise<void> => {
+    const withPicker = window as unknown as {
+      showOpenFilePicker?: (options?: object) => Promise<FileSystemFileHandle[]>;
+    };
+    if (withPicker.showOpenFilePicker === undefined) {
+      filePicker.current?.click();
+      return;
+    }
+    try {
+      const [handle] = await withPicker.showOpenFilePicker.call(window, {
+        multiple: false,
+        types: [{ description: 'Zemax lens file', accept: { 'text/plain': ['.zmx', '.ZMX'] } }],
+      });
+      if (handle === undefined) {
+        return;
+      }
+      await loadFile(await handle.getFile(), handle);
+    } catch (problem) {
+      // Closing the dialog is not failing, and a red notice in front of someone
+      // who simply changed their mind is worse than no notice at all.
+      if (problem instanceof DOMException && problem.name === 'AbortError') {
+        return;
+      }
+      filePicker.current?.click();
+    }
+  };
+
+  /**
+   * Opens a file from the recent list. A handle stored yesterday needs the
+   * user's word again today, and either half can be gone — the browser may
+   * never have kept a handle, or the file may have moved since. Both are said in
+   * the notice, because a menu entry that does nothing is the worst outcome.
+   */
+  const lensFiles = useMemo(() => lensFileRecents(recents), [recents]);
+
+  useEffect(() => {
+    let current = true;
+    void keysWithHandles().then((keys) => {
+      if (current) {
+        setReopenable(keys);
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [recents]);
+
+  const reopenRecent = async (recent: RecentFile): Promise<void> => {
+    const handle = await recallHandle(recent.key);
+    if (handle === undefined) {
+      setNotice({
+        kind: 'error',
+        text: `${recent.name} was opened before, but this browser did not keep a handle for it. Open it again to add one.`,
+      });
+      return;
+    }
+    const file = await readHandle(handle);
+    if (file === undefined) {
+      setNotice({
+        kind: 'error',
+        text: `${recent.name} could not be read — permission was refused, or it has moved.`,
+      });
+      return;
+    }
+    await loadFile(file, handle);
+  };
+
+  /**
+   * Open, then the files opened before it.
+   *
+   * Filtered to `.zmx`, because this loads a *design*: the shared list also
+   * holds whatever the text panel has read, and offering a `.txt` here would
+   * promise a lens that is not there and fail after the click.
+   *
+   * An empty list is a **ghosted line saying so**, not an absent one — the same
+   * rule the lens grid's menu follows. A menu that is one item long on the first
+   * run and two on the second teaches nobody what the button does, and "no
+   * recent files yet" is the answer to the question that was just asked.
+   */
+  const recentFileMenu: MenuItem[] = [
+    {
+      key: 'open',
+      label: 'Open .zmx…',
+      hint: 'Choose a lens file to load',
+      onSelect: () => void pickLensFile(),
+    },
+    ...(lensFiles.length === 0
+      ? [
+          {
+            key: 'none',
+            label: 'No recent files yet',
+            hint: 'Files you open appear here',
+            disabled: true,
+            startsGroup: true,
+            onSelect: () => {},
+          },
+        ]
+      : lensFiles.map((recent, index) => ({
+          key: recent.key,
+          label: recent.name,
+          // An entry with no handle is a *name*, not a shortcut: the browser
+          // that opened it never kept one, so there is nothing to reopen from.
+          // Ghosted with the reason rather than left looking live, which turns
+          // the click into an error message and the menu into a guess.
+          disabled: !reopenable.has(recent.key),
+          hint: reopenable.has(recent.key)
+            ? `Opened ${new Date(recent.openedAt).toLocaleString()}`
+            : `Opened ${new Date(recent.openedAt).toLocaleString()}, but this browser kept no handle for it — open it again to add one`,
+          startsGroup: index === 0,
+          onSelect: () => void reopenRecent(recent),
+        }))),
+  ];
 
   /**
    * Writes the design out as .zmx. What is written is what Isaac models — a file
@@ -865,21 +1037,36 @@ export function App() {
           Save
         </button>
 
-        <label className="inline">
-          <span className="hint">Open .zmx</span>
-          <input
-            type="file"
-            accept=".zmx,.ZMX"
-            style={{ maxWidth: 190 }}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                void loadFile(file);
-              }
-              event.target.value = '';
-            }}
-          />
-        </label>
+        {/* One control where there were two things: the browser's own file
+            input, which spends 190px on the words "No file chosen", and no way
+            back to a file already opened. Opening is the first item rather than
+            a button of its own — a menu reads down the page, and Open Recent
+            under Open is where every editor puts it. */}
+        <button
+          ref={recentsButton}
+          onClick={() => {
+            const box = recentsButton.current?.getBoundingClientRect();
+            setRecentsAt(box === undefined ? { x: 0, y: 0 } : { x: box.left, y: box.bottom + 2 });
+          }}
+          aria-haspopup="menu"
+          aria-expanded={recentsAt !== undefined}
+          title="Open a .zmx file, or one opened before"
+        >
+          Recent files
+        </button>
+        <input
+          ref={filePicker}
+          type="file"
+          accept=".zmx,.ZMX"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void loadFile(file);
+            }
+            event.target.value = '';
+          }}
+        />
 
         <button
           onClick={() => setHistory((h) => ({ ...h, index: h.index - 1 }))}
@@ -948,6 +1135,15 @@ export function App() {
         </button>
         <FullScreenButton onError={(text) => setNotice({ kind: 'error', text })} />
       </header>
+
+      {recentsAt ? (
+        <ContextMenu
+          at={recentsAt}
+          heading="Open"
+          items={recentFileMenu}
+          onClose={() => setRecentsAt(undefined)}
+        />
+      ) : null}
 
       {notice ? (
         <div style={{ padding: '10px 12px 0' }}>

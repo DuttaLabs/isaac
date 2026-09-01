@@ -29,6 +29,12 @@ const Layout3DView = lazy(() =>
 );
 
 interface Props {
+  /**
+   * Changes when the design is *replaced* — a file opened, New, Reset — and
+   * never when one is edited. A different lens gets a fresh view, because the
+   * camera set up for the last one carries clipping planes that belong to it.
+   */
+  designSignal: number;
   system: OpticalSystem;
   settings: Layout3DSettings;
   onSettings: (next: Layout3DSettings) => void;
@@ -43,6 +49,7 @@ interface Props {
 }
 
 export function Layout3DPanel({
+  designSignal,
   system,
   settings,
   onSettings,
@@ -130,7 +137,10 @@ export function Layout3DPanel({
                 elementColors={elementColors}
                 hiddenSurfaces={hiddenSurfaces}
                 surfaceColors={surfaceColors}
-                resetSignal={resetSignal}
+                // A new design is a deliberate hand-back of the view, exactly
+                // as the button is, so the two drive the same signal. Both only
+                // ever count up, so their sum only ever changes.
+                resetSignal={resetSignal + designSignal}
                 camera={settings.camera}
                 onCamera={(camera) => onSettings({ ...settings, camera })}
                 overlay={

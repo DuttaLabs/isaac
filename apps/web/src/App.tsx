@@ -152,6 +152,15 @@ export function App() {
    * Read once in a lazy initializer, since `localStorage` is synchronous and an
    * effect would render an empty menu and then fill it.
    */
+  /**
+   * Bumped when the design is **replaced** — a file opened, New, Reset — and
+   * never when one is edited. The 3-D view frames a new subject afresh only if
+   * the user has not set up a camera of their own, which is right for an edit
+   * and wrong for a different lens entirely: the old camera's clipping planes
+   * belong to the old system, and a new one can arrive behind them and simply
+   * not be there. A new design is a new picture, so it gets a new view.
+   */
+  const [designSignal, setDesignSignal] = useState(0);
   const [recents, setRecents] = useState<RecentFile[]>(loadRecents);
   /** Where the recents menu is, or `undefined` while it is shut. */
   const [recentsAt, setRecentsAt] = useState<MenuPoint | undefined>(undefined);
@@ -286,6 +295,7 @@ export function App() {
   const startFrom = useCallback(
     (next: OpticalSystem) => {
       pushSystem(next);
+      setDesignSignal((n) => n + 1);
       setFieldVisibility([]);
       setCycleBase(undefined);
       setNotice(undefined);
@@ -477,6 +487,7 @@ export function App() {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = importZmx(bytes, { resolveMaterial: GLASS_CATALOG.resolver() });
       pushSystem(result.system);
+      setDesignSignal((n) => n + 1);
       setFileName(file.name);
       // Decoded by the reader's own routine, so a UTF-16 file reads as text
       // rather than as every other character being a null.
@@ -836,6 +847,7 @@ export function App() {
       case 'layout3d':
         return (
           <Layout3DPanel
+            designSignal={designSignal}
             system={tracedSystem}
             settings={settingsOf(found.settings, DEFAULT_LAYOUT_3D)}
             onSettings={(next) => writeSettings(found, update, next)}

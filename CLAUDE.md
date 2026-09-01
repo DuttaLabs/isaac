@@ -742,23 +742,44 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   than the counter-per-panel-type it replaced — two Layout 3D panels used to refit together, because
   the counter belonged to the type rather than to the copy.
 
-  Both take wheel to zoom. The 2-D view pans with a left drag, and pans and zooms by rewriting the SVG
-  `viewBox`. **The 3-D view does not pan at all**, and any drag orbits.
+  Both take wheel to zoom and a left drag to pan; the 3-D view adds the wheel pressed, or the right
+  button, to orbit. The 2-D view pans and zooms by rewriting the SVG `viewBox`.
 
-  That is not a gesture preference, it is the only way to hold the orbit point still. `OrbitControls`
-  pans by translating the camera *and its target* together — panning **is** moving the target — and
-  `zoomToCursor` drags it too. So every pan and every cursor-zoom walked the point everything turns
-  about a little further from the optics, silently, with no gesture to put it back. On the sample
-  doublet the target starts at z = 52.7 with the glass at z = 0–9 and the image at 106.4: already
-  53 units of empty space from anything, which is what makes the orbit feel like it is pivoting around
-  nothing. Pan from there and it drifts past the image plane.
+  **The 3-D view pans its frustum, not its camera**, and that is what holds the orbit point still.
+  `OrbitControls` pans by translating the camera **and its target** together — in its model panning
+  *is* moving the target — and `zoomToCursor` drags it too, so every pan and cursor-zoom walked the
+  point everything turns about a little further from the optics, silently, with no gesture to put it
+  back. It cannot be fixed by restoring the target afterwards either: the target is also where the
+  camera looks, so putting it back undoes the pan.
 
-  With `enablePan` off and `zoomToCursor` off the target is fixed to a place in the system and stays
-  there however the camera moves, and `.orbit-mark` — a small cross drawn over everything, scaled each
-  frame to hold one size on screen — says where it is. What replaces panning is **choosing what to
-  orbit about**, which is the better control here anyway: what a designer wants at the middle of the
-  picture is an element, not a screen position. Until that lands the point is the scene's bounding
-  centre, which is a poor default and known to be one.
+  So `enablePan` and `zoomToCursor` are off, and `usePanOffset` pans with `camera.setViewOffset` —
+  a window onto a larger virtual image, which slides the picture across the canvas while
+  `camera.position`, `camera.quaternion` and `controls.target` all stay exactly where they were. The
+  orbit point is then fixed because nothing that could move it is involved. It is also the truer
+  picture: moving a camera sideways changes what occludes what, and shifting the frustum does not,
+  which is what a view camera's rising front does and what "slide the drawing across the panel" ought
+  to mean. `MOUSE_BUTTONS` still maps `LEFT: PAN` so that `OrbitControls` claims the left button and
+  then declines it — mapped to `ROTATE` instead, a left drag would orbit and pan at once.
+
+  A small cross marks the point, drawn over everything (it is inside the glass as often as not) and
+  rescaled every frame to hold one size on screen, since the target is nowhere near the camera and a
+  fixed world size would be a speck from one angle and fill the frame from another. **Where it starts
+  is a poor default and known to be one**: the scene's bounding centre, which on the sample doublet is
+  z = 52.7 with the glass at z = 0–9 and the image at 106.4 — 53 units of empty space from anything
+  there is to look at, which is why the orbit felt like it was pivoting around nothing. Letting the
+  user **choose an element to orbit about** is what fixes that, and is the better control anyway.
+
+  There is no `camera.lookAt` anywhere in the app. `OrbitControls.update()` calls it every frame with
+  `controls.target`, so **the target is the only thing that decides where the camera looks** — set in
+  one place, when a view is applied.
+
+  **A replaced design gets a fresh view; an edited one does not.** `App` counts `designSignal` on the
+  three things that replace a lens outright — opening a file, New, Reset — and never on an edit, and
+  the 3-D panel adds it to its own Reset-view signal, since a new design is the same deliberate
+  hand-back the button is. Without it a camera the user had framed survived into the next file
+  together with **clipping planes measured for the previous system**, so a lens could load correctly
+  and simply not be on screen. `[subject]` cannot answer this on its own: every edit makes a new
+  `OpticalSystem` too, and refitting on each would take the viewpoint away while someone was working.
 
   There is no `camera.lookAt` anywhere in the app. `OrbitControls.update()` calls it every frame with
   `controls.target`, so **the target is the only thing that decides where the camera looks** — set in

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -78,24 +79,16 @@ const HOME_TUPLE: readonly [number, number, number] = [
  */
 
 /**
- * The mouse mapping: the wheel zooms and any drag orbits.
+ * The mouse mapping: the wheel zooms, a left drag pans, and the wheel pressed or
+ * the right button orbits. The same vocabulary as the 2-D view, where a left
+ * drag can only mean pan.
  *
- * **Panning is off, and that is what keeps the orbit point still.** `OrbitControls`
- * pans by translating the camera *and its target* together — panning *is* moving
- * the target — and `zoomToCursor` drags it as well. So every pan and every
- * cursor-zoom walked the point everything turns about a little further from the
- * optics, until the system was swinging around a spot somewhere past the image
- * plane. Nothing said it was happening, and no gesture put it back.
- *
- * With both off, the target is fixed to a place in the *system* and stays there
- * however the camera is moved. The cost is the left-drag pan, and with it the
- * gesture vocabulary the 2-D view shares — so the left button orbits now, which
- * is Three's own default and every 3-D viewer's. What replaces panning is
- * choosing what to orbit about, which is a better control for this anyway: the
- * thing a designer wants to put at the middle of the picture is an element, not
- * a screen position.
+ * **`LEFT: PAN` is here so that `OrbitControls` claims the left button and then
+ * does nothing with it**, `enablePan` being false. Panning is ours; see
+ * `usePanOffset`. Left it as `ROTATE` and a left drag would orbit and pan at
+ * once, which is the sort of thing that reads as the controls being broken.
  */
-const MOUSE_BUTTONS = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.ROTATE } as const;
+const MOUSE_BUTTONS = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.ROTATE } as const;
 
 /** The orientation gizmo's own little SVG, big enough to hold it and no more. */
 const TRIAD_BOX = 84;
@@ -532,6 +525,97 @@ function asPerspective(camera: object): PerspectiveCamera | undefined {
  */
 const MARK_SIZE = 0.018;
 
+/**
+ * Panning that leaves the camera exactly where it is.
+ *
+ * `OrbitControls` pans by translating the camera **and its target** together —
+ * in its model, panning *is* moving the target — so with its pan enabled the
+ * point everything turns about drifts a little further from the optics on every
+ * drag. That is what made the orbit feel arbitrary, and it cannot be fixed by
+ * putting the target back afterwards: the target is also where the camera looks,
+ * so restoring it would undo the pan.
+ *
+ * So this pans the **frustum** instead of the camera. `setViewOffset` renders a
+ * window onto a larger virtual image, which slides the picture across the canvas
+ * while `camera.position`, `camera.quaternion` and `controls.target` all stay
+ * untouched. The orbit point is then genuinely fixed: it cannot move, because
+ * nothing that could move it is involved.
+ *
+ * It is also the truer picture. Moving a camera sideways changes what occludes
+ * what; shifting the frustum does not, which is what a view camera's rising
+ * front does and what "slide the drawing across the panel" should mean.
+ *
+ * Offsets are in device-independent pixels and negated, because the window
+ * moving right across the virtual image shows content further right — which
+ * reads on screen as the drawing moving *left*, the opposite of the drag.
+ */
+function usePanOffset(
+  camera: PerspectiveCamera | OrthographicCamera,
+  domElement: HTMLElement,
+  size: { width: number; height: number },
+) {
+  const offset = useRef({ x: 0, y: 0 });
+
+  const apply = useCallback(() => {
+    const { x, y } = offset.current;
+    if (x === 0 && y === 0) {
+      camera.clearViewOffset();
+    } else {
+      camera.setViewOffset(size.width, size.height, x, y, size.width, size.height);
+    }
+  }, [camera, size.width, size.height]);
+
+  // A resize changes the full image the window is cut from, so the offset has to
+  // be restated against the new size or the pan jumps.
+  useEffect(() => apply(), [apply]);
+
+  useEffect(() => {
+    let panning = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const down = (event: PointerEvent): void => {
+      if (event.button !== 0) {
+        return;
+      }
+      panning = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      domElement.setPointerCapture(event.pointerId);
+    };
+    const move = (event: PointerEvent): void => {
+      if (!panning) {
+        return;
+      }
+      offset.current.x -= event.clientX - lastX;
+      offset.current.y -= event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      apply();
+    };
+    const stop = (): void => {
+      panning = false;
+    };
+
+    domElement.addEventListener('pointerdown', down);
+    domElement.addEventListener('pointermove', move);
+    domElement.addEventListener('pointerup', stop);
+    domElement.addEventListener('pointercancel', stop);
+    return () => {
+      domElement.removeEventListener('pointerdown', down);
+      domElement.removeEventListener('pointermove', move);
+      domElement.removeEventListener('pointerup', stop);
+      domElement.removeEventListener('pointercancel', stop);
+    };
+  }, [domElement, apply]);
+
+  /** Reset view hands the framing back, and the pan is part of the framing. */
+  return useCallback(() => {
+    offset.current = { x: 0, y: 0 };
+    camera.clearViewOffset();
+  }, [camera]);
+}
+
 function Controls({
   framing,
   tweaks,
@@ -565,6 +649,8 @@ function Controls({
   const touched = useRef(false);
   /** Whether a view has been applied at all — false until the canvas is measured. */
   const settled = useRef(false);
+  // Both camera kinds carry the view offset; `useThree` types it as the base.
+  const clearPan = usePanOffset(camera as PerspectiveCamera | OrthographicCamera, domElement, size);
   const lastFov = useRef(tweaks.fieldOfView);
   const lastDistance = useRef(tweaks.cameraDistance);
   const { projection, fieldOfView, fitMargin, cameraDistance } = tweaks;
@@ -656,6 +742,7 @@ function Controls({
   useAfterFirst(() => {
     touched.current = false;
     report.current?.(undefined);
+    clearPan();
     latestFit.current();
   }, [resetSignal, projection, fitMargin]);
 

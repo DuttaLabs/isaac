@@ -221,6 +221,21 @@ test('surface records that would change the geometry become warnings', () => {
     `expected a UDAD warning, got ${JSON.stringify(withPolygon.warnings)}`,
   );
 
+  // A tilt/decenter carried on the surface itself, which is the same fold a
+  // pair of coordinate breaks would make. Dropped in silence it imports as a
+  // surface square to the axis — a system that traces perfectly and is not the
+  // one in the file. `Fold Mirror Using Surface Tilts.ZMX` is exactly this.
+  const withSurfaceTilt = importDoublet(
+    DOUBLET.replace(
+      '  DIAM 1.5E+1 1 0 0 1 ""',
+      '  SCBD 1 0 0 0.0E+00 0.0E+00 4.5E+01 0.0E+00 0.0E+00\n  DIAM 1.5E+1 1 0 0 1 ""',
+    ),
+  );
+  assert.ok(
+    withSurfaceTilt.warnings.some((warning) => /Surface 1 has a SCBD record/.test(warning)),
+    `expected a SCBD warning, got ${JSON.stringify(withSurfaceTilt.warnings)}`,
+  );
+
   // Records that only annotate the surface stay quiet.
   assert.deepEqual(importDoublet().warnings, []);
 });

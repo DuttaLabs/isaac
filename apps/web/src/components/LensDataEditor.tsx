@@ -264,9 +264,10 @@ export function LensDataEditor({
    * The Element cell for one row: the spanning cell on an element's first row,
    * nothing at all on the rows underneath it, and an empty cell everywhere else.
    *
-   * The label is a live text cell like any other, and the swatch under it opens
-   * the picker. Both are view state — a `.zmx` has nowhere to put either — so
-   * neither touches the system or the undo stack.
+   * The name and the swatch under it are view state — a `.zmx` has nowhere to
+   * put either — so neither touches the system or the undo stack. The switch
+   * beside them is positioned out of the flow, so what is centered in the column
+   * is the name and the colors, on an element's row and on an end's alike.
    */
   const swatch = (key: string, color: string, isDefault: boolean, what: string) => (
     <button
@@ -294,16 +295,20 @@ export function LensDataEditor({
     if (end !== undefined) {
       return (
         <td className="element-cell is-end">
-          <span className="end-label" title={`Surface ${index} is the ${end.label} plane.`}>
-            {end.label}
-          </span>
-          <div className="element-swatches">
-            {swatch(
-              end.key,
-              endColor(end, elementStyles),
-              !hasChosenEndColor(end, elementStyles),
-              `the ${end.label} plane`,
-            )}
+          <div className="element-body">
+            <div className="element-stack">
+              <span className="element-name" title={`Surface ${index} is the ${end.label} plane.`}>
+                {end.label}
+              </span>
+              <div className="element-swatches">
+                {swatch(
+                  end.key,
+                  endColor(end, elementStyles),
+                  !hasChosenEndColor(end, elementStyles),
+                  `the ${end.label} plane`,
+                )}
+              </div>
+            </div>
           </div>
         </td>
       );
@@ -318,29 +323,17 @@ export function LensDataEditor({
     const shown = !isHidden(element, elementStyles);
     return (
       <td className="element-cell" rowSpan={elementRowSpan(element)}>
-        <TextCell
-          value={name}
-          ariaLabel={`Name of element ${name}`}
-          title={
-            isMirror
-              ? 'What this mirror is called. A name of your own, or M1, M2, … in order.'
-              : 'What this element is called. A name of your own, or L1, L2, … in order.'
-          }
-          onCommit={(next) => onElementStyle(element.key, { label: next })}
-        />
-        {/* One swatch per piece of glass, so the two halves of a cemented
-            doublet can be told apart — they are different glasses, and both
-            views already draw them as two bodies. A mirror has no glass in it
-            and no body to fill, so its one color belongs to the element itself. */}
-        <div className="element-swatches">
+        <div className="element-body">
           {/* In or out of the light. A switch rather than a checkbox because it
-              turns one thing on and off, and it sits with the color because both
-              are things done *to* this element rather than to a surface.
+              turns one thing on and off, and it is a thing done *to* this
+              element rather than to any one surface.
 
               Lit when the element is in the beam, hollow when it is not — the
               off state is the one that has to be visible from across the table,
               since a design missing an element otherwise looks like a design
-              that never had one. */}
+              that never had one. It keeps its full brightness on a switched-out
+              row, because it is the control that switches the element back on
+              and a dim control does not look like one you can press. */}
           <button
             type="button"
             role="switch"
@@ -354,27 +347,52 @@ export function LensDataEditor({
             }
             onClick={() => onElementStyle(element.key, { hidden: shown })}
           />
-          {isMirror
-            ? swatch(
-                element.key,
-                mirrorColor(element, elementStyles, themeMirror),
-                !hasChosenMirrorColor(element, elementStyles),
-                `mirror ${name}`,
-              )
-            : element.gaps.map((gap, gapIndex) => {
-                const which =
-                  element.gaps.length > 1 ? `${name}, glass ${gapIndex + 1}` : `element ${name}`;
-                return (
-                  <span key={gap.key}>
-                    {swatch(
-                      gap.key,
-                      gapColor(gap, elementStyles),
-                      !hasChosenColor(gap, elementStyles),
-                      which,
-                    )}
-                  </span>
-                );
-              })}
+          <div className="element-stack">
+            {/* Text, not a field. Renaming is an operation on the element and
+                belongs with the rest of them in the cell's own menu; an input
+                here spends the width the switch needs on a border around a name
+                that is two characters long. */}
+            <span
+              className="element-name"
+              title={
+                isMirror
+                  ? `${name}: what this mirror is called.`
+                  : `${name}: what this element is called.`
+              }
+            >
+              {name}
+            </span>
+            {/* One swatch per piece of glass, so the two halves of a cemented
+                doublet can be told apart — they are different glasses, and both
+                views already draw them as two bodies. A mirror has no glass in
+                it and no body to fill, so its one color belongs to the element
+                itself. */}
+            <div className="element-swatches">
+              {isMirror
+                ? swatch(
+                    element.key,
+                    mirrorColor(element, elementStyles, themeMirror),
+                    !hasChosenMirrorColor(element, elementStyles),
+                    `mirror ${name}`,
+                  )
+                : element.gaps.map((gap, gapIndex) => {
+                    const which =
+                      element.gaps.length > 1
+                        ? `${name}, glass ${gapIndex + 1}`
+                        : `element ${name}`;
+                    return (
+                      <span key={gap.key}>
+                        {swatch(
+                          gap.key,
+                          gapColor(gap, elementStyles),
+                          !hasChosenColor(gap, elementStyles),
+                          which,
+                        )}
+                      </span>
+                    );
+                  })}
+            </div>
+          </div>
         </div>
       </td>
     );

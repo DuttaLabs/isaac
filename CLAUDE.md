@@ -146,7 +146,7 @@ Token semantics: `CURV` is curvature (invert for radius), `DISZ` is thickness (`
 
 The format has **no *current* public specification** (dropped from the Zemax help system ~2005), but a pre-2005 one survives: **Chapter 29 of the 2000 Zemax manual** in `SupportingMaterial/` (gitignored) is a full keyword table, and Chapter 14 gives the per-surface-type `PARM` column meanings. Its argument *orders* match all 471 OpticStudio sample files **with one known exception — `SPID`, where the columns are reversed** (see below); it predates later additions, so it is also stale on argument *counts* (`WAVM`, the extended `FTYP`/`UNIT`). Check it before inferring a token's meaning — and note that several tokens lead with a placeholder, so `firstValue()` is only correct for single-argument records (`RAIM`'s first value is a dead `tol` field, not the aiming mode). Beyond what it covers, the rule stands: interpret only what has been verified against real files, report everything else in `ignoredTokens`, and *refuse* rather than approximate when geometry cannot be modeled (surface types outside `STANDARD`/`PARAXIAL`/`EVENASPH`, `MODE NONSEQ`, unresolved glass unless `allowUnknownGlass`). Glass resolution is injected via `resolveMaterial` — `zemax-io` must not grow its own glass database; that is `glass-catalog`'s job.
 
-**`ignoredTokens` is not a defect list.** A real file carries 30-plus record types that are annotation, not prescription — notes, tolerancing, display flags, multi-configuration, non-sequential and physical-optics settings — so a long list is normal and says nothing about whether the import is right. What matters is separated out into `warnings`: `UNMODELED_SURFACE_TOKENS` (`SPID`, `UDAD`/`USAP`, `PKUP`, `XDAT`/`YDAT`) are the ignored *surface* records that would move a ray, so their presence is warned about per surface; and `warnHeaderSettings` reports vignetting factors (`VDXN`/`VDYN`/`VCXN`/`VCYN`/`VANN`) that are not all zero, ray aiming (`RAIM` ≠ 0, which this reader cannot do — see "Aiming is paraxial"), and an `ENVD` environment away from 20 °C / 1 atm. Each is warned about only when it departs from the no-op value nearly every file carries. Don't add a token to those lists on a guess about its meaning; leave it in `ignoredTokens`. The UI must present the two differently — warnings up front, ignored tokens folded away.
+**`ignoredTokens` is not a defect list.** A real file carries 30-plus record types that are annotation, not prescription — notes, tolerancing, display flags, multi-configuration, non-sequential and physical-optics settings — so a long list is normal and says nothing about whether the import is right. What matters is separated out into `warnings`: `UNMODELED_SURFACE_TOKENS` (`SCBD`, `UDAD`/`USAP`, `PKUP`, `XDAT`/`YDAT`) are the ignored *surface* records that would move a ray, so their presence is warned about per surface; and `warnHeaderSettings` reports vignetting factors (`VDXN`/`VDYN`/`VCXN`/`VCYN`/`VANN`) that are not all zero, ray aiming (`RAIM` ≠ 0, which this reader cannot do — see "Aiming is paraxial"), and an `ENVD` environment away from 20 °C / 1 atm. Each is warned about only when it departs from the no-op value nearly every file carries. Don't add a token to those lists on a guess about its meaning; leave it in `ignoredTokens`. The UI must present the two differently — warnings up front, ignored tokens folded away.
 
 **Model glass.** A `GLAS` record naming `___BLANK` (`MODEL_GLASS_NAME`) describes the glass inline instead of naming it: value 3 is `nd` and value 4 is `Vd`. Match on that name, *not* on the record's flag columns, whose meaning is unverified. **Only those two values are read.** The column where `ΔPg,F` might live is left alone because one file in the sample corpus carries a stray number there that is plainly an unrelated glass's Abbe number left by an edit — so glasses are built on the normal line. `Vd = 0` is not an Abbe number (it would mean infinite dispersion); it means the file gave an index only, so it becomes a `ConstantMaterial`. Both cases are reported once per file in `warnings`, never per surface — a file can carry dozens.
 
@@ -527,11 +527,37 @@ The marginal ray is also **produced undeviated from its first contact to the pup
 
   **And the rows are ghosted and read-only.** A row that still takes an edit while contributing
   nothing is a trap: the number changes, the plots do not, and there is nothing on screen saying why.
-  So `.row-switched-out` dims the row and every cell in it is `disabled` — except the Element cell's
-  own controls, which are how you switch it back on and name it, and the structural Insert buttons,
-  which act on the *system* rather than on the surface's values. `disabled` rather than `readonly`,
-  since a disabled control is out of the tab order too, and a row nobody can edit is not a row anybody
-  should have to tab through.
+  So `.row-switched-out` dims the row and every cell in it is `disabled` — except the Element cell,
+  and the structural Insert buttons, which act on the *system* rather than on the surface's values.
+  `disabled` rather than `readonly`, since a disabled control is out of the tab order too, and a row
+  nobody can edit is not a row anybody should have to tab through.
+
+  **The dimming is on the cells' contents, and the Element cell is exempt outright.** Two things
+  forced it there. A `td` at 0.45 alpha is a `td` you can see through, and the two frozen columns are
+  frozen precisely because their backgrounds are opaque — so the values would scroll visibly under the
+  Surface number. And the switch is what puts the element *back* in the light, so dimming it hides the
+  one control the row still needs; a dim control does not look like one you can press. Everything in
+  the Element cell is live, and full brightness is the only thing that says so, which makes the rule
+  legible rather than arbitrary: bright is live, dim is inert. `.row-label` holds bare text rather
+  than a control, so it is dimmed with `color` instead.
+
+- **The Element cell is a stack with the switch laid over its left edge.** The name sits above the
+  swatches and both are centered in the column; the switch is `position: absolute`, so it takes no
+  width from them and the column does not jog between an element's row (which has one) and an end's
+  (which does not). It is centered on the *content* rather than on the cell, since a cell spanning a
+  doublet's three rows is far taller than what it holds — which puts it exactly between the name and
+  the colors. Its outer diameter is a swatch's own side, because the two are read together down the
+  column and a smaller circle beside a square reads as a different kind of thing.
+
+  **The name is text, not a field.** Renaming is an operation on the element and belongs with the rest
+  of them in the cell's own menu; an input here spent the width the switch needed on a border around a
+  name that is two characters long. The ends already showed text there, so the column now uses one
+  type for both.
+
+  **Hover brightens the ring, never the fill.** The global `button:hover` fills a button with
+  `--surface-2`, which on this control read as the *on* state arriving early: the center darkened
+  under the pointer and cleared when it left, so the switch appeared to answer the mouse rather than
+  the click.
 
 - **Element names and colors are view state**, in `App` beside the field checkboxes and the filename,
   keyed by the **id of the front surface** — of the element for a name, of the gap for a color — so
@@ -1197,3 +1223,44 @@ The live gap now is **`UDAD`**, a polygon of points listed in the file under the
 `.UDA`. It is a different *shape* rather than a different size, so it belongs as its own kind rather
 than as a case of these; until it lands it stays in `UNMODELED_SURFACE_TOKENS`, warned about per
 surface.
+
+**`SCBD` is a tilt/decenter carried on the surface itself**, and it is the other live gap. OpticStudio
+offers the same fold two ways: as `COORDBRK` surfaces written into the prescription, which Isaac
+models, or as a surface *property* — the Tilt/Decenter tab — which writes `SCBD` and adds no rows.
+The manual in `SupportingMaterial/` predates it, so it is not in Chapter 29's keyword table.
+
+Only **7 of the 471 sample files** carry one, 18 records in all, which is why this went unnoticed: it
+was landing in `ignoredTokens` with the annotation, so a 45° fold mirror imported as a plate square
+to the axis, traced perfectly, and was the wrong system. It is now in `UNMODELED_SURFACE_TOKENS` and
+warned about per surface — the honest state until it is modeled.
+
+The record reads `SCBD <group> <order> <mode> [dx dy tx ty tz]`, decoded from the corpus and
+corroborated by an independent source (see below), **not from the manual**:
+
+- **Group 1 is "before surface", group 2 is "after".** The five floats are decenter x, decenter y and
+  the tilts about x, y and z in degrees — the same five quantities in the same order and units as
+  `COORDBRK`'s `PARM 1`–`PARM 5`, and `order` is the same flag as its `PARM 6`.
+- **Group 2's `mode` says where its numbers come from**: 0 explicit, 1 pick up this surface (the
+  values echo group 1 — the fold-mirror idiom), 2 reverse this surface (the floats are written `-0`
+  and mean nothing). `Sample Spectrometer.ZMX` writes the reverse out by hand instead, with the order
+  flag flipped and the z tilt negated, which is exactly the round trip the `COORDBRK` tests pin.
+- **Group 3 appears only on `COORDBRK` surfaces** and carries no floats: `SCBD 3 <mode> <surface>` is
+  the coordinate break's own "return to surface" link. In `double-pass_all misalignments.ZMX` surfaces
+  16, 18, 20, 22 and 24 return to 10, 9, 5, 4 and 1 — a return path undoing its outgoing tilts.
+
+**The way in is the frame chain, not a new geometry.** Groups 1 and 2 are a pair of coordinate breaks
+bracketing the surface, so `poseAt(i)` gains a transform before the surface is placed and another
+before the thickness advances; nothing else in the model has to learn about it. What must not be done
+is to expand `SCBD` into extra `COORDINATE_TRANSFORM` *rows*: the rows are what the file does not
+have, the surface numbering is what a `.zmx` refers to, and a round trip would come back three
+surfaces longer than it went in.
+
+Confirmed against **`SupportingMaterial/Convert Zemax to Code V - French.pdf`** — Joël Boyadjian's
+2012 SFO talk on ORA's `zemaxtocv` macro, which reviews the same format from the other side. Its
+slide 18 names `SCBD` as the file keyword for the properties-menu tilt, calls it "an attribute of a
+surface, and not a surface type", gives a fold mirror as the use, and records that **ORA's own
+official converter does not support it** and that exporting in absolute coordinates does not work
+around it. Its slide 17 independently confirms what this repo says about `TILTSURF` — the surface's
+*frame* is not tilted, the tilt is in the surface equation, and it is what prisms are written with —
+and slide 14 confirms `COORDBRK` order 0 as "translate x and y, then rotate about x, the new y, the
+new z, in degrees".

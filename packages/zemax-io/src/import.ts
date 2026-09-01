@@ -219,7 +219,19 @@ export function zmxTokenRole(token: string): ZmxTokenRole {
   return UNMODELED_SURFACE_TOKENS.has(upper) ? 'unmodeled' : 'annotation';
 }
 
+/**
+ * Ignored *surface* records that would move a ray. Their presence is warned
+ * about per surface, unlike the annotation the rest of `ignoredTokens` holds.
+ *
+ * `SCBD` is OpticStudio's Tilt/Decenter tab — a tilt and decenter carried as an
+ * attribute *of a surface* rather than written as coordinate breaks around it,
+ * and the manual in `SupportingMaterial/` predates it. Ignoring it silently is
+ * the worst case this reader has: 7 of the 471 sample files carry one, and a
+ * fold mirror whose 45° is dropped imports as a flat plate that traces
+ * perfectly and is the wrong system.
+ */
 const UNMODELED_SURFACE_TOKENS: ReadonlyMap<string, string> = new Map([
+  ['SCBD', 'a tilt/decenter on the surface itself'],
   ['UDAD', 'a user-defined aperture'],
   ['USAP', 'a user-defined aperture'],
   ['PKUP', 'a pickup solve'],

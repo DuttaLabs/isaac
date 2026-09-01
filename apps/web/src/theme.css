@@ -1222,7 +1222,13 @@ input.text-input {
  * a longer one is truncated with the full text on hover.
  */
 .col-element {
-  width: 62px;
+  /*
+   * Wide enough that the swatches sit centered in the column with the switch
+   * clear of them at the left. Three swatches is a cemented triplet, the widest
+   * this cell ever holds; at 62px, with the switch in the flow beside them, the
+   * colors sat off to one side and the switch had nowhere of its own to be.
+   */
+  width: 92px;
 }
 .col-type {
   /* Wide enough for COORDINATE_TRANSFORM, the longest type name, to read in
@@ -2053,33 +2059,31 @@ input.coefficient {
 }
 
 /*
- * A fixed width, not 100%. An <input> is a replaced element: its *intrinsic*
- * width comes from its character size and nothing else, so `width: 100%` leaves
- * the cell's min-content width at around twenty characters and an auto-layout
- * table hands it that much however narrow the column is asked to be. Pinning the
- * pixels is what actually makes the column narrow.
+ * The cell is one stack — name over swatches — with the switch laid over its
+ * left edge rather than placed in the flow beside it. That is what keeps the
+ * colors centered in the *column* on every row: an element has a switch and an
+ * end does not, and a column whose contents shift sideways at the top and bottom
+ * of the table reads as two columns that happen to be adjacent.
  */
+.element-body {
+  position: relative;
+}
+
 /*
- * The two ends. Their names are what those surfaces *are* rather than something
- * chosen, so they are text where an element has an input — sized and spaced to
- * sit where that input sits, so the column does not jog at the top and bottom of
- * the table.
+ * Names are text, not fields. An element's is chosen and an end's is fixed by
+ * position, but neither is edited here — renaming is an operation on the element
+ * — so both wear the same type and the column does not jog.
  */
-.element-cell.is-end .end-label {
+.element-name {
   display: block;
   font-family: system-ui, sans-serif;
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
   padding: 2px 2px 3px;
-}
-
-.element-cell .text-input {
-  text-align: center;
-  width: 52px;
-  min-width: 0;
-  padding: 1px 2px;
-  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /*
@@ -2103,13 +2107,40 @@ input.coefficient {
  * point of leaving the rows in place — but the row is not part of the picture,
  * and its cells are read-only until it is switched back on.
  */
-.row-switched-out {
+/*
+ * The dimming goes on the cells' *contents*, never on the cells themselves. A
+ * `td` at 0.45 alpha is a `td` you can see through, and the two frozen columns
+ * are frozen precisely because their backgrounds are opaque — so a row-level or
+ * cell-level opacity would let the scrolling values show through the Surface
+ * number. The Element cell is exempt outright: everything in it is still live,
+ * and full brightness is the only thing that says so.
+ */
+.row-switched-out > td:not(.element-cell) > * {
   opacity: 0.45;
 }
 
+/* Bare text rather than a control, so it is dimmed by color instead. */
+.row-switched-out > td.row-label {
+  color: var(--text-muted);
+}
+
+/*
+ * Laid over the cell's left edge and centered on the *content* rather than on
+ * the cell — a cell spanning three rows is far taller than what it holds, so
+ * centering on the box would leave the switch adrift beside a stack pinned in
+ * the middle. Half its height above the stack's midline puts it exactly between
+ * the name and the colors.
+ *
+ * The same side as a swatch, because the two are read together down the column
+ * and a smaller circle beside a square looks like a different kind of thing.
+ */
 .element-power {
-  width: 11px;
-  height: 11px;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
   flex: none;
   padding: 0;
   border-radius: 50%;
@@ -2120,6 +2151,23 @@ input.coefficient {
 
 .element-power.on {
   background: var(--surface-highlight);
+}
+
+/*
+ * Hover brightens the ring, never the fill. The global `button:hover` fills a
+ * button with `--surface-2`, which on this control reads as the *on* state
+ * arriving early: the center darkened under the pointer and cleared again when
+ * it left, so the switch appeared to answer the mouse rather than the click. A
+ * switch shows its own state and nothing else.
+ */
+.element-power:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--accent);
+}
+
+.element-power.on:hover:not(:disabled) {
+  background: var(--surface-highlight);
+  border-color: var(--accent);
 }
 
 .element-power:focus-visible {

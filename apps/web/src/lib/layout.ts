@@ -490,6 +490,15 @@ export function buildLayout(
   traces: readonly { result: RayTraceResult; wavelengthIndex: number; fieldIndex: number }[],
   defaultSemiDiameter: number,
   view: ViewPlane = VIEW_PLANES.YZ,
+  /**
+   * Surfaces belonging to an element that has been switched out of the light.
+   *
+   * They are not drawn at all. The trace already ignores them — their glass is
+   * air — but an outline left behind reads as a surface that is still doing
+   * something, and the whole point of the switch is to see the design without
+   * the element.
+   */
+  hiddenSurfaces: ReadonlySet<number> = new Set(),
 ): LayoutGeometry {
   const profiles: SurfaceProfile[] = [];
   const heights: number[] = [];
@@ -505,6 +514,9 @@ export function buildLayout(
   // missing from the picture.
   for (let index = 0; index < system.surfaces.length; index += 1) {
     if (index === 0 && !Number.isFinite(system.vertexZAt(0))) {
+      continue;
+    }
+    if (hiddenSurfaces.has(index)) {
       continue;
     }
     const surface = system.surfaceAt(index);

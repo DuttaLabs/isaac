@@ -237,6 +237,7 @@ export function Layout3DView({
   defaultSemiDiameter,
   highlightedSurface,
   elementColors,
+  hiddenSurfaces,
   surfaceColors,
   resetSignal,
   overlay,
@@ -250,6 +251,8 @@ export function Layout3DView({
   highlightedSurface?: number;
   /** A color per surface for colored elements, exactly as the 2-D view takes it. */
   elementColors?: ReadonlyMap<number, string>;
+  /** Surfaces of elements switched out of the light. */
+  hiddenSurfaces?: ReadonlySet<number>;
   /**
    * Color for whatever is drawn as a single surface rather than as a body: the
    * object and image planes, and a mirror the user has given a color to. Keyed
@@ -288,7 +291,7 @@ export function Layout3DView({
   const resize = useMemo(() => (view ? { polyfill: view.ResizeObserver } : undefined), [view]);
 
   const scene = useMemo(
-    () => buildOpticalScene(system, traces, { defaultSemiDiameter }),
+    () => buildOpticalScene(system, traces, { defaultSemiDiameter, hiddenSurfaces }),
     [system, traces, defaultSemiDiameter],
   );
 

@@ -8,6 +8,7 @@ import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
 import {
   elementColorsBySurface,
+  hiddenSurfaceIndices,
   surfaceColorsBySurface,
   systemAsTraced,
   type ElementStyles,
@@ -360,6 +361,15 @@ export function App() {
     () => systemAsTraced(system, elementStyles),
     [system, elementStyles],
   );
+  /**
+   * Which surfaces the drawings leave out: the faces of every element switched
+   * off. Taken from the *design*, because the traced system can no longer tell a
+   * hidden lens's faces from any other pair of air-to-air planes.
+   */
+  const hiddenSurfaces = useMemo(
+    () => hiddenSurfaceIndices(system, elementStyles),
+    [system, elementStyles],
+  );
   const firstOrder = useMemo(() => computeFirstOrder(tracedSystem), [tracedSystem]);
   const pupilRadius = firstOrder.ok ? firstOrder.value.entrancePupilRadius : 10;
 
@@ -644,6 +654,7 @@ export function App() {
             onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
             sourceFields={fieldVisibility}
+            hiddenSurfaces={hiddenSurfaces}
             firstOrder={firstOrder}
             elementColors={elementColors}
             surfaceColors={surfaceColors}
@@ -658,6 +669,7 @@ export function App() {
             onSettings={(next) => writeSettings(found, update, next)}
             choice={choice}
             sourceFields={fieldVisibility}
+            hiddenSurfaces={hiddenSurfaces}
             firstOrder={firstOrder}
             elementColors={elementColors}
             surfaceColors={surfaceColors}

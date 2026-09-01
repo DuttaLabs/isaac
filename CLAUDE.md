@@ -515,6 +515,23 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   the doublet out and the focal length reads `Inf`, which is the truth about a system with no power.
   Derived on every render, so switching back on restores exactly what was there and nothing lands on
   the undo stack.
+  **A switched-out element is gone from the pictures too**, not merely made of air. Air on both sides
+  already makes a surface do nothing to a ray, so the trace would be right either way — but a lens
+  still drawn where the rays run straight through it says the drawing and the trace disagree, and the
+  drawing is what the user is reading. `hiddenSurfaceIndices` is the set, and both views take it:
+  `buildLayout` skips those profiles and any body they bound, `buildOpticalScene` builds no geometry
+  for them. It is indices rather than ids because that is what both views already key on, and it is
+  computed from the same `ElementStyle.hidden` flag the trace reads, so a surface cannot be hidden in
+  one and present in the other. **The two ends are never in it** — the object and image planes are
+  positions, not glass, and the image plane is where the spots land.
+
+  **And the rows are ghosted and read-only.** A row that still takes an edit while contributing
+  nothing is a trap: the number changes, the plots do not, and there is nothing on screen saying why.
+  So `.row-switched-out` dims the row and every cell in it is `disabled` — except the Element cell's
+  own controls, which are how you switch it back on and name it, and the structural Insert buttons,
+  which act on the *system* rather than on the surface's values. `disabled` rather than `readonly`,
+  since a disabled control is out of the tab order too, and a row nobody can edit is not a row anybody
+  should have to tab through.
 
 - **Element names and colors are view state**, in `App` beside the field checkboxes and the filename,
   keyed by the **id of the front surface** — of the element for a name, of the gap for a color — so

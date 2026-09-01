@@ -87,6 +87,7 @@ export function LayoutView({
   defaultSemiDiameter,
   highlightedSurface,
   elementColors,
+  hiddenSurfaces,
   surfaceColors,
   resetSignal,
   firstOrder,
@@ -112,6 +113,8 @@ export function LayoutView({
    * same answer or the doublet comes out in two colors.
    */
   elementColors?: ReadonlyMap<number, string>;
+  /** Surfaces of elements switched out of the light. */
+  hiddenSurfaces?: ReadonlySet<number>;
   /**
    * Color for whatever is drawn as a single surface rather than as a body: the
    * object and image planes, and a mirror the user has given a color to. Keyed
@@ -125,7 +128,7 @@ export function LayoutView({
 }) {
   const drawn = plane ?? VIEW_PLANES.YZ;
   const geometry = useMemo(
-    () => buildLayout(system, traces, defaultSemiDiameter, drawn),
+    () => buildLayout(system, traces, defaultSemiDiameter, drawn, hiddenSurfaces),
     [system, traces, defaultSemiDiameter, drawn],
   );
 

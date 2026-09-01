@@ -36,6 +36,8 @@ interface Props {
   sourceFields: readonly boolean[];
   firstOrder: Result<FirstOrder>;
   elementColors: ReadonlyMap<number, string>;
+  /** Surfaces of elements switched out of the light: not drawn at all. */
+  hiddenSurfaces: ReadonlySet<number>;
   surfaceColors: ReadonlyMap<number, string>;
   highlightedSurface: number | undefined;
 }
@@ -48,6 +50,7 @@ export function Layout3DPanel({
   sourceFields,
   firstOrder,
   elementColors,
+  hiddenSurfaces,
   surfaceColors,
   highlightedSurface,
 }: Props) {
@@ -125,6 +128,7 @@ export function Layout3DPanel({
                 defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                 highlightedSurface={highlightedSurface}
                 elementColors={elementColors}
+                hiddenSurfaces={hiddenSurfaces}
                 surfaceColors={surfaceColors}
                 resetSignal={resetSignal}
                 camera={settings.camera}

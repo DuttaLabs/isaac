@@ -11,6 +11,7 @@ import {
   elementLabel,
   elementRowSpan,
   findElements,
+  hiddenSurfaceIndices,
   systemAsTraced,
   gapColor,
   hasChosenColor,
@@ -556,4 +557,45 @@ test('a hidden mirror stops reflecting, which is what "not there" means for one'
   // Its radius and place are still its own: only the reflection is gone.
   assert.equal(traced.surfaceAt(1).radius, -100);
   assert.equal(traced.vertexZAt(2), system.vertexZAt(2));
+});
+
+test('a hidden element leaves nothing behind in the drawing', () => {
+  const doublet = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      glassFace('front', 60, 6),
+      glassFace('mid', -40, 4),
+      airFace('back', 100, 90),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+  const [element] = findElements(doublet);
+  assert.ok(element);
+
+  const hidden = hiddenSurfaceIndices(doublet, { [element.key]: { hidden: true } });
+  // Every face the element is made of, and only those.
+  assert.deepEqual(
+    [...hidden].sort((a, b) => a - b),
+    [1, 2, 3],
+  );
+  assert.deepEqual([...hiddenSurfaceIndices(doublet, {})], []);
+});
+
+test('the ends are never dropped from a drawing, whatever is switched off', () => {
+  // A lens whose rear face *is* the image plane is a system the model allows, and
+  // taking the image plane out of the picture because of a switch on the lens in
+  // front of it would remove the one surface the rays are measured against.
+  const system = new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      glassFace('front', 60, 6),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+  const [element] = findElements(system);
+  assert.ok(element);
+  assert.equal(element.lastIndex, 2, 'the rear face is the image plane here');
+
+  const hidden = hiddenSurfaceIndices(system, { [element.key]: { hidden: true } });
+  assert.deepEqual([...hidden], [1]);
 });

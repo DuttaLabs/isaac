@@ -2097,6 +2097,16 @@ input.coefficient {
  * element looks exactly like a design that never had one, so the row has to say
  * which it is.
  */
+/*
+ * A row whose element is out of the light. Dimmed rather than struck through or
+ * hidden: the values are still the design's and still worth reading — the whole
+ * point of leaving the rows in place — but the row is not part of the picture,
+ * and its cells are read-only until it is switched back on.
+ */
+.row-switched-out {
+  opacity: 0.45;
+}
+
 .element-power {
   width: 11px;
   height: 11px;

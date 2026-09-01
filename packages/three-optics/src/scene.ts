@@ -32,6 +32,15 @@ export interface SceneOptions {
   segments?: number;
   /** Samples from axis to rim along a surface profile. */
   profileSamples?: number;
+  /**
+   * Surfaces belonging to an element switched out of the light: drawn not at
+   * all, neither as a solid nor as a shell.
+   *
+   * Handed in rather than worked out here, because it cannot be worked out here:
+   * a hidden lens's faces have air on both sides in the traced system, and so
+   * does every dummy plane in a design.
+   */
+  hiddenSurfaces?: ReadonlySet<number>;
 }
 
 /** A lens: the solid between two surfaces, revolved in one piece. */
@@ -219,12 +228,17 @@ export function buildOpticalScene(
   const media = signedMediaIndices(system, system.primaryWavelengthNm);
   const travelAfter = (index: number): number => Math.sign(media[index] ?? 1);
 
+  const hiddenSurfaces = options.hiddenSurfaces ?? new Set<number>();
+
   const elements: ElementGeometry[] = [];
   const consumed = new Set<number>();
 
   // Surface 0 is the object, which may sit at −∞; never drawn.
   for (let index = 1; index < system.surfaces.length - 1; index += 1) {
     if (!isGlass(index) || system.surfaceAt(index).type === 'COORDINATE_TRANSFORM') {
+      continue;
+    }
+    if (hiddenSurfaces.has(index) || hiddenSurfaces.has(index + 1)) {
       continue;
     }
     // A coordinate transform between the two faces would mean they no longer share
@@ -291,6 +305,9 @@ export function buildOpticalScene(
       continue;
     }
     if (index === 0 && !Number.isFinite(system.vertexZAt(0))) {
+      continue;
+    }
+    if (hiddenSurfaces.has(index)) {
       continue;
     }
     const surface = system.surfaceAt(index);

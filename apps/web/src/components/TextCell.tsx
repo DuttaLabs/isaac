@@ -11,6 +11,7 @@ export function TextCell({
   placeholder,
   ariaLabel,
   title,
+  disabled,
   focusOnOpen,
 }: {
   value: string;
@@ -18,6 +19,8 @@ export function TextCell({
   placeholder?: string;
   ariaLabel?: string;
   title?: string;
+  /** Read-only: shown, but not editable — a row switched out of the light. */
+  disabled?: boolean;
   /**
    * For a box that appears *in order to be typed in* — the layout rename. It
    * takes focus and **selects what is there**, so the first keystroke replaces
@@ -62,6 +65,7 @@ export function TextCell({
       placeholder={placeholder}
       aria-label={ariaLabel}
       title={title}
+      disabled={disabled}
       onChange={(event) => {
         setEditing(true);
         setDraft(event.target.value);

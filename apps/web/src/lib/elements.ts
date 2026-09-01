@@ -251,6 +251,38 @@ export function isHidden(element: OpticalElement, styles: ElementStyles): boolea
 }
 
 /**
+ * The surfaces belonging to elements that are switched out.
+ *
+ * The drawing takes this rather than working it out from the traced system,
+ * which cannot: a hidden lens's faces are air-to-air there, and so is every
+ * dummy plane in the design. Only the styles know which ones were switched off
+ * on purpose.
+ *
+ * The two ends are never included. A lens whose rear face *is* the image plane
+ * is a system the model allows, and dropping the image plane from the picture
+ * because of a switch on the lens in front of it would take away the one surface
+ * the rays are measured against.
+ */
+export function hiddenSurfaceIndices(
+  system: OpticalSystem,
+  styles: ElementStyles,
+): ReadonlySet<number> {
+  const hidden = new Set<number>();
+  const last = system.surfaces.length - 1;
+  for (const element of findElements(system)) {
+    if (!isHidden(element, styles)) {
+      continue;
+    }
+    for (let index = element.firstIndex; index <= element.lastIndex; index += 1) {
+      if (index !== 0 && index !== last) {
+        hidden.add(index);
+      }
+    }
+  }
+  return hidden;
+}
+
+/**
  * The system as it is *traced*, with every hidden element taken out of the light.
  *
  * A hidden lens becomes air: its faces stay where they are, and a surface with

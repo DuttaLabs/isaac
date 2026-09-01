@@ -178,6 +178,18 @@ export function LensDataEditor({
     () => new Map(elements.map((element) => [element.firstIndex, element])),
     [elements],
   );
+  /** Rows belonging to an element that is switched out of the light. */
+  const hiddenRows = useMemo(() => {
+    const rows = new Set<number>();
+    for (const element of elements) {
+      if (isHidden(element, elementStyles)) {
+        for (let index = element.firstIndex; index <= element.lastIndex; index += 1) {
+          rows.add(index);
+        }
+      }
+    }
+    return rows;
+  }, [elements, elementStyles]);
   const coveredRows = useMemo(() => {
     const covered = new Set<number>();
     for (const element of elements) {
@@ -680,7 +692,15 @@ export function LensDataEditor({
               // length either: two tangents are its whole shape, so they take
               // the same spanned cell the transform's parameters do.
               const isTilted = surface.type === 'TILTED';
-              const isFixed = isObject || isImage;
+              // Every row an element covers, so a switched-out doublet ghosts
+              // all three of its surfaces rather than only the one carrying the
+              // switch.
+              const isSwitchedOut = hiddenRows.has(index);
+              // Read-only while out of the light: the values are still the
+              // design's and still shown, but editing a surface that is not in
+              // the picture invites changing something whose effect cannot be
+              // seen. Switch it back on and the row is live again.
+              const isFixed = isObject || isImage || isSwitchedOut;
               const modelParameters = modelGlassText(surface.material);
               // Every surface is its own number, with no exceptions: the object
               // is 0 and the image is whatever the last one comes to. Zemax names
@@ -698,7 +718,14 @@ export function LensDataEditor({
                   ref={(element) => {
                     rows.current[index] = element;
                   }}
-                  className={index === highlightedSurface ? 'row-highlight' : undefined}
+                  className={
+                    [
+                      index === highlightedSurface ? 'row-highlight' : '',
+                      isSwitchedOut ? 'row-switched-out' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
+                  }
                   onMouseEnter={() => onHighlight(index)}
                   onMouseLeave={() => onHighlight(undefined)}
                   // The panel's own menu in place of the browser's. The row is
@@ -758,6 +785,7 @@ export function LensDataEditor({
 
                   <td className="text-column">
                     <TextCell
+                      disabled={isFixed}
                       value={surface.comment ?? ''}
                       placeholder="—"
                       ariaLabel={`Label for surface ${label}`}
@@ -776,6 +804,7 @@ export function LensDataEditor({
                       <button
                         type="button"
                         className="aperture-button"
+                        disabled={isFixed}
                         title={`${apertureSummary(surface.aperture)}. Click to change.`}
                         aria-label={`Aperture of surface ${label}: ${apertureSummary(surface.aperture)}`}
                         onClick={() => setApertureSurface(index)}
@@ -797,6 +826,7 @@ export function LensDataEditor({
                         <label className="inline">
                           <span className="hint">tan x</span>
                           <NumericCell
+                            disabled={isFixed}
                             value={surface.tiltTangents?.x ?? 0}
                             ariaLabel={`X tangent of surface ${label}`}
                             title="Tangent of the tilt about x. The file's own quantity; the angle is beside it."
@@ -806,6 +836,7 @@ export function LensDataEditor({
                         <label className="inline">
                           <span className="hint">tan y</span>
                           <NumericCell
+                            disabled={isFixed}
                             value={surface.tiltTangents?.y ?? 0}
                             ariaLabel={`Y tangent of surface ${label}`}
                             title="Tangent of the tilt about y."
@@ -864,6 +895,7 @@ export function LensDataEditor({
                           <EmptyCell reason="A paraxial surface is a plane; it has no conic constant." />
                         ) : (
                           <NumericCell
+                            disabled={isFixed}
                             value={surface.conic}
                             ariaLabel={`Conic constant of surface ${label}`}
                             title="Conic constant k. 0 sphere, −1 paraboloid, below −1 hyperboloid, between −1 and 0 ellipsoid."
@@ -889,6 +921,7 @@ export function LensDataEditor({
                       <td>
                         {isParaxial ? (
                           <NumericCell
+                            disabled={isFixed}
                             value={surface.focalLength ?? 0}
                             ariaLabel={`Focal length of surface ${label}`}
                             title="Focal length of the ideal thin lens. Negative diverges."
@@ -908,7 +941,7 @@ export function LensDataEditor({
                       value={surface.thickness}
                       ariaLabel={`Thickness after surface ${label}`}
                       title="Distance to the next surface. The object may be Infinity."
-                      disabled={isImage}
+                      disabled={isImage || isSwitchedOut}
                       onCommit={(next) => apply(updateSurface(system, index, { thickness: next }))}
                     />
                   </td>
@@ -926,7 +959,7 @@ export function LensDataEditor({
                         material={surface.material}
                         reflective={surface.reflective}
                         ariaLabel={`Material after surface ${label}`}
-                        disabled={isImage || isParaxial}
+                        disabled={isImage || isParaxial || isSwitchedOut}
                         onCommit={(material) =>
                           apply(
                             surface.reflective
@@ -964,6 +997,7 @@ export function LensDataEditor({
                       <EmptyCell reason="A coordinate transform meets no ray, so it has no clear aperture." />
                     ) : (
                       <NumericCell
+                        disabled={isFixed}
                         value={surface.semiDiameter}
                         ariaLabel={`Semi-diameter of surface ${label}`}
                         title="Clear aperture radius. 0 or blank means unapertured."

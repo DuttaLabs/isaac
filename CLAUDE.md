@@ -761,6 +761,26 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   round on the profiles and the ground edges, so the two strokes ending at one rim point overlap into
   a corner at any weight.
 
+  **The drawing is memoized apart from the view that frames it** (`LayoutContent`), because a pan
+  changes `viewBox.x`/`.y` and *nothing else in the picture*: the geometry is in drawing units, and
+  the marks that hold a screen size scale with `zoom`, which panning does not touch. Only the gizmo
+  genuinely needs the pan, being pinned to the corner of the visible area. Without the split, every
+  pan frame reconciled the entire subtree to arrive at the identical picture — measured at **13.7 ms
+  per move against 4.25 ms after**, on 126 nodes; a real design runs to seven hundred, and 31 rays
+  across 3 fields dragged at about 22 fps.
+
+  Two things make it work, and each is worthless without the other. `project` and `origin` are
+  memoized — both were rebuilt every render, and one fresh object fails the shallow compare and costs
+  the memo *everything*. And it is a **component with props rather than a `useMemo` with a dependency
+  list**: a value read inside and forgotten in a deps array would go stale only while panning, which
+  is the kind of wrong nobody finds for months, whereas a missing prop does not compile.
+
+  Verify this structurally, not by eye. Chrome throttles `requestAnimationFrame` *and* clamps
+  `setTimeout` to one second in a background tab, so frame timing from an automated session is
+  meaningless; and 30 pointer moves dispatched synchronously are batched by React into one render,
+  which reads as a memo working when it is not. Yield on a `MessageChannel` between moves — what
+  React's own scheduler runs on, and the one macrotask Chrome does not throttle.
+
   **A mark that is a legend holds its screen size**, and the ones that do it multiply by `zoom`
   (`view.width / WIDTH`): the gizmo, the first-order overlay's ticks and labels, the crosshairs that
   stand for the axis end-on, and the stop bars — which, left in drawing units, grew into the tallest

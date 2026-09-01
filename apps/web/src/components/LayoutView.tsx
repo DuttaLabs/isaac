@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpticalSystem } from '@isaac/optical-core';
 import {
   buildLayout,
@@ -70,111 +70,41 @@ function crossedMessage(body: GlassBody, units: string): string {
 }
 
 /**
- * A 2-D cross-section of the system, in whichever plane is asked for. Scaling is
- * uniform in both axes, so shapes are true rather than stretched to fill.
- *
- * Nothing here knows which plane it is drawing. The geometry arrives already
- * projected, as points with a horizontal and a vertical coordinate, and the two
- * things that genuinely differ between the views — whether the optical axis lies
- * in the picture, and whether a surface has a section or only a rim — are read
- * off the plane rather than branched on by name.
+ * The design itself: axis, glass, rays, surfaces, the first-order overlay and
+ * the stop marks. Split out of {@link LayoutView} for one reason — so that
+ * panning does not rebuild it. See the note at its call site.
  */
-export function LayoutView({
+const LayoutContent = memo(function LayoutContent({
   system,
-  traces,
-  plane,
-  turns = 0,
-  defaultSemiDiameter,
-  highlightedSurface,
-  elementColors,
-  hiddenSurfaces,
-  surfaceColors,
-  resetSignal,
+  geometry,
+  project,
+  zoom,
+  drawn,
+  axisAcross,
+  origin,
+  boxHeight,
   firstOrder,
+  multipleWavelengths,
+  elementColors,
+  surfaceColors,
+  highlightedSurface,
 }: {
   system: OpticalSystem;
-  traces: readonly LayoutTrace[];
-  /** Which plane to draw. Defaults to the meridional one a layout has always meant. */
-  plane?: ViewPlane;
-  /**
-   * Quarter turns clockwise. A rotation of the *picture*, not a change of plane:
-   * one turn stands the axis upright with the object at the top, which is how a
-   * microscope column is read.
-   */
-  turns?: QuarterTurns;
-  defaultSemiDiameter: number;
-  /** Surface the user is on in the lens table, picked out so the row and the
-   *  picture can be read together. */
-  highlightedSurface?: number;
-  /**
-   * A color per surface, for the elements the user has colored. Keyed by surface
-   * rather than by element because a body is identified by its front surface,
-   * and a cemented pair is two bodies inside one element — both have to find the
-   * same answer or the doublet comes out in two colors.
-   */
-  elementColors?: ReadonlyMap<number, string>;
-  /** Surfaces of elements switched out of the light. */
-  hiddenSurfaces?: ReadonlySet<number>;
-  /**
-   * Color for whatever is drawn as a single surface rather than as a body: the
-   * object and image planes, and a mirror the user has given a color to. Keyed
-   * by surface index.
-   */
-  surfaceColors?: ReadonlyMap<number, string>;
-  /** Changes when the user asks for the view back, and at nothing else. */
-  resetSignal: number;
-  /** The first-order construction to draw over the design, when it is asked for. */
+  geometry: ReturnType<typeof buildLayout>;
+  project: (point: LayoutPoint) => { x: number; y: number };
+  zoom: number;
+  drawn: ViewPlane;
+  axisAcross: boolean;
+  origin: { x: number; y: number };
+  boxHeight: number;
   firstOrder?: FirstOrderOverlay;
+  multipleWavelengths: boolean;
+  elementColors?: ReadonlyMap<number, string>;
+  surfaceColors?: ReadonlyMap<number, string>;
+  highlightedSurface?: number;
 }) {
-  const drawn = plane ?? VIEW_PLANES.YZ;
-  const geometry = useMemo(
-    () => buildLayout(system, traces, defaultSemiDiameter, drawn, hiddenSurfaces),
-    [system, traces, defaultSemiDiameter, drawn],
-  );
-
-  const { view, boxHeight, svg, panning } = usePanZoom(resetSignal);
-
-  const multipleWavelengths = new Set(traces.map((trace) => trace.wavelengthIndex)).size > 1;
-
-  // Turned *here*, in the projection, rather than in the geometry: the plane
-  // decides which world axes are in play and how a profile is swept, and holding
-  // the picture sideways changes none of that. Folding the turn into `project`
-  // also means everything drawn through it comes round together — the overlay
-  // included, which builds its own points from a z and a radius.
-  const { minH, maxH, minV, maxV } = turnBounds(geometry.bounds, turns);
-  const spanH = Math.max(maxH - minH, 1e-6);
-  const spanV = Math.max(maxV - minV, 1e-6);
-  const scale = Math.min((WIDTH - 2 * PADDING) / spanH, (boxHeight - 2 * PADDING) / spanV);
-
-  // Centered both ways. A cross-section fills the width and cannot tell the
-  // difference, but the end-on view is as tall as it is wide, and anchoring it
-  // to the left edge would leave it against the frame with the rest of the panel
-  // empty.
-  const centerH = (minH + maxH) / 2;
-  const centerV = (minV + maxV) / 2;
-  const project = (point: LayoutPoint): { x: number; y: number } => {
-    const turned = turnPoint(point, turns);
-    return {
-      x: WIDTH / 2 + (turned.h - centerH) * scale,
-      y: boxHeight / 2 - (turned.v - centerV) * scale,
-    };
-  };
-
-  // Which way the optical axis runs on screen once the picture has been turned.
-  // It is the h direction of the view plane, so a quarter turn stands it upright.
-  const axisAcross = turnPoint({ h: 1, v: 0 }, turns).h !== 0;
-
-  const origin = project({ h: 0, v: 0 });
-  const zoom = view.width / WIDTH;
-
   return (
-    <svg
-      ref={svg}
-      className={panning ? 'layout panning' : 'layout'}
-      viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
-      role="img"
-      aria-label={`Layout of ${system.name} in the ${drawn.label} plane, ${system.surfaces.length} surfaces`}
-    >
+    <>
       {drawn.axial ? (
         <line
           className="axis-line"
@@ -391,6 +321,155 @@ export function LayoutView({
             );
           });
         })}
+    </>
+  );
+});
+
+/**
+ * A 2-D cross-section of the system, in whichever plane is asked for. Scaling is
+ * uniform in both axes, so shapes are true rather than stretched to fill.
+ *
+ * Nothing here knows which plane it is drawing. The geometry arrives already
+ * projected, as points with a horizontal and a vertical coordinate, and the two
+ * things that genuinely differ between the views — whether the optical axis lies
+ * in the picture, and whether a surface has a section or only a rim — are read
+ * off the plane rather than branched on by name.
+ */
+export function LayoutView({
+  system,
+  traces,
+  plane,
+  turns = 0,
+  defaultSemiDiameter,
+  highlightedSurface,
+  elementColors,
+  hiddenSurfaces,
+  surfaceColors,
+  resetSignal,
+  firstOrder,
+}: {
+  system: OpticalSystem;
+  traces: readonly LayoutTrace[];
+  /** Which plane to draw. Defaults to the meridional one a layout has always meant. */
+  plane?: ViewPlane;
+  /**
+   * Quarter turns clockwise. A rotation of the *picture*, not a change of plane:
+   * one turn stands the axis upright with the object at the top, which is how a
+   * microscope column is read.
+   */
+  turns?: QuarterTurns;
+  defaultSemiDiameter: number;
+  /** Surface the user is on in the lens table, picked out so the row and the
+   *  picture can be read together. */
+  highlightedSurface?: number;
+  /**
+   * A color per surface, for the elements the user has colored. Keyed by surface
+   * rather than by element because a body is identified by its front surface,
+   * and a cemented pair is two bodies inside one element — both have to find the
+   * same answer or the doublet comes out in two colors.
+   */
+  elementColors?: ReadonlyMap<number, string>;
+  /** Surfaces of elements switched out of the light. */
+  hiddenSurfaces?: ReadonlySet<number>;
+  /**
+   * Color for whatever is drawn as a single surface rather than as a body: the
+   * object and image planes, and a mirror the user has given a color to. Keyed
+   * by surface index.
+   */
+  surfaceColors?: ReadonlyMap<number, string>;
+  /** Changes when the user asks for the view back, and at nothing else. */
+  resetSignal: number;
+  /** The first-order construction to draw over the design, when it is asked for. */
+  firstOrder?: FirstOrderOverlay;
+}) {
+  const drawn = plane ?? VIEW_PLANES.YZ;
+  const geometry = useMemo(
+    () => buildLayout(system, traces, defaultSemiDiameter, drawn, hiddenSurfaces),
+    [system, traces, defaultSemiDiameter, drawn],
+  );
+
+  const { view, boxHeight, svg, panning } = usePanZoom(resetSignal);
+
+  const multipleWavelengths = new Set(traces.map((trace) => trace.wavelengthIndex)).size > 1;
+
+  // Turned *here*, in the projection, rather than in the geometry: the plane
+  // decides which world axes are in play and how a profile is swept, and holding
+  // the picture sideways changes none of that. Folding the turn into `project`
+  // also means everything drawn through it comes round together — the overlay
+  // included, which builds its own points from a z and a radius.
+  const { minH, maxH, minV, maxV } = turnBounds(geometry.bounds, turns);
+  const spanH = Math.max(maxH - minH, 1e-6);
+  const spanV = Math.max(maxV - minV, 1e-6);
+  const scale = Math.min((WIDTH - 2 * PADDING) / spanH, (boxHeight - 2 * PADDING) / spanV);
+
+  // Centered both ways. A cross-section fills the width and cannot tell the
+  // difference, but the end-on view is as tall as it is wide, and anchoring it
+  // to the left edge would leave it against the frame with the rest of the panel
+  // empty.
+  const centerH = (minH + maxH) / 2;
+  const centerV = (minV + maxV) / 2;
+  // Stable, because `LayoutContent` is memoized on it. Rebuilt every render this
+  // would defeat that memo entirely: the drawing takes a new `project` on every
+  // pan frame and reconciles all of itself again. Nothing here depends on where
+  // the view is — only on what is being drawn and how it is turned.
+  const project = useCallback(
+    (point: LayoutPoint): { x: number; y: number } => {
+      const turned = turnPoint(point, turns);
+      return {
+        x: WIDTH / 2 + (turned.h - centerH) * scale,
+        y: boxHeight / 2 - (turned.v - centerV) * scale,
+      };
+    },
+    [turns, centerH, centerV, scale, boxHeight],
+  );
+
+  // Which way the optical axis runs on screen once the picture has been turned.
+  // It is the h direction of the view plane, so a quarter turn stands it upright.
+  const axisAcross = turnPoint({ h: 1, v: 0 }, turns).h !== 0;
+
+  // Memoized for the same reason `project` is: it is a fresh object every render
+  // otherwise, and `LayoutContent`'s shallow compare fails on it — which quietly
+  // costs the memo everything, since one changed prop rebuilds all of it.
+  const origin = useMemo(() => project({ h: 0, v: 0 }), [project]);
+  const zoom = view.width / WIDTH;
+
+  return (
+    <svg
+      ref={svg}
+      className={panning ? 'layout panning' : 'layout'}
+      viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
+      role="img"
+      aria-label={`Layout of ${system.name} in the ${drawn.label} plane, ${system.surfaces.length} surfaces`}
+    >
+      {/*
+        Everything that is a picture of the *design*, held apart from the view
+        that frames it. A pan rewrites `viewBox` and changes nothing in here:
+        the geometry is in drawing units, and the few marks that hold a screen
+        size scale with `zoom`, which panning does not touch. Memoized so React
+        skips the subtree on a drag — it is the whole of the drawing, and at 31
+        rays across 3 fields that is some seven hundred nodes that were being
+        reconciled every frame to arrive at the same picture.
+
+        A component with props rather than a `useMemo` with a dependency list,
+        deliberately: a value read here and forgotten in a deps array would go
+        stale only while panning, which is the kind of wrong that is found long
+        after it is introduced. A missing prop does not compile.
+      */}
+      <LayoutContent
+        system={system}
+        geometry={geometry}
+        project={project}
+        zoom={zoom}
+        drawn={drawn}
+        axisAcross={axisAcross}
+        origin={origin}
+        boxHeight={boxHeight}
+        firstOrder={firstOrder}
+        multipleWavelengths={multipleWavelengths}
+        elementColors={elementColors}
+        surfaceColors={surfaceColors}
+        highlightedSurface={highlightedSurface}
+      />
 
       {/*
         The orientation gizmo, drawn over everything and pinned to the corner of

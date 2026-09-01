@@ -75,7 +75,6 @@ function crossedMessage(body: GlassBody, units: string): string {
  * panning does not rebuild it. See the note at its call site.
  */
 const LayoutContent = memo(function LayoutContent({
-  extent,
   system,
   geometry,
   project,
@@ -90,7 +89,6 @@ const LayoutContent = memo(function LayoutContent({
   surfaceColors,
   highlightedSurface,
 }: {
-  extent: { x: number; y: number; width: number; height: number };
   system: OpticalSystem;
   geometry: ReturnType<typeof buildLayout>;
   project: (point: LayoutPoint) => { x: number; y: number };
@@ -108,19 +106,15 @@ const LayoutContent = memo(function LayoutContent({
   return (
     <>
       {/*
-        How far the design reaches, drawn first so everything else is over it.
-        Zoomed out there is a great deal of empty panel and no way to tell where
-        the system is in it — the pan clamp stops you at the edge, but a wall you
-        discover by walking into it is not the same as being shown the room.
+        The plot window: the area the drawing is composed in, and what Reset view
+        frames. Drawn first, so everything else is over it.
+
+        At the fitted zoom it lies along the panel's own edges and says nothing.
+        Wound out it is the only thing that does: the drawing becomes a speck in
+        a large dark panel, and this is the box that says which part of that
+        emptiness is the plot and which is merely outside it.
       */}
-      <rect
-        className="plot-extent"
-        x={extent.x}
-        y={extent.y}
-        width={extent.width}
-        height={extent.height}
-        fill="none"
-      />
+      <rect className="plot-extent" x={0} y={0} width={WIDTH} height={boxHeight} fill="none" />
 
       {drawn.axial ? (
         <line
@@ -449,20 +443,6 @@ export function LayoutView({
   // costs the memo everything, since one changed prop rebuilds all of it.
   const origin = useMemo(() => project({ h: 0, v: 0 }), [project]);
 
-  /**
-   * The rectangle the design actually occupies, in drawing coordinates.
-   *
-   * Built from the turned bounds directly rather than through `project`, which
-   * would turn them a second time — they have been through `turnBounds` already.
-   * `scale` is the *smaller* of the two fits, so this is not the drawing area
-   * inset by `PADDING`: one axis fills it and the other does not, and which one
-   * is the whole point of drawing the frame.
-   */
-  const extent = useMemo(() => {
-    const x = (h: number) => WIDTH / 2 + (h - centerH) * scale;
-    const y = (v: number) => boxHeight / 2 - (v - centerV) * scale;
-    return { x: x(minH), y: y(maxV), width: (maxH - minH) * scale, height: (maxV - minV) * scale };
-  }, [minH, maxH, minV, maxV, centerH, centerV, scale, boxHeight]);
   const zoom = view.width / WIDTH;
 
   return (
@@ -488,7 +468,6 @@ export function LayoutView({
         after it is introduced. A missing prop does not compile.
       */}
       <LayoutContent
-        extent={extent}
         system={system}
         geometry={geometry}
         project={project}

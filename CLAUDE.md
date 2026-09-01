@@ -787,29 +787,38 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   thing in a zoomed picture. Anything measuring the *design* stays in drawing units, which is the
   whole of the distinction.
 
-  **A pan cannot lose the drawing.** `clampPan` (`lib/pan-zoom.ts`) holds the view's *center* inside
-  the fitted box, which is the simplest rule that keeps the picture on screen and behaves at both ends
-  of the zoom: wound in, the view is small and reaches any part of the drawing but not past its edge,
-  the way a map pans; wound out, the drawing can be pushed to the edge of the panel but never out of
-  it. Unclamped, a drag simply kept going and the drawing left the panel with no hint of which way it
-  had gone — recoverable only by Reset view, which is a poor thing to have to discover. Tested rather
-  than looked at, because a view panned into empty space renders perfectly and shows nothing, which
-  reads as a blank panel rather than as a bug.
+  **A pan cannot lose the drawing, and the room it leaves does not change with the zoom.**
+  `clampPan` (`lib/pan-zoom.ts`) requires that **whichever of the view and the fitted box is smaller,
+  its center lies inside the other**. Wound in, the view is smaller, so its center stays on the
+  drawing and every part can be reached, the way a map pans. Wound out, the drawing is smaller, so
+  its center stays inside the view and it can be put anywhere in the panel. Unclamped, a drag simply
+  keeps going and the drawing leaves the panel with no hint of which way it went — recoverable only
+  by Reset view, which is a poor thing to have to discover.
 
-  **How far the design reaches is drawn, as a hairline** (`.plot-extent`). Two different lines were
-  confused here for a while, and only one is worth having. Marking the *drawing area* is not: that box
-  fills the panel body, so its top edge is the header's own rule and its sides are the panel's own
-  border, and a line there traces what is already on screen. Marking *the design's own bounds* is,
-  because the two coincide only at the fitted zoom — wind the wheel back and the system becomes a
-  small thing adrift in a large empty panel with nothing saying where it went. The pan clamp does stop
-  you at the edge, but a wall you find by walking into it is not the same as being shown the room.
+  **The first version was only the first half of that rule**, applied at every zoom: the view's center
+  was held inside the fitted box whether or not the view was the smaller thing. That is a limit stated
+  in drawing units, so the room it left *on screen* shrank in step with the drawing — the center could
+  travel `fitted.width` units at any zoom, which is the whole panel when fitted and an eighth of it
+  wound out eight times. The panel got bigger while the room to move got smaller, which is the
+  complaint that found it: "a big panel but the object can only occupy a tiny portion of it — makes no
+  sense." Under the symmetric rule the travel is **exactly one panel's width at every zoom**, verified
+  in the app as well as in the unit test: 1092px of travel on a 1092px panel with the plot drawn at
+  1092px, at 636, at 259 and at 136.
 
-  It is built from the **turned** bounds mapped with `project`'s own scale and centers, *not* passed
-  through `project`, which would turn them a second time. `scale` is the smaller of the two fits, so
-  this is not the drawing area inset by `PADDING`: one axis fills it and the other does not, and which
-  one is the whole point. Pinned by rendering it in every plane and turn and asserting that no drawn
-  path falls outside it — a frame that does not actually bound the drawing is worse than none, and it
-  looks perfectly plausible.
+  There is a lesson in how long that survived. It was tested — four tests, all passing, none of which
+  asked the question a *user* asks, which is not "does the clamp hold" but "how much can I move
+  this?" A rule can be correct on its own terms and still be the wrong rule, and no amount of testing
+  the terms will say so. The test that pins it now measures screen travel as a fraction of the panel.
+
+  **The plot window is drawn, as a hairline** (`.plot-extent`): the box from (0, 0) to
+  `WIDTH × boxHeight`, which is the area the drawing is composed in and what Reset view frames. At the
+  fitted zoom it lies along the panel's own edges and says nothing. Wound out it is the only thing
+  that does — the drawing becomes a speck in a large dark panel, and this is what separates the part
+  of that emptiness which is the plot from the part which is merely outside it.
+
+  Do not confuse it with a frame around the *design's own bounds*, which is a different rectangle and
+  was built first by mistake. That one tracks the object; this one is the room the object sits in, and
+  the room is what a reader is missing when everything has receded into the dark.
 
   **`.layout-3d` is `flex: 1 1 0`, and the `0` is load-bearing.** It used to hold a fixed
   `aspect-ratio` so that toggling to 3D did not make the panel jump; with no toggle left, a fixed

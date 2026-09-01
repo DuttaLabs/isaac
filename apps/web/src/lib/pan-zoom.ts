@@ -16,29 +16,41 @@ export interface ViewBox {
 }
 
 /**
- * A view moved back until it still overlaps the drawing.
+ * A view moved back until it and the drawing still overlap.
  *
- * The rule is that the view's **center** stays inside the fitted box — the
- * region the drawing was laid out in, from (0, 0) to (width, height). It is the
- * simplest rule that cannot lose the picture, and it behaves sensibly at both
- * ends of the zoom: wound in, the view is small and can reach any part of the
- * drawing but not past its edge, the way a map pans; wound out, the view is
- * larger than the drawing and can push it to the edge of the panel but never
- * out of it.
+ * The rule: **whichever of the two is smaller, its center must lie inside the
+ * other.** Wound in, the view is smaller, so the view's center stays on the
+ * drawing and every part of it can be reached — the way a map pans. Wound out,
+ * the drawing is smaller, so the drawing's center stays inside the view and it
+ * can be put anywhere in the panel. Without a rule of some kind a drag simply
+ * keeps going and the drawing leaves the panel with no hint of which way it
+ * went, recoverable only by Reset view, which is a poor thing to have to
+ * discover.
  *
- * Without it a drag simply keeps going, and the drawing leaves the panel with no
- * hint of which way it went — the only way back is Reset view, which is a poor
- * thing to have to discover.
+ * **The old rule was only the first half of that**, and applied it at every
+ * zoom: the view's center was held inside the fitted box whether or not the view
+ * was the smaller thing. That is a limit stated in drawing units, so the room it
+ * left on *screen* shrank in step with the drawing — the center could travel
+ * `limit` units at any zoom, which is the whole panel when fitted and an eighth
+ * of it wound out eight times. So the panel got bigger while the room to move
+ * got smaller, an invisible box that changed size with the wheel and nothing on
+ * screen to explain it. Under the symmetric rule the travel is exactly one
+ * panel's width at every zoom.
  */
 export function clampPan(view: ViewBox, fitted: { width: number; height: number }): ViewBox {
   return {
     ...view,
-    x: clampCenter(view.x, view.width, fitted.width),
-    y: clampCenter(view.y, view.height, fitted.height),
+    x: clampOverlap(view.x, view.width, fitted.width),
+    y: clampOverlap(view.y, view.height, fitted.height),
   };
 }
 
-function clampCenter(start: number, extent: number, limit: number): number {
-  const half = extent / 2;
-  return Math.min(Math.max(start + half, 0), limit) - half;
+/**
+ * The view spans `[start, start + extent]` and the drawing `[0, limit]`. Half
+ * the shorter of the two has to stay within the other, which is the same thing
+ * as putting the shorter one's center inside the longer.
+ */
+function clampOverlap(start: number, extent: number, limit: number): number {
+  const keep = Math.min(limit, extent) / 2;
+  return Math.min(Math.max(start, keep - extent), limit - keep);
 }

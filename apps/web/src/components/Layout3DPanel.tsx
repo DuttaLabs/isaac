@@ -147,7 +147,7 @@ export function Layout3DPanel({
             {/* No wavelength legend here: a line material has no dash to offer,
               so in 3-D the wavelengths are drawn but not distinguished, and a
               legend would name a cue that is absent. */}
-            <p className="hint view-hint">Wheel zooms · drag pans · wheel-drag orbits</p>
+            <p className="hint view-hint">Wheel zooms · drag orbits the marked point</p>
           </>
         ) : (
           <div style={{ padding: 12 }}>

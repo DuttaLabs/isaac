@@ -10,11 +10,15 @@ import {
 import { Canvas, extend, useFrame, useThree, type ThreeElement } from '@react-three/fiber';
 import {
   Box3,
+  BufferGeometry,
   DoubleSide,
+  Float32BufferAttribute,
   MOUSE,
   Quaternion,
   Sphere,
   Vector3,
+  type LineSegments,
+  type OrthographicCamera,
   type PerspectiveCamera,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -74,12 +78,24 @@ const HOME_TUPLE: readonly [number, number, number] = [
  */
 
 /**
- * The mouse mapping: the wheel zooms, the left button pans, and the wheel
- * pressed and dragged orbits. Three's own default rotates with the left button;
- * this matches the 2-D view instead, where a left drag can only mean pan, so the
- * same gesture means the same thing in both views.
+ * The mouse mapping: the wheel zooms and any drag orbits.
+ *
+ * **Panning is off, and that is what keeps the orbit point still.** `OrbitControls`
+ * pans by translating the camera *and its target* together — panning *is* moving
+ * the target — and `zoomToCursor` drags it as well. So every pan and every
+ * cursor-zoom walked the point everything turns about a little further from the
+ * optics, until the system was swinging around a spot somewhere past the image
+ * plane. Nothing said it was happening, and no gesture put it back.
+ *
+ * With both off, the target is fixed to a place in the *system* and stays there
+ * however the camera is moved. The cost is the left-drag pan, and with it the
+ * gesture vocabulary the 2-D view shares — so the left button orbits now, which
+ * is Three's own default and every 3-D viewer's. What replaces panning is
+ * choosing what to orbit about, which is a better control for this anyway: the
+ * thing a designer wants to put at the middle of the picture is an element, not
+ * a screen position.
  */
-const MOUSE_BUTTONS = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.ROTATE } as const;
+const MOUSE_BUTTONS = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.ROTATE, RIGHT: MOUSE.ROTATE } as const;
 
 /** The orientation gizmo's own little SVG, big enough to hold it and no more. */
 const TRIAD_BOX = 84;
@@ -332,6 +348,7 @@ export function Layout3DView({
           <directionalLight position={[-1, -0.6, 0.8]} intensity={0.5} />
 
           <Controls
+            markColor={colors.axis}
             framing={framing}
             tweaks={tweaks}
             resetSignal={resetSignal}
@@ -509,6 +526,12 @@ function asPerspective(camera: object): PerspectiveCamera | undefined {
  * So there are two effects rather than one. Fitting to a constant used to hide
  * this, because the fit did not depend on the canvas at all.
  */
+/**
+ * Half the orbit mark's arms, as a fraction of the world the frame spans where
+ * the target is. Small enough to point at a place rather than cover it.
+ */
+const MARK_SIZE = 0.018;
+
 function Controls({
   framing,
   tweaks,
@@ -516,6 +539,7 @@ function Controls({
   subject,
   saved,
   onCamera,
+  markColor,
 }: {
   framing: Framing;
   tweaks: Tweaks;
@@ -530,6 +554,8 @@ function Controls({
   subject: OpticalSystem;
   saved: CameraState | undefined;
   onCamera: ((state: CameraState | undefined) => void) | undefined;
+  /** Ink for the orbit-point mark. */
+  markColor: string;
 }) {
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
@@ -697,18 +723,65 @@ function Controls({
     perspective.updateProjectionMatrix();
   }, [camera, fieldOfView, cameraDistance, framing]);
 
+  /**
+   * A cross through the point everything turns about. Three unit segments, put
+   * where the target is and scaled every frame to hold one size on screen — the
+   * target is usually nowhere near the camera, so a fixed world size would be a
+   * speck from one angle and fill the frame from another.
+   */
+  const mark = useRef<LineSegments>(null);
+  const markGeometry = useMemo(() => {
+    const geometry = new BufferGeometry();
+    // prettier-ignore
+    geometry.setAttribute('position', new Float32BufferAttribute([
+      -1, 0, 0,  1, 0, 0,
+       0,-1, 0,  0, 1, 0,
+       0, 0,-1,  0, 0, 1,
+    ], 3));
+    return geometry;
+  }, []);
+  useEffect(() => () => markGeometry.dispose(), [markGeometry]);
+
   // Damping only settles if the controls are stepped every frame.
-  useFrame(() => controls.current?.update());
+  useFrame(() => {
+    const orbit = controls.current;
+    orbit?.update();
+
+    const cross = mark.current;
+    if (!orbit || !cross) {
+      return;
+    }
+    cross.position.copy(orbit.target);
+    // How much world the frame spans where the target is. For a perspective
+    // camera that grows with distance; orthographically it is the frustum,
+    // which distance does not change at all.
+    const span =
+      'isPerspectiveCamera' in camera && camera.isPerspectiveCamera
+        ? 2 * camera.position.distanceTo(orbit.target) * Math.tan((camera.fov * Math.PI) / 360)
+        : ((camera as OrthographicCamera).top - (camera as OrthographicCamera).bottom) /
+          camera.zoom;
+    cross.scale.setScalar(span * MARK_SIZE);
+  });
 
   return (
-    <orbitControls
-      ref={controls}
-      args={[camera, domElement]}
-      mouseButtons={MOUSE_BUTTONS}
-      enableDamping
-      dampingFactor={0.12}
-      zoomToCursor
-    />
+    <>
+      <orbitControls
+        ref={controls}
+        args={[camera, domElement]}
+        mouseButtons={MOUSE_BUTTONS}
+        enableDamping
+        dampingFactor={0.12}
+        enablePan={false}
+      />
+      {/*
+        Drawn over everything rather than into the scene. The point turned about
+        sits inside the glass as often as not, and a mark you can only see from
+        the outside does not answer the question it is there to answer.
+      */}
+      <lineSegments ref={mark} geometry={markGeometry} renderOrder={999} frustumCulled={false}>
+        <lineBasicMaterial color={markColor} depthTest={false} transparent opacity={0.9} />
+      </lineSegments>
+    </>
   );
 }
 

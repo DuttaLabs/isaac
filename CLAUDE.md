@@ -742,9 +742,27 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   than the counter-per-panel-type it replaced — two Layout 3D panels used to refit together, because
   the counter belonged to the type rather than to the copy.
 
-  Both take wheel to zoom and a left drag to pan; the 3D view adds a middle-button drag to orbit, which
-  is *not* Three's default mapping (it rotates with the left button) — the two views share a gesture
-  vocabulary deliberately. The 2D view pans and zooms by rewriting the SVG `viewBox`.
+  Both take wheel to zoom. The 2-D view pans with a left drag, and pans and zooms by rewriting the SVG
+  `viewBox`. **The 3-D view does not pan at all**, and any drag orbits.
+
+  That is not a gesture preference, it is the only way to hold the orbit point still. `OrbitControls`
+  pans by translating the camera *and its target* together — panning **is** moving the target — and
+  `zoomToCursor` drags it too. So every pan and every cursor-zoom walked the point everything turns
+  about a little further from the optics, silently, with no gesture to put it back. On the sample
+  doublet the target starts at z = 52.7 with the glass at z = 0–9 and the image at 106.4: already
+  53 units of empty space from anything, which is what makes the orbit feel like it is pivoting around
+  nothing. Pan from there and it drifts past the image plane.
+
+  With `enablePan` off and `zoomToCursor` off the target is fixed to a place in the system and stays
+  there however the camera moves, and `.orbit-mark` — a small cross drawn over everything, scaled each
+  frame to hold one size on screen — says where it is. What replaces panning is **choosing what to
+  orbit about**, which is the better control here anyway: what a designer wants at the middle of the
+  picture is an element, not a screen position. Until that lands the point is the scene's bounding
+  centre, which is a poor default and known to be one.
+
+  There is no `camera.lookAt` anywhere in the app. `OrbitControls.update()` calls it every frame with
+  `controls.target`, so **the target is the only thing that decides where the camera looks** — set in
+  one place, when a view is applied.
 
   **The drawing scales; the ink does not.** Shrinking the `viewBox` magnifies *every* length in user
   units, the width of a stroke included — at 20x a 1.5-unit outline became a 30-pixel slab, the lens

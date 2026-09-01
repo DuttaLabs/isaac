@@ -871,6 +871,26 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   `localStorage` so a session survives a reload. Nothing here may become a user-facing
   setting by accident — a knob worth keeping graduates to real UI, on `App` view state,
   rather than shipping as a frozen default behind a dev flag.
+
+  **The frame meter** (`dev/StatsMeter.tsx`, `stats.js`) is under *Performance* in the same
+  panel. Two readouts, because they answer different questions: **FPS** is capped at the
+  display's refresh rate, so it says "smooth or not" and stops being informative the moment it
+  reads 60, while **MS** is the frame interval and keeps moving either side of that line — it
+  is what shows a change costing 30% while the frame rate still reads 60, and what a
+  measurement in a commit message should quote.
+
+  **It is off by default and costs nothing while off.** An FPS meter can only work by running
+  a `requestAnimationFrame` loop, and that loop keeps the page painting continuously whether
+  or not anything changed — precisely the sort of thing that gets blamed later for the lag it
+  was opened to measure. Switching it on starts the loop; switching it off cancels it and
+  removes the canvases. Verified both ways: zero rAF calls while off, and zero for two seconds
+  after switching off.
+
+  Its toggle is **not** a field of `Tweaks`, deliberately. Every key in that record is a value
+  being settled on, and `formatTweaks` writes all of them out to be pasted into
+  `DEFAULT_TWEAKS`; a display toggle emitted into that source would ship as a frozen default,
+  which is the one thing the tweak store is not for. It has its own storage key instead.
+
 - **The page itself never scrolls.** `html`/`body`/`#root` are the window's height with
   `overflow: hidden`, the app bar is `flex: none`, and the workspace takes what is left. Anything too
   big for its panel scrolls *inside that panel* — `.panel-body` is `overflow: auto` on both axes. So

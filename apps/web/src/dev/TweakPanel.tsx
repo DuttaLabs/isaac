@@ -13,9 +13,10 @@
  * is one line of `lil-gui` and about thirty of ours.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import GUI from 'lil-gui';
 import { DEFAULT_TWEAKS, currentTweaks, formatTweaks, setTweaks, type Tweaks } from './tweaks.ts';
+import { StatsMeter } from './StatsMeter.tsx';
 import './tweaks.css';
 
 /**
@@ -25,6 +26,26 @@ import './tweaks.css';
  * knob existed is missing that key, and `undefined` would reach a material.
  */
 const STORAGE_KEY = 'isaac.dev.tweaks';
+
+/**
+ * Whether the frame meter is showing. Its own key, and deliberately **not** a
+ * field of `Tweaks`: everything in that record is a value being settled on, to
+ * be pasted into `DEFAULT_TWEAKS` when it is — and `formatTweaks` writes every
+ * key it finds there. A display toggle emitted into that source would ship as a
+ * frozen default, which is the one thing the tweak store is not for.
+ *
+ * Kept across reloads all the same, because watching a number over a few edits
+ * is the whole point and re-opening the panel each time is a tax on doing it.
+ */
+const STATS_KEY = 'isaac.dev.showStats';
+
+function restoreShowStats(): boolean {
+  try {
+    return localStorage.getItem(STATS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 function restore(): Tweaks {
   try {
@@ -63,6 +84,7 @@ function copyValues(values: Tweaks): void {
 
 export default function TweakPanel({ open }: { open: boolean }) {
   const host = useRef<HTMLDivElement>(null);
+  const [showStats, setShowStats] = useState(restoreShowStats);
 
   // Restored once, on the first mount, and pushed into the store whether or not
   // the panel is open: the point of saving them is that the picture looks the
@@ -100,6 +122,23 @@ export default function TweakPanel({ open }: { open: boolean }) {
     const table = gui.addFolder('Lens table');
     table.add(params, 'apertureIconScale', 0, 1, 0.02).name('Aperture icon');
 
+    // Outside `params`, because it is not one of the tweaked values and must not
+    // reach `setTweaks` or the copied-out source. lil-gui writes into whatever
+    // object it is handed, so this one is its own.
+    const meter = { 'Frame meter': showStats };
+    const speed = gui.addFolder('Performance');
+    speed
+      .add(meter, 'Frame meter')
+      .name('Frame meter (FPS · ms)')
+      .onChange((on: boolean) => {
+        setShowStats(on);
+        try {
+          localStorage.setItem(STATS_KEY, String(on));
+        } catch {
+          // Blocked storage: the meter still works, it just forgets.
+        }
+      });
+
     gui.onChange(() => {
       const next = { ...params };
       setTweaks(next);
@@ -121,9 +160,20 @@ export default function TweakPanel({ open }: { open: boolean }) {
     return () => {
       gui.destroy();
     };
+    // Keyed on `open` alone. `showStats` is read when the GUI is built, and a
+    // change to it must *not* rebuild the panel: the checkbox already holds the
+    // value it was built with, and tearing the GUI down would collapse every
+    // folder the moment the meter was switched on.
   }, [open]);
 
   // The host stays mounted while closed so the restore effect above keeps its
   // place in the tree; `hidden` costs nothing and the GUI itself is destroyed.
-  return <div className="dev-tweaks" ref={host} hidden={!open} />;
+  return (
+    <>
+      <div className="dev-tweaks" ref={host} hidden={!open} />
+      {/* Not gated on `open`: the meter is watched *while working*, which means
+          with the panel that switched it on closed again. */}
+      <StatsMeter showing={showStats} />
+    </>
+  );
 }

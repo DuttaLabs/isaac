@@ -1141,6 +1141,8 @@ export function LensDataEditor({
           aperture={system.surfaceAt(apertureSurface).aperture}
           semiDiameter={system.surfaceAt(apertureSurface).semiDiameter}
           units={system.units}
+          color={apertureColor(apertureSurface)}
+          rollDeg={apertureRollDegrees(system, apertureSurface)}
           onCommit={(next) => apply(setSurfaceAperture(system, apertureSurface, next))}
           onClose={() => setApertureSurface(undefined)}
         />

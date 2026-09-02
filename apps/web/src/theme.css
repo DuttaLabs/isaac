@@ -26,6 +26,9 @@
   --text-muted: #78766f;
 
   --accent: #2a78d6;
+  /* The one line of prose in the aperture dialog. Aquamarine, deepened here so
+     it still clears 4.5:1 on a light ground; the dark themes take it neat. */
+  --aperture-hint: #0b7a63;
   --danger: #c0362f;
   --danger-surface: #fbeceb;
 
@@ -117,6 +120,7 @@
     --text-muted: #92908a;
 
     --accent: #3987e5;
+    --aperture-hint: #7fffd4;
     --danger: #f08a84;
     --syntax-structure: #b998f5;
     --syntax-prescription: #4fd1b8;
@@ -173,6 +177,7 @@
   --text-muted: #92908a;
 
   --accent: #3987e5;
+  --aperture-hint: #7fffd4;
   --danger: #f08a84;
   --syntax-structure: #b998f5;
   --syntax-prescription: #4fd1b8;
@@ -473,11 +478,21 @@ body {
   stroke-width: 0.6;
 }
 
-/* A spider's vanes: the same ink as any other thing in the way. */
+/*
+   A spider's vanes: the same ink as any other thing in the way.
+
+   Butt ends, not round. A vane is a flat bar of metal and OpticStudio's shaded
+   model draws it as one; a round cap adds half a width past each end, which on a
+   short arm is most of the mark and reads as a lozenge rather than a strut.
+
+   The width is set per icon, in proportion to the arm's length, with a floor --
+   see `MIN_VANE`. It is deliberately not stated here, because a real spider is
+   about a hundredth of its aperture across and a fixed width in the sheet would
+   say every spider is the same.
+*/
 .aperture-arm {
   stroke: #12100e;
-  stroke-width: 1.6;
-  stroke-linecap: round;
+  stroke-linecap: butt;
 }
 
 .aperture-obscuration {
@@ -505,11 +520,29 @@ body {
   fill: rgba(0, 0, 0, 0.55);
 }
 
+/*
+   Two columns of short numbers.
+
+   The right-hand column is inset well clear of the dialog's edge. A field that
+   reaches the border puts the pointer a few pixels from the backdrop, and
+   overshooting it closes the dialog mid-edit -- which is a bad way to lose a
+   number you were halfway through typing.
+*/
+/*
+   Two columns of short numbers, sized to their contents and centred as a block.
+
+   Not `1fr 1fr`: stretched columns left each 88px field at the left of a much
+   wider cell, so the right-hand field ended up some 60px from the dialog's edge
+   and the left one 12px from it. The block looked pushed over, and reaching the
+   right-hand fields took the pointer close enough to the backdrop that
+   overshooting closed the dialog mid-edit.
+*/
 .aperture-dialog .aperture-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
-  padding: 0 12px 12px;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: center;
+  gap: 8px 18px;
+  padding: 0 12px 14px;
 }
 
 .aperture-field {
@@ -520,12 +553,85 @@ body {
   color: var(--text-secondary);
 }
 
+/* The type list, centred on the same width the fields below it occupy. */
 .aperture-dialog > .aperture-field {
-  padding: 10px 12px 0;
+  width: 208px;
+  margin: 0 auto;
+  padding: 10px 0 0;
 }
 
-.aperture-explainer {
-  margin-top: 4px;
+/*
+   The dialog's prose, held to the same column the controls occupy rather than
+   running edge to edge. It had no horizontal padding at all, so it started hard
+   against the border while everything below it was inset.
+
+   The line is allowed to be taller than it was; a short measure is easier to
+   read than a wide one, and the dialog can grow.
+*/
+.aperture-dialog .hint {
+  width: 208px;
+  margin: 4px auto 0;
+}
+
+/*
+   Not another shade of grey: it is the one sentence in here that says what the
+   selected kind actually does, and in `--text-muted` it read as a footnote.
+
+   Qualified by `.aperture-dialog` on purpose. `.hint` sets a colour too and has
+   the same specificity, so a bare `.aperture-explainer` lost on source order --
+   `.hint` is declared several hundred lines further down the sheet. Two class
+   selectors beat one, wherever they sit.
+
+   The space below is a whole line: the sentence explains the control above it,
+   and without a gap it crowded the field labels underneath and read as though it
+   belonged to them.
+*/
+.aperture-dialog .aperture-explainer {
+  color: var(--aperture-hint);
+  margin-bottom: 18px;
+}
+
+/*
+   The aperture itself, at two and a half times the size it is in the table.
+
+   It replaced a paragraph explaining what an aperture is. The dialog is opened
+   *from* that icon, so the same picture larger is what a reader is reaching for
+   — and unlike a sentence it follows every edit below it, which is what makes
+   the numbers legible: change a half-width and the shape changes with it.
+*/
+.aperture-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+/* Sized inline, from `PREVIEW_PIXELS`, which is deliberately its own number and
+   not a multiple of the table icon's. */
+.aperture-preview-icon {
+  display: block;
+}
+
+/* A checkbox reads across, not down, so this is not an `.aperture-field`. */
+.aperture-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.aperture-inline input {
+  margin: 0;
+}
+
+/* Ghosted rather than hidden, the same rule the context menus follow: a control
+   that vanishes teaches nobody that it was ever there. */
+.aperture-inline.unavailable {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ---------- Text panel ---------- */
@@ -1763,6 +1869,40 @@ svg.layout * {
   max-width: min(420px, 92vw);
   max-height: 88vh;
   overflow-y: auto;
+}
+
+/*
+   Narrower than the others, because it holds no prose any more -- the picture
+   says what the paragraph used to. Four short number fields two abreast need far
+   less room than a line of text, and a dialog wider than its contents reads as
+   though something is missing from it.
+*/
+.aperture-dialog {
+  min-width: 272px;
+  max-width: min(334px, 92vw);
+}
+
+/*
+   Number fields, not prose fields.
+
+   A field's width is a cue about how much input it expects, so these are sized
+   to the longest value that realistically goes in one -- `2390.5`, or LSST's
+   `1e+10` -- rather than filled out to the width of the label above them. A
+   label is free to be wider than its field; that is the ordinary case in a
+   stacked form, and matching the two would only make every field as wide as its
+   longest caption.
+*/
+.aperture-dialog .aperture-field input {
+  width: 88px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* The type list is prose, so it takes the room it needs. */
+.aperture-dialog .aperture-field select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .asphere-dialog::backdrop,

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   isCircularAperture,
   isObscuration,
@@ -126,63 +126,91 @@ export function apertureSummary(
 }
 
 /**
- * The cell's picture. `color` is the element this surface belongs to, so an
- * aperture is recognisably *on* the mirror or the lens it cuts into.
+ * How big the preview in the dialog is drawn, in pixels.
+ *
+ * **Its own number, not a multiple of the table's.** The two are separate
+ * components on purpose: the table's icon is one of a column of them and may
+ * come to size itself against its neighbours, while this one is a single large
+ * picture in a box of its own. Tying the preview to `PIXELS` would mean every
+ * future change to how the column sizes itself silently resized this too.
+ *
+ * It also does not follow the development scale knob, which exists to try out
+ * row heights and has nothing to say about a dialog.
  */
-export function ApertureIcon({
-  aperture,
-  color,
-  rollDeg = 0,
-  semiDiameter = Infinity,
-}: {
+const PREVIEW_PIXELS = 90;
+
+/**
+ * How thin and how thick a vane may be drawn, in the icon's own units.
+ *
+ * Between them the width is a real proportion — the arm's width against its
+ * length — so a heavy strut draws heavier than a fine wire. Outside them it is
+ * not, and real files reach both ends.
+ *
+ * **The floor**, because a spider is typically a hundredth of its aperture
+ * across: LSST's arms are 50 wide on a 4800 semi-diameter, which in proportion
+ * is a fifteenth of a pixel. Drawn faithfully every spider would be invisible.
+ *
+ * **The ceiling**, because `sc_spatial3.zmx` carries a vane 2 wide on a surface
+ * whose semi-diameter is 2 — as wide as the arm is long. In proportion that is
+ * three black bars meeting in the middle, which is a blob rather than a spider.
+ * Capped it still reads as much the chunkiest one in the corpus.
+ */
+const MIN_VANE = 0.9;
+const MAX_VANE = DISC * 0.55;
+
+/** Shared geometry for both. See {@link ApertureArtwork}. */
+interface ApertureDrawing {
   aperture: SurfaceAperture | undefined;
   color: string;
-  /**
-   * How far the surface is drawn out, which is what a decenter is measured
-   * against for the two kinds that have no size of their own: a spider, whose
-   * whole description is its vanes, and a floating aperture, which *is* the
-   * semi-diameter. Every other kind is measured against its own half-size.
-   */
-  semiDiameter?: number;
   /**
    * How far the aperture is turned on its surface — the cumulative z tilt of the
    * coordinate transforms before it, from `apertureRollDegrees`.
    *
    * **The glyph turns and the square does not.** The frame is the icon, not the
    * part; turning it would draw a tilted picture rather than a picture of a
-   * tilted thing. Circular apertures are indifferent to it, apart from where a
-   * decenter puts them, which is exactly as it should be.
+   * tilted thing.
    */
   rollDeg?: number;
-}) {
-  // In a production build this is `DEFAULT_TWEAKS` and the subscription never
-  // fires; the hook is called unconditionally all the same.
-  const { apertureIconScale: scale } = useTweaks();
+  /**
+   * How far the surface is drawn out, which is what a decenter is measured
+   * against for the two kinds that have no size of their own: a spider, whose
+   * whole description is its vanes, and a floating aperture, which *is* the
+   * semi-diameter. It also sets a vane's width, being the length of an arm.
+   */
+  semiDiameter?: number;
+}
 
+/**
+ * The drawing itself, in the icon's own 18-unit space — everything inside the
+ * `<svg>` and nothing about how large it is.
+ *
+ * **Shared deliberately, while the two components around it are not.** How big a
+ * picture is drawn, and what surrounds it, are presentation and the table and
+ * the dialog should be free to disagree. *Where a decentered obscuration sits*
+ * is not: two drawings of one aperture that disagreed about that would be the
+ * same fault as a layout showing an aperture the trace does not have. So the
+ * size policy is duplicated and the geometry is not.
+ */
+function ApertureArtwork({
+  aperture,
+  color,
+  rollDeg = 0,
+  semiDiameter = Infinity,
+}: ApertureDrawing) {
   if (aperture === undefined) {
     // Not nothing: an empty cell in a column of pictures reads as a missing
     // picture. A faint outline says "there could be one here", which is also
     // the invitation to click.
     return (
-      <svg
-        className="aperture-icon empty"
-        // Sized here rather than in the sheet, for the same reason the real icon
-        // is: one place decides how big an aperture cell is, and the placeholder
-        // deliberately does not follow the knob.
-        style={{ width: `${EMPTY_PIXELS}px`, height: `${EMPTY_PIXELS}px` }}
-        viewBox={`0 0 ${SIDE} ${SIDE}`}
-        aria-hidden="true"
-      >
-        <rect
-          x={1.5}
-          y={1.5}
-          width={SIDE - 3}
-          height={SIDE - 3}
-          rx={2}
-          className="aperture-empty"
-          strokeDasharray="2 2"
-        />
-      </svg>
+      <rect
+        x={1.5}
+        y={1.5}
+        width={SIDE - 3}
+        height={SIDE - 3}
+        rx={2}
+        className="aperture-empty"
+        strokeDasharray="2 2"
+      />
     );
   }
 
@@ -195,6 +223,24 @@ export function ApertureIcon({
         )
       : [];
   /**
+   * How wide to draw a vane.
+   *
+   * An arm runs from the hub out to the rim, so its length on the surface is the
+   * semi-diameter and in the icon it is `DISC` — which fixes the scale, and the
+   * width follows it. `armWidth` is a full width rather than a half, so it needs
+   * no doubling.
+   *
+   * Held between {@link MIN_VANE} and {@link MAX_VANE}; in practice the floor
+   * is what applies, every ordinary spider being far thinner than an icon can
+   * show. Between them the proportion is real, so a heavy vane draws heavier
+   * than a fine one.
+   */
+  const surfaceHalf = Number.isFinite(semiDiameter) && semiDiameter > 0 ? semiDiameter : 0;
+  const vane =
+    surfaceHalf > 0
+      ? Math.min(MAX_VANE, Math.max(MIN_VANE, (aperture.armWidth * DISC) / surfaceHalf))
+      : MIN_VANE;
+  /**
    * A decentered aperture is drawn decentered, in the proportion the glyph
    * already stands in: the glyph's half-size is the aperture's half-size, so a
    * decenter of half that moves it half a glyph across. The whole aperture
@@ -206,7 +252,8 @@ export function ApertureIcon({
    * aperture itself (Zemax's off-axis Gregorian is 55 mm cut 100 mm off axis)
    * and a glyph drawn faithfully at that distance would be off the icon
    * altogether. Clamped, it sits against the edge it went out of, which is the
-   * thing worth seeing; the tooltip carries the numbers.
+   * thing worth seeing; the arrow says it was clamped and the tooltip carries
+   * the numbers.
    */
   const shift = (
     decenter: number,
@@ -229,11 +276,6 @@ export function ApertureIcon({
    * Which way the aperture ran off, once it has been clamped — `undefined` while
    * the icon is still telling the truth about where it is.
    *
-   * The clamp keeps a far-flung aperture on the icon, but at the cost of drawing
-   * it somewhere it is not, and nothing said so: Zemax's off-axis Gregorian is a
-   * 55 mm circle cut 100 mm off axis, which lands almost two glyph-radii out, so
-   * the disc sat half off the bottom edge looking merely badly drawn.
-   *
    * Taken *after* the view transform, because that is the direction a reader
    * sees. The clamp happens in the icon's own upright coordinates, and both the
    * mirror and the roll move it: an aperture that overflows the +x side ends up
@@ -251,8 +293,7 @@ export function ApertureIcon({
    * reverses with the mirror, so the rotation and the decenter turn over
    * together. They have to: LSST's spiders are decentered *and* rolled 45°, and
    * there is no viewpoint with +x right, +y up in which a right-handed roll
-   * looks clockwise. Flipping the rotation alone would draw the tilt as seen
-   * from one side and the position as seen from the other.
+   * looks clockwise.
    *
    * Note this is the opposite hand from the 2-D X–Y layout, which looks *back*
    * along the axis from image space and so has +z out of the screen. Both are
@@ -264,12 +305,7 @@ export function ApertureIcon({
     Math.abs(rollDeg) < 1e-9 ? mirror : `${mirror} rotate(${-rollDeg} ${CENTER} ${CENTER})`;
 
   return (
-    <svg
-      className="aperture-icon"
-      style={{ width: `${PIXELS * scale}px`, height: `${PIXELS * scale}px` }}
-      viewBox={`0 0 ${SIDE} ${SIDE}`}
-      aria-hidden="true"
-    >
+    <>
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
       {/* Drawn outside the turned group: it is a mark on the *icon*, pinned to
           the frame, and the direction it points has already been turned. */}
@@ -285,9 +321,7 @@ export function ApertureIcon({
           //
           // From `cx`/`cy` rather than the middle: the vanes are struck from the
           // spider's own center, so a decentered one hangs off to the side the
-          // way it really does. They were drawn from the middle regardless,
-          // which made LSST's two spiders at (400, 400) and (−400, −400)
-          // identical pictures of opposite things.
+          // way it really does.
           arms.map((angle, at) => (
             <line
               key={at}
@@ -296,6 +330,7 @@ export function ApertureIcon({
               x2={cx + DISC * Math.cos(angle)}
               y2={cy - DISC * Math.sin(angle)}
               className="aperture-arm"
+              strokeWidth={vane}
             />
           ))
         ) : glyph.rectangular ? (
@@ -324,6 +359,56 @@ export function ApertureIcon({
           <circle cx={cx} cy={cy} r={glyph.hole} className="aperture-hole" />
         ) : null}
       </g>
+    </>
+  );
+}
+
+/**
+ * The cell's picture, in the lens table. `color` is the element this surface
+ * belongs to, so an aperture is recognisably *on* the mirror or the lens it cuts
+ * into.
+ *
+ * Sized here rather than in the sheet: one place decides how tall an aperture
+ * row is, which is why the development knob lives here too.
+ */
+export function ApertureIcon(props: ApertureDrawing) {
+  // In a production build this is `DEFAULT_TWEAKS` and the subscription never
+  // fires; the hook is called unconditionally all the same.
+  const { apertureIconScale: scale } = useTweaks();
+  // The placeholder is smaller, and deliberately does not follow the knob: it
+  // marks a surface with *no* aperture, so it should stay quiet however large
+  // the real icons are drawn.
+  const pixels = props.aperture === undefined ? EMPTY_PIXELS : PIXELS * scale;
+
+  return (
+    <svg
+      className={props.aperture === undefined ? 'aperture-icon empty' : 'aperture-icon'}
+      style={{ width: `${pixels}px`, height: `${pixels}px` }}
+      viewBox={`0 0 ${SIDE} ${SIDE}`}
+      aria-hidden="true"
+    >
+      <ApertureArtwork {...props} />
+    </svg>
+  );
+}
+
+/**
+ * The same aperture, large, at the top of the editing dialog.
+ *
+ * A separate component from {@link ApertureIcon} rather than a prop on it: they
+ * share a drawing and nothing else. This one is a single picture in a box of its
+ * own at a fixed size, and it keeps that size when the aperture is `None` so the
+ * dialog does not jump as the type is changed.
+ */
+export function AperturePreview(props: ApertureDrawing) {
+  return (
+    <svg
+      className="aperture-preview-icon"
+      style={{ width: `${PREVIEW_PIXELS}px`, height: `${PREVIEW_PIXELS}px` }}
+      viewBox={`0 0 ${SIDE} ${SIDE}`}
+      aria-hidden="true"
+    >
+      <ApertureArtwork {...props} />
     </svg>
   );
 }
@@ -483,6 +568,8 @@ export function SurfaceApertureDialog({
   aperture,
   semiDiameter,
   units,
+  color,
+  rollDeg,
   onCommit,
   onClose,
 }: {
@@ -491,10 +578,26 @@ export function SurfaceApertureDialog({
   /** Shown beside a floating aperture, which is defined as this number. */
   semiDiameter: number;
   units: string;
+  /** The element's color, so the preview is the same picture the table shows. */
+  color: string;
+  /** The cumulative roll from the coordinate transforms before this surface. */
+  rollDeg: number;
   onCommit: (next: SurfaceAperture | undefined) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  /**
+   * Whether the preview shows the aperture where the *system* puts it, or in its
+   * own frame.
+   *
+   * Off by default, and that is the useful default: the numbers below are the
+   * aperture's own, stated in the surface's own frame, so an editor showing them
+   * turned by something written three surfaces earlier would be answering a
+   * different question from the one being asked. Switched on it becomes the
+   * table's icon exactly, which is how you check that the two agree.
+   */
+  const [inSystem, setInSystem] = useState(false);
+  const turned = Math.abs(rollDeg) > 1e-9;
 
   useEffect(() => {
     const element = dialog.current;
@@ -563,14 +666,20 @@ export function SurfaceApertureDialog({
       return;
     }
 
-    const carriedX =
-      aperture !== undefined && !isCircularAperture(aperture.kind)
-        ? aperture.halfWidthX
-        : undefined;
-    const carriedY =
-      aperture !== undefined && !isCircularAperture(aperture.kind)
-        ? aperture.halfWidthY
-        : undefined;
+    /**
+     * Only a kind that is *bounded* by half-widths has any to carry across.
+     *
+     * A spider is neither family — it is described by its arms — so a normalized
+     * one carries `halfWidthX: 0`, and those zeros used to be carried straight
+     * into the new aperture. `??` catches only null and undefined, so `0 ??
+     * fallback` is `0`, and `normalizeAperture` rightly threw: a rectangle with
+     * no width is not a rectangle. The throw came out of the change handler, so
+     * picking "Rectangular" while a spider was selected simply did nothing.
+     */
+    const sized =
+      aperture !== undefined && !isCircularAperture(aperture.kind) && aperture.kind !== 'SPIDER';
+    const carriedX = sized && aperture.halfWidthX > 0 ? aperture.halfWidthX : undefined;
+    const carriedY = sized && aperture.halfWidthY > 0 ? aperture.halfWidthY : undefined;
     onCommit(
       normalizeAperture({
         kind: next,
@@ -614,11 +723,35 @@ export function SurfaceApertureDialog({
         </button>
       </header>
 
-      <p className="hint">
-        What stops light at this surface. A surface with no aperture stops none, however far off
-        axis it is met — the semi-diameter says how large to <em>draw</em> it, not where the light
-        ends.
-      </p>
+      {/* The picture rather than a paragraph about it. The dialog is opened *from*
+          this icon, so the thing a reader is looking for is the same picture
+          larger — and it follows every edit below, which no sentence can. */}
+      <div className="aperture-preview">
+        <AperturePreview
+          aperture={aperture}
+          color={color}
+          semiDiameter={semiDiameter}
+          rollDeg={inSystem ? rollDeg : 0}
+        />
+        <label className={turned ? 'aperture-inline' : 'aperture-inline unavailable'}>
+          <input
+            type="checkbox"
+            checked={inSystem && turned}
+            disabled={!turned}
+            aria-label={`Show the aperture of surface ${surfaceLabel} as the coordinate transforms leave it`}
+            onChange={(event) => setInSystem(event.target.checked)}
+          />
+          <span
+            title={
+              turned
+                ? `The coordinate transforms before this surface turn it ${Math.round(rollDeg * 1000) / 1000}°.`
+                : 'No coordinate transform turns this surface.'
+            }
+          >
+            Include preceding coordinate transform
+          </span>
+        </label>
+      </div>
 
       <label className="aperture-field">
         <span>Type</span>

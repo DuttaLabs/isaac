@@ -197,7 +197,28 @@ export function ApertureIcon({
    * SVG's y grows downward and its `rotate` is therefore clockwise. The arms
    * below negate their sine for the same reason.
    */
-  const turn = Math.abs(rollDeg) < 1e-9 ? undefined : `rotate(${-rollDeg} ${CENTER} ${CENTER})`;
+  /**
+   * The icon looks at the surface the way the 3-D view's home camera does:
+   * **+x to the left, +y up**, from off the −x side. That mirror is the whole
+   * of the difference, and it is what makes a right-handed roll about +z read
+   * *clockwise* here, as it does in the 3-D picture.
+   *
+   * The drawing inside is left in ordinary math coordinates — +x right, +y up,
+   * a counter-clockwise `rotate` — and mirrored once on the way out. Handedness
+   * reverses with the mirror, so the rotation and the decenter turn over
+   * together. They have to: LSST's spiders are decentered *and* rolled 45°, and
+   * there is no viewpoint with +x right, +y up in which a right-handed roll
+   * looks clockwise. Flipping the rotation alone would draw the tilt as seen
+   * from one side and the position as seen from the other.
+   *
+   * Note this is the opposite hand from the 2-D X–Y layout, which looks *back*
+   * along the axis from image space and so has +z out of the screen. Both are
+   * honest; they are opposite ends of the same lens. The icon follows the 3-D
+   * view because that is the picture it sits beside.
+   */
+  const mirror = `translate(${SIDE} 0) scale(-1 1)`;
+  const turn =
+    Math.abs(rollDeg) < 1e-9 ? mirror : `${mirror} rotate(${-rollDeg} ${CENTER} ${CENTER})`;
 
   return (
     <svg

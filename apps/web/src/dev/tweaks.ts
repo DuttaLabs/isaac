@@ -94,7 +94,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
 
   projection: 'perspective',
   fieldOfView: 24,
-  fitMargin: 1.12,
+  fitMargin: 1.24,
   cameraDistance: 1,
 
   apertureIconScale: 1,

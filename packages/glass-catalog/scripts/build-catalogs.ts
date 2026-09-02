@@ -28,9 +28,14 @@
  * expansion and internal transmittance live when those are wanted.
  */
 
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { DISPERSION_FORMULA, dispersionMaterial } from '@isaac/optical-core';
+import {
+  DISPERSION_COEFFICIENT_COUNT,
+  DISPERSION_FORMULA,
+  dispersionMaterial,
+} from '@isaac/optical-core';
 // `decodeZmx` is the same problem as decoding an AGF — a vendor file that may be
 // UTF-16 with or without a BOM, or plain 8-bit. Ohara ships one of each. This is
 // a build script, and zemax-io is already a devDependency, so the decoder is
@@ -68,7 +73,36 @@ const CATALOGS: readonly CatalogSource[] = [
     module: 'ohara.ts',
     constant: 'OHARA_GLASSES',
   },
+  {
+    // **Materials rather than products.** MISC is the catalog fused silica,
+    // sapphire, calcium fluoride, germanium and water live in — things a lens
+    // is made of that no maker sells under a name. Each entry cites its own
+    // literature source rather than a manufacturer's datasheet: silica's fit is
+    // Malitson's, printed in the Handbook of Optics, and reproduces nd and Vd
+    // to nine decimal places under the gate below.
+    //
+    // Optional because, unlike the makers' own files, this one ships with
+    // OpticStudio rather than being published by whoever makes the material.
+    manufacturer: 'MISC',
+    agf: 'Zemax AGF files/MISC.AGF',
+    module: 'misc.ts',
+    constant: 'MISC_GLASSES',
+    provenance:
+      'Materials rather than products — things a lens is made of, or sits in,\n' +
+      '// that no maker sells under a catalog name. So this one is *not* a\n' +
+      "// manufacturer's own file: it ships with OpticStudio, and each entry cites\n" +
+      '// its own literature source instead of a datasheet. Fused silica is\n' +
+      "// Malitson's fit by way of the Handbook of Optics, and reproduces the\n" +
+      '// printed nd and Vd to nine decimal places.',
+    optional: true,
+  },
 ];
+
+/** What a maker's own catalog can say about where its numbers come from. */
+const DEFAULT_PROVENANCE = (manufacturer: string): string =>
+  `${manufacturer}'s own Zemax-format catalog, reproduced entry for entry. A\n` +
+  `// manufacturer's own file is the only source of glass data in this repo: the\n` +
+  `// numbers below are theirs, not a third party's transcription of them.`;
 
 interface CatalogSource {
   /** Name recorded on every glass, and the heading of the generated module. */
@@ -79,6 +113,19 @@ interface CatalogSource {
   module: string;
   /** Exported constant inside that file. */
   constant: string;
+  /**
+   * What the generated header says about where the numbers came from. Defaults
+   * to the maker's-own-catalog wording, which is true of every manufacturer file
+   * and not of MISC.
+   */
+  provenance?: string;
+  /**
+   * Skip with a note instead of failing when the file is absent. Every `.AGF`
+   * here is gitignored, so a fresh clone has none of them — but a *manufacturer's*
+   * catalog missing means the checkout is incomplete and should say so loudly,
+   * whereas this one may simply not have been collected.
+   */
+  optional?: boolean;
 }
 
 const MATERIAL_DIR = fileURLToPath(new URL('../../../SupportingMaterial/', import.meta.url));
@@ -96,6 +143,10 @@ interface Parsed {
 
 for (const source of CATALOGS) {
   const path = MATERIAL_DIR + source.agf;
+  if (source.optional && !existsSync(path)) {
+    console.log(`\n${source.manufacturer}: skipped, ${source.agf} not present`);
+    continue;
+  }
   const { title, glasses } = await readAgf(path, source.manufacturer);
   console.log(`\n${source.manufacturer}: ${glasses.length} glasses from ${title || source.agf}`);
 
@@ -110,8 +161,11 @@ for (const source of CATALOGS) {
       .join(', ')}`,
   );
 
-  verifyAgainstPrintedValues(glasses, source.manufacturer);
-  console.log(`  all ${glasses.length} fits reproduce the catalog's printed nd and Vd`);
+  const unstated = verifyAgainstPrintedValues(glasses, source.manufacturer);
+  console.log(
+    `  all ${glasses.length} fits reproduce the catalog's printed nd and Vd` +
+      (unstated > 0 ? ` (${unstated} print none to check against)` : ''),
+  );
 
   glasses.sort((a, b) => a.name.localeCompare(b.name));
   await writeFile(SRC_DIR + source.module, renderModule(glasses, title, source), 'utf8');
@@ -125,13 +179,38 @@ for (const source of CATALOGS) {
  * and a plausible-looking index is exactly the failure that would not be caught
  * downstream.
  */
-function verifyAgainstPrintedValues(glasses: readonly Parsed[], manufacturer: string): void {
+function verifyAgainstPrintedValues(glasses: readonly Parsed[], manufacturer: string): number {
   const wrong: string[] = [];
+  let unstated = 0;
   for (const glass of glasses) {
     const material = dispersionMaterial(glass.name, glass.formula, glass.coefficients);
     const nd = material.indexAt(D_LINE_NM);
     const vd = (nd - 1) / (material.indexAt(F_LINE_NM) - material.indexAt(C_LINE_NM));
-    if (Math.abs(nd - glass.nd) > ND_TOLERANCE || Math.abs(vd - glass.abbeNumber) > VD_TOLERANCE) {
+
+    // **A catalog that printed nothing cannot be checked against.** An `NM`
+    // record carries nd and Vd whether or not anyone filled them in, and an
+    // unfilled one reads as exactly `1.000000` — an index no solid has, and the
+    // format's way of saying the field is empty rather than a measurement of
+    // vacuum. MISC has three: CDS and CR39 print 1.0 for both, and N15 is a
+    // non-dispersive material whose Vd is written 0 where the fit gives
+    // infinity, which is the same statement made two ways.
+    //
+    // Skipping these does not weaken the gate. Its job is to catch coefficients
+    // read out of the wrong columns, and it can only do that where there is
+    // something to compare against; every entry that states a value is still
+    // held to it.
+    const statesIndex = glass.nd > 1;
+    const statesAbbe = glass.abbeNumber > 0;
+    if (!statesIndex && !statesAbbe) {
+      unstated += 1;
+      continue;
+    }
+    const indexWrong = statesIndex && Math.abs(nd - glass.nd) > ND_TOLERANCE;
+    const abbeWrong = statesAbbe && Math.abs(vd - glass.abbeNumber) > VD_TOLERANCE;
+    if (!statesAbbe) {
+      unstated += 1;
+    }
+    if (indexWrong || abbeWrong) {
       wrong.push(
         `  ${glass.name}: fit gives nd ${nd.toFixed(6)} / Vd ${vd.toFixed(4)}, ` +
           `catalog prints ${glass.nd.toFixed(6)} / ${glass.abbeNumber.toFixed(4)}`,
@@ -143,6 +222,7 @@ function verifyAgainstPrintedValues(glasses: readonly Parsed[], manufacturer: st
       `${manufacturer}: ${wrong.length} glasses do not reproduce their printed nd/Vd:\n${wrong.join('\n')}`,
     );
   }
+  return unstated;
 }
 
 async function readAgf(
@@ -188,11 +268,18 @@ async function readAgf(
 
     const cd = /^CD\s+(.+)$/.exec(line);
     if (cd && current.coefficients.length === 0) {
-      // The catalog pads the coefficient slots it does not use with zeros, and
-      // pads to different widths for different glasses. Only the leading ones
-      // the formula reads are meaningful, so the padding is dropped here rather
-      // than stored and ignored later.
-      current.coefficients = trimTrailingZeros(cd[1]!.trim().split(/\s+/).map(Number));
+      // The catalog writes ten coefficient slots whatever the fit needs, so the
+      // tail is padding and is dropped rather than stored and ignored later.
+      //
+      // **But only past what the formula reads.** A zero inside that is a term,
+      // not padding: MISC's `CDS` is a two-term Sellmeier written as six numbers
+      // whose last two are zeros, and trimming those left four coefficients and
+      // a formula that wanted six. SCHOTT and Ohara never showed this because
+      // every one of their glasses fills all six slots.
+      current.coefficients = trimTrailingZeros(
+        cd[1]!.trim().split(/\s+/).map(Number),
+        DISPERSION_COEFFICIENT_COUNT[current.formula] ?? 0,
+      );
       continue;
     }
 
@@ -228,9 +315,9 @@ function micronsToNm(microns: number): number {
   return Number((microns * 1000).toPrecision(12));
 }
 
-function trimTrailingZeros(values: number[]): number[] {
+function trimTrailingZeros(values: number[], keep: number): number[] {
   let end = values.length;
-  while (end > 0 && values[end - 1] === 0) {
+  while (end > keep && values[end - 1] === 0) {
     end -= 1;
   }
   return values.slice(0, end);
@@ -263,9 +350,7 @@ function renderModule(glasses: readonly Parsed[], title: string, source: Catalog
 //
 // Source: ${source.agf}${title ? `\n// ${title}` : ''}
 //
-// ${source.manufacturer}'s own Zemax-format catalog, reproduced entry for entry. A
-// manufacturer's own file is the only source of glass data in this repo: the
-// numbers below are theirs, not a third party's transcription of them.
+// ${source.provenance ?? DEFAULT_PROVENANCE(source.manufacturer)}
 //
 // All ${glasses.length} entries are here, including glasses no longer made — an old lens
 // file is exactly where a discontinued one turns up, so \`record.status\` says

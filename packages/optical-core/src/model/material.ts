@@ -66,6 +66,49 @@ export class SellmeierMaterial implements Material {
   }
 }
 
+/** Coefficients of the Conrady dispersion formula (wavelength in micrometers). */
+export interface ConradyCoefficients {
+  n0: number;
+  a: number;
+  b: number;
+}
+
+/**
+ * `n = n₀ + A/λ + B/λ^3.5`, with λ in micrometers.
+ *
+ * The odd one out among the classical fits: every other formula here is a series
+ * in λ² and so is even in λ, while this is a three-parameter fit in λ itself with
+ * a fractional power. It is what an old catalog carries when a glass was
+ * characterized from three measured lines and nothing more — three coefficients
+ * for three measurements — which is why it turns up on obsolete glasses and on
+ * materials measured once in the literature rather than on current production.
+ *
+ * The `3.5` is not a typo and not an approximation of 4: it is Conrady's own
+ * exponent, fitted empirically to the shape of a normal glass's dispersion curve.
+ */
+export class ConradyMaterial implements Material {
+  public readonly name: string;
+  private readonly coefficients: ConradyCoefficients;
+
+  public constructor(name: string, coefficients: ConradyCoefficients) {
+    this.name = name;
+    this.coefficients = coefficients;
+  }
+
+  public indexAt(wavelengthNm: number): number {
+    if (!Number.isFinite(wavelengthNm) || wavelengthNm <= 0) {
+      throw new RangeError('wavelengthNm must be a positive, finite number.');
+    }
+    const l = wavelengthNm / 1000; // micrometers
+    const { n0, a, b } = this.coefficients;
+    const n = n0 + a / l + b / l ** 3.5;
+    if (!(n > 0)) {
+      throw new RangeError(`Conrady model produced a non-physical index for ${this.name}.`);
+    }
+    return n;
+  }
+}
+
 /** Coefficients of the Schott dispersion formula (wavelength in micrometers). */
 export interface SchottDispersionCoefficients {
   a0: number;
@@ -123,16 +166,32 @@ export class SchottDispersionMaterial implements Material {
  * which equation its coefficients belong to — so it is carried through rather
  * than normalized away, and an unrecognized one is refused rather than assumed.
  *
- * Only the two SCHOTT actually publishes are implemented. The gaps are real
- * formula numbers (3 Herzberger, 4 Sellmeier 2, 5 Conrady, …) left unimplemented
- * because no glass in the catalog uses them; add them here when one does.
+ * The gaps are real formula numbers (3 Herzberger, 4 Sellmeier 2, 6 Sellmeier 3,
+ * …) left unimplemented because no glass in a catalog this repo reads uses them;
+ * add them here when one does.
  */
 export const DISPERSION_FORMULA = {
   /** n² = a₀ + a₁λ² + a₂λ⁻² + a₃λ⁻⁴ + a₄λ⁻⁶ + a₅λ⁻⁸ */
   SCHOTT: 1,
   /** n² − 1 = Σ Bᵢλ²/(λ² − Cᵢ) */
   SELLMEIER_1: 2,
+  /** n = n₀ + A/λ + B/λ^3.5 */
+  CONRADY: 5,
 } as const;
+
+/**
+ * How many coefficients each formula reads.
+ *
+ * Published so that a catalog reader can tell a formula's **zero term** from the
+ * catalog's **zero padding**, which look identical in the file: an `.AGF` writes
+ * ten slots whatever the fit needs, and a two-term Sellmeier is six meaningful
+ * numbers of which the last two are zeros that matter.
+ */
+export const DISPERSION_COEFFICIENT_COUNT: Readonly<Record<number, number>> = {
+  [DISPERSION_FORMULA.SCHOTT]: 6,
+  [DISPERSION_FORMULA.SELLMEIER_1]: 6,
+  [DISPERSION_FORMULA.CONRADY]: 3,
+};
 
 /**
  * Builds the right {@link Material} for a catalog entry's formula number and its
@@ -166,6 +225,10 @@ export function dispersionMaterial(
       // Written interleaved in the catalog — B₁ C₁ B₂ C₂ B₃ C₃ — not grouped.
       const [b1, c1, b2, c2, b3, c3] = need(6) as [number, number, number, number, number, number];
       return new SellmeierMaterial(name, { b1, b2, b3, c1, c2, c3 });
+    }
+    case DISPERSION_FORMULA.CONRADY: {
+      const [n0, a, b] = need(3) as [number, number, number];
+      return new ConradyMaterial(name, { n0, a, b });
     }
     default:
       throw new RangeError(

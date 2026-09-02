@@ -6,10 +6,12 @@ import {
   D_LINE_NM,
   GlassCatalog,
   GlassMaterial,
+  MISC,
   OHARA,
   OHARA_GLASSES,
   SCHOTT,
   SCHOTT_GLASSES,
+  SHADOWED_GLASS_NAMES,
   normalizeGlassName,
 } from '../src/index.ts';
 
@@ -232,7 +234,11 @@ test('Ohara leans on the Schott formula, which is why it had to exist', () => {
 test('one catalog spans every manufacturer, and refuses an ambiguous name', () => {
   // A .zmx names a glass, not the catalog it came from, so lookup has to span
   // makers. Both of these resolve from the one catalog.
-  assert.equal(ALL_GLASSES.size, SCHOTT.size + OHARA.size);
+  // Every catalog, less the one name two of them both claim; see the test below.
+  assert.equal(
+    ALL_GLASSES.size,
+    SCHOTT.size + OHARA.size + MISC.size - SHADOWED_GLASS_NAMES.length,
+  );
   assert.equal(ALL_GLASSES.get('N-BK7')?.name, 'N-BK7');
   assert.equal(ALL_GLASSES.get('S-BSL7')?.name, 'S-BSL7');
   assert.equal(ALL_GLASSES.get('B270')?.record.manufacturer, 'SCHOTT');
@@ -245,4 +251,27 @@ test('one catalog spans every manufacturer, and refuses an ambiguous name', () =
     () => new GlassCatalog([schottRecord, { ...schottRecord, manufacturer: 'OHARA' }]),
     /indistinguishable after normalization/,
   );
+});
+
+test('MISC carries materials, and its one name clash is resolved on purpose', () => {
+  // Fused silica, the entry this catalog was added for. Its fit is Malitson's,
+  // by way of the Handbook of Optics, and reproduces the printed values to nine
+  // decimals — which is what says the coefficients went into the right columns.
+  const silica = MISC.get('SILICA');
+  assert.ok(silica, 'SILICA is in MISC');
+  assert.ok(Math.abs(silica.nd - 1.45846369) < 5e-9);
+  assert.ok(Math.abs(silica.abbeNumber - 67.82144261) < 5e-8);
+  // And through the combined catalog, which is what a lens file resolves against.
+  assert.equal(ALL_GLASSES.get('silica')?.name, 'SILICA');
+
+  // `LAF3` is two different materials: SCHOTT's obsolete lanthanum flint and
+  // MISC's lanthanum fluoride crystal. The manufacturer wins in the combined
+  // catalog and the crystal stays reachable in its own.
+  assert.deepEqual(SHADOWED_GLASS_NAMES, ['LAF3']);
+  assert.ok(Math.abs(ALL_GLASSES.get('LAF3')!.nd - 1.716998) < 5e-6, 'the SCHOTT glass wins');
+  assert.ok(Math.abs(MISC.get('LAF3')!.nd - 1.604046) < 5e-6, 'the crystal is still there');
+
+  // Every name is claimed once, which is what lets the combined catalog exist at
+  // all — the constructor refuses two it cannot tell apart.
+  assert.equal(ALL_GLASSES.size, SCHOTT.size + OHARA.size + MISC.size - 1);
 });

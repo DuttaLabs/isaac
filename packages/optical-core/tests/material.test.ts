@@ -7,6 +7,7 @@ import {
   N_BK7,
   SchottDispersionMaterial,
   SellmeierMaterial,
+  DISPERSION_COEFFICIENT_COUNT,
   dispersionMaterial,
 } from '../src/index.ts';
 
@@ -94,4 +95,46 @@ test('an unimplemented dispersion formula is refused, not approximated', () => {
   assert.throws(() => dispersionMaterial('X', 3, B270), /2 \(SELLMEIER_1\)/);
   // Too few coefficients is a truncated record, not a usable fit.
   assert.throws(() => dispersionMaterial('X', DISPERSION_FORMULA.SCHOTT, [1, 2]), /needs 6/);
+});
+
+test('Conrady is a fit in λ itself, not in λ²', () => {
+  // MISC's N15 — a deliberately non-dispersive material, n = 1.5 everywhere, so
+  // A and B are zero and only n₀ is left. It is the one entry that pins the
+  // constant term on its own.
+  const flat = dispersionMaterial('N15', DISPERSION_FORMULA.CONRADY, [1.5, 0, 0]);
+  assert.equal(flat.indexAt(486.1327), 1.5);
+  assert.equal(flat.indexAt(587.5618), 1.5);
+  assert.equal(flat.indexAt(656.2725), 1.5);
+
+  // CR-39, the spectacle plastic, from the same catalog. Its printed nd and Vd
+  // are blank, so this pins the values the fit actually gives — 1.5039 and 54.4
+  // are both within a whisker of the published figures for the material, which
+  // is what says the coefficients went into the right places.
+  const cr39 = dispersionMaterial('CR39', DISPERSION_FORMULA.CONRADY, [1.485, 0.009, 0.00055]);
+  const nd = cr39.indexAt(587.5618);
+  const vd = (nd - 1) / (cr39.indexAt(486.1327) - cr39.indexAt(656.2725));
+  assert.ok(Math.abs(nd - 1.503855) < 5e-6, `nd was ${nd}`);
+  assert.ok(Math.abs(vd - 54.3888) < 1e-3, `Vd was ${vd}`);
+
+  // The 3.5 is Conrady's own exponent and not a stand-in for 4. Read as 4 the
+  // fit still returns plausible indices, which is exactly the failure that
+  // survives to a spot diagram, so it is asserted rather than assumed.
+  const asFourth = 1.485 + 0.009 / 0.5875618 + 0.00055 / 0.5875618 ** 4;
+  assert.ok(Math.abs(asFourth - nd) > 1e-5, 'λ^3.5 and λ^4 must not be interchangeable');
+});
+
+test('a formula reads a fixed number of coefficients, and a zero one is a term', () => {
+  // MISC's CDS is a two-term Sellmeier: six numbers whose last two are zeros
+  // that *mean* zero. A reader trimming them as padding leaves four and a
+  // formula that wants six, which is where this came from.
+  const twoTerm = [3.9658282, 0.055803869, 0.18113874, 0.233146066, 0, 0];
+  const cds = dispersionMaterial('CDS', DISPERSION_FORMULA.SELLMEIER_1, twoTerm);
+  assert.ok(Math.abs(cds.indexAt(587.5618) - 2.507669) < 1e-5);
+
+  assert.equal(DISPERSION_COEFFICIENT_COUNT[DISPERSION_FORMULA.SELLMEIER_1], 6);
+  assert.equal(DISPERSION_COEFFICIENT_COUNT[DISPERSION_FORMULA.CONRADY], 3);
+  assert.throws(
+    () => dispersionMaterial('CDS', DISPERSION_FORMULA.SELLMEIER_1, twoTerm.slice(0, 4)),
+    /needs 6 finite coefficients/,
+  );
 });

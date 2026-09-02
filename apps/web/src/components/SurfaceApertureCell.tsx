@@ -21,9 +21,12 @@ import { NumericCell } from './NumericCell.tsx';
  * every icon; this one is what a designer sees when they look at the hardware,
  * which is what makes a whole column of them scannable.
  *
- * Sizes are proportional where a proportion means something — the hole in an
- * annulus is `minRadius / maxRadius` of the disc, so a big hole looks big — and
- * fixed where the drawing has no outer bound to be proportional to.
+ * **The outer size is fixed and the hole is proportional.** Every circular
+ * aperture is drawn as the same disc, obscuration or not, and what varies is the
+ * hole — `minRadius / maxRadius` of it, so a big hole looks big and two rings
+ * can be compared down the column. Floored and capped, because real designs run
+ * off both ends of what a glyph this size can show: a spatial-filter pinhole is
+ * a hole too small to draw, and a telescope baffle is often a ring too thin.
  */
 
 /** The icon's own coordinate space. Screen size is {@link PIXELS}. */
@@ -43,17 +46,30 @@ const EMPTY_PIXELS = 18;
 /** The disc standing for the surface itself, nearly filling the square. */
 const DISC = 0.4 * SIDE;
 /**
- * The obscuration.
+ * The smallest hole that can be seen, as a radius in the icon's own units.
  *
- * **A fixed size, not a proportion.** Unlike the hole in an annulus — which is
- * `minRadius / maxRadius` of the disc, and so tells you at a glance how much of
- * the aperture is missing — an obscuration has no outer bound *in the icon* to
- * be a proportion of. The nearest candidate is the surface's semi-diameter, and
- * on the case this was drawn for it is the same number (the Hubble's baffle is
- * drawn at exactly its own radius), so a proportional disc would fill the
- * square and say nothing.
+ * A hole is drawn in proportion — `minRadius / maxRadius` of the disc — and that
+ * proportion runs all the way to nothing. **A spatial-filter pinhole is the case
+ * that needs a floor**: five microns in a ten-millimetre beam is one part in two
+ * thousand, so an aperture whose entire purpose is its hole would draw as a
+ * plain disc. Above the floor the proportion is real.
+ *
+ * A hole of *exactly* zero stays zero. "No hole" and "a hole too small to draw"
+ * are different facts, and the icon should not merge them.
  */
-const OBSCURATION = SIDE / 4;
+const MIN_HOLE = 0.7;
+
+/**
+ * The thinnest a ring may be drawn, in the icon's own units — the other end of
+ * the same problem.
+ *
+ * Stated as a *thickness* rather than as a fraction of the disc, because that is
+ * the thing that has to stay visible: a ring is legible when there is enough of
+ * it to see, whatever radius it sits at. LSST's baffles run to `2390.5–2400.5`,
+ * four parts in a thousand thick, which unclamped is a hairline and at some zoom
+ * levels nothing at all.
+ */
+const MIN_RING = 1.4;
 
 export const APERTURE_KIND_LABELS: Record<ApertureKind, string> = {
   CIRCULAR: 'Circular aperture',
@@ -499,7 +515,23 @@ function glyphFor(
   hole: number;
 } {
   const stopping = isObscuration(aperture.kind);
-  const full = stopping ? OBSCURATION : DISC;
+  /**
+   * **One outer size for everything, aperture and obscuration alike.**
+   *
+   * An obscuration used to be drawn at half this, on the grounds that it is a
+   * thing *in the way* of a surface rather than the bound of one, and so has no
+   * outer bound in the icon to be a proportion of. True, but it cost more than
+   * it bought: at half size an annular obscuration had half the room to show its
+   * ring, and LSST's seven baffles — several far thinner than a sixth of their
+   * own radius — were all reduced to the same token band.
+   *
+   * Drawn at an aperture's size the ring has the room, and the column gains a
+   * simpler rule: every circular aperture is the same disc, and what varies is
+   * the hole and the ink. The cost is that a *solid* obscuration is now a large
+   * black disc rather than a small one, which is the honest reading — the icon
+   * has never claimed to say what fraction of a surface is covered.
+   */
+  const full = DISC;
   const rectangular =
     aperture.kind === 'RECTANGULAR' || aperture.kind === 'RECTANGULAR_OBSCURATION';
   /** The fallback reference for a kind with no half-size of its own. */
@@ -520,18 +552,25 @@ function glyphFor(
     /**
      * An annulus, whichever way it reads. A `CIRCULAR` aperture passes light
      * between the two radii and a `CIRCULAR_OBSCURATION` stops it there — both
-     * are a *ring*, and only the ink differs. The hole used to be drawn for the
-     * aperture alone, so every annular obscuration came out a solid disc: seven
-     * of LSST's baffles are rings, four of them thinner than a sixth of their
-     * own radius, and all seven read as plugs.
+     * are a *ring*, and only the ink differs.
      *
-     * Capped, because these are routinely far thinner than the glyph can show
-     * — LSST's 2390.5–2400.5 baffle is a ring four parts in a thousand thick,
-     * which at this size is nothing at all. The cap keeps it legible as a ring;
-     * the tooltip carries the radii.
+     * Held between a smallest hole and a thinnest ring, and real designs reach
+     * both ends: a spatial-filter pinhole is a hole too small to draw, and a
+     * telescope baffle is often a ring too thin. Between them the proportion is
+     * real, which is what makes a column of them comparable — LSST's surfaces 23
+     * and 26 differ by exactly the amount their radii do.
+     *
+     * Zero stays zero, so a plain disc is still a plain disc. The outer bound is
+     * `Math.max(..., MIN_HOLE)` so the two limits cannot cross and invert if the
+     * disc is ever made smaller than the sum of them.
      */
     const hole =
-      aperture.minRadius > 0 && outer > 0 ? full * Math.min(aperture.minRadius / outer, 0.8) : 0;
+      aperture.minRadius > 0 && outer > 0
+        ? Math.min(
+            Math.max(full - MIN_RING, MIN_HOLE),
+            Math.max(MIN_HOLE, (full * aperture.minRadius) / outer),
+          )
+        : 0;
     return {
       rx: full,
       ry: full,

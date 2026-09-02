@@ -304,3 +304,80 @@ test('Transform3 inverts by transpose, and composes in surface order', () => {
 
   assert.throws(() => new Transform3([1, 0, 0], Point3.origin()), /needs 9 elements/);
 });
+
+/**
+ * LSST's baffles, which is the case {@link Transform3.roll} exists for.
+ *
+ * Surfaces 4-8 of `LSST_Baseline_Design_Spiders_Baffles.ZMX` are a +45° z tilt,
+ * a baffle, then two -45° z tilts and a second baffle -- and the two baffles
+ * carry the *identical* record, `SQOB 400 1600`. They are at right angles in the
+ * telescope, and nothing in either aperture says so.
+ */
+function lsstBaffles(): OpticalSystem {
+  const baffle = (id: string, thickness: number): Surface =>
+    new Surface({
+      id,
+      type: 'STANDARD',
+      thickness,
+      semiDiameter: 1600,
+      aperture: { kind: 'RECTANGULAR_OBSCURATION', halfWidthX: 400, halfWidthY: 1600 },
+    });
+
+  return new OpticalSystem({
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity }),
+      transformSurface('ct-a', 0, { tiltZDeg: 45 }),
+      baffle('baffle-1', 0),
+      transformSurface('ct-b', 0, { tiltZDeg: -45 }),
+      transformSurface('ct-c', 0, { tiltZDeg: -45 }),
+      baffle('baffle-2', 100),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0 }),
+    ],
+  });
+}
+
+const degrees = (radians: number): number => (radians * 180) / Math.PI;
+
+test('a z tilt turns the frame about its own axis, and the turns add', () => {
+  assert.ok(Math.abs(Transform3.identity().roll) < 1e-12);
+  assert.ok(Math.abs(Transform3.rotationZ(Math.PI / 2).roll - Math.PI / 2) < 1e-12);
+
+  // Two of them compose to a single turn of the sum, which is the whole of what
+  // a *cumulative* roll means.
+  const composed = Transform3.rotationZ(0.3).compose(Transform3.rotationZ(0.4));
+  assert.ok(Math.abs(composed.roll - 0.7) < 1e-12);
+});
+
+test('a tilt out of the plane is not a roll', () => {
+  // A tilt about x or y turns the surface *out of* its own plane. Seen face on,
+  // which is how the aperture icon draws it, nothing has turned -- and the roll
+  // says so rather than inventing an angle out of the foreshortening.
+  assert.ok(Math.abs(Transform3.rotationX(Math.PI / 4).roll) < 1e-12);
+  assert.ok(Math.abs(Transform3.rotationY(-0.7).roll) < 1e-12);
+
+  // Including a real fold: the Newtonian's diagonal is tilted 45° about x, and
+  // its aperture is no more turned on the mirror for that.
+  assert.ok(Math.abs(newtonian().poseAt(4).roll) < 1e-12);
+});
+
+test('two identical aperture records can be at right angles, and the roll is what says so', () => {
+  const system = lsstBaffles();
+
+  // The records are indistinguishable, which is exactly the problem.
+  assert.deepEqual(system.surfaces[2]!.aperture, system.surfaces[5]!.aperture);
+
+  assert.ok(Math.abs(degrees(system.poseAt(2).roll) - 45) < 1e-9);
+  assert.ok(Math.abs(degrees(system.poseAt(5).roll) + 45) < 1e-9);
+  assert.ok(Math.abs(degrees(system.poseAt(2).roll - system.poseAt(5).roll) - 90) < 1e-9);
+});
+
+test('a roll survives being tilted out of the plane and back', () => {
+  // Rolling, tilting away and tilting back leaves the roll where it was: the
+  // swing is undone and the twist is what is left. A rule that summed the z
+  // tilts alone would agree here; one that read the angle off the projected x
+  // axis would not.
+  const there = Transform3.rotationZ(0.5)
+    .compose(Transform3.rotationX(0.9))
+    .compose(Transform3.rotationX(-0.9));
+  assert.ok(Math.abs(there.roll - 0.5) < 1e-12);
+});

@@ -139,6 +139,76 @@ export class Transform3 {
   }
 
   /**
+   * How far this frame is turned **about its own axis**, in radians, measured
+   * against a frame that shares that axis and is turned by nothing else.
+   *
+   * This is what an aperture's *orientation* is. A surface aperture is stated in
+   * the surface's own frame — `apertureBlocks` takes a local x and y — so
+   * nothing in an aperture record says which way round it lies, and a
+   * coordinate transform's z tilt is the only thing that can turn a rectangle,
+   * an ellipse or a spider on its surface. LSST is the case that asks for it:
+   * two of its baffles carry the identical record `SQOB 400 1600`, and they are
+   * at right angles to each other because one sits after a +45° z tilt and the
+   * other after a −45° one. Nothing but this number tells them apart.
+   *
+   * Defined as the **twist** of a swing–twist decomposition: turn global +z onto
+   * this frame's axis by the shortest rotation there is — which by construction
+   * adds no turn about that axis — and whatever turn is left over is this. Two
+   * consequences worth knowing:
+   *
+   * - Where the transforms are z tilts alone, which is the ordinary case and
+   *   every aperture the corpus rotates, it is simply their sum.
+   * - A tilt about x or y contributes **nothing**, which is right: it turns the
+   *   surface *out of* its plane rather than within it, and an icon drawn face
+   *   on has no way to show that and should not pretend to.
+   *
+   * Zero for a frame facing exactly backwards along −z, where the shortest
+   * rotation is any of infinitely many and a roll cannot be defined at all.
+   */
+  public get roll(): number {
+    const r = this.rotation;
+    // The local axes in global coordinates are the columns of the rotation.
+    const ax = r[0]!;
+    const ay = r[3]!;
+    const az = r[6]!;
+    const zx = r[2]!;
+    const zy = r[5]!;
+    const zz = r[8]!;
+
+    // The shortest rotation carrying this frame's axis back onto global +z, as
+    // an axis-angle: `k` is the axis (unnormalized), `cos` and `sin` the angle.
+    const kx = zy;
+    const ky = -zx;
+    const sin = Math.hypot(kx, ky);
+    const cos = zz;
+
+    let x: number;
+    let y: number;
+    if (sin < ORTHOGONAL_TOLERANCE) {
+      // Already along ±z. Facing forward there is nothing to undo; facing
+      // backwards the shortest rotation is not unique, so there is no honest
+      // answer and 0 is the one that invents least.
+      if (cos < 0) {
+        return 0;
+      }
+      x = ax;
+      y = ay;
+    } else {
+      // Rodrigues, with the local +x axis as the vector being carried back.
+      const ux = kx / sin;
+      const uy = ky / sin;
+      // `u` has no z component, which drops several terms of the cross product
+      // and of `u (u · v)`.
+      const dot = ux * ax + uy * ay;
+      x = ax * cos + uy * az * sin + ux * dot * (1 - cos);
+      y = ay * cos - ux * az * sin + uy * dot * (1 - cos);
+    }
+    // The result is perpendicular to global z by construction, so this is the
+    // whole of the angle rather than a projection of it.
+    return Math.atan2(y, x);
+  }
+
+  /**
    * True when this frame is the global one turned by nothing at all. Centered
    * systems stay this way the whole way down the surface list, which is what
    * lets the paraxial layer and the 2-D layout keep treating them as axial.

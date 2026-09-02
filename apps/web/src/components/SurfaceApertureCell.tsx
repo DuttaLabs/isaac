@@ -79,14 +79,23 @@ export const APERTURE_KIND_HINTS: Record<ApertureKind, string> = {
   FLOATING: 'A circular aperture that follows the semi-diameter (Zemax FLAP).',
 };
 
-export function apertureSummary(aperture: SurfaceAperture | undefined): string {
+export function apertureSummary(aperture: SurfaceAperture | undefined, rollDeg = 0): string {
   if (aperture === undefined) {
     return 'No aperture — this surface stops no light';
   }
-  const where =
-    aperture.decenterX !== 0 || aperture.decenterY !== 0
-      ? `, decentered (${aperture.decenterX}, ${aperture.decenterY})`
+  const decentered = aperture.decenterX !== 0 || aperture.decenterY !== 0;
+  /**
+   * Said only where it can be seen. A turn is a fact about the surface whatever
+   * aperture it carries, but on a centered circle it changes nothing at all, and
+   * "turned 45°" against a picture that is identical either way reads as a bug
+   * in one of them.
+   */
+  const turned =
+    rollDeg !== 0 && (!isCircularAperture(aperture.kind) || decentered)
+      ? `, turned ${Math.round(rollDeg * 1000) / 1000}° by the coordinate breaks before it`
       : '';
+  const where =
+    (decentered ? `, decentered (${aperture.decenterX}, ${aperture.decenterY})` : '') + turned;
   if (aperture.kind === 'FLOATING') {
     return `${APERTURE_KIND_LABELS.FLOATING}${where}`;
   }
@@ -108,9 +117,20 @@ export function apertureSummary(aperture: SurfaceAperture | undefined): string {
 export function ApertureIcon({
   aperture,
   color,
+  rollDeg = 0,
 }: {
   aperture: SurfaceAperture | undefined;
   color: string;
+  /**
+   * How far the aperture is turned on its surface — the cumulative z tilt of the
+   * coordinate transforms before it, from `apertureRollDegrees`.
+   *
+   * **The glyph turns and the square does not.** The frame is the icon, not the
+   * part; turning it would draw a tilted picture rather than a picture of a
+   * tilted thing. Circular apertures are indifferent to it, apart from where a
+   * decenter puts them, which is exactly as it should be.
+   */
+  rollDeg?: number;
 }) {
   // In a production build this is `DEFAULT_TWEAKS` and the subscription never
   // fires; the hook is called unconditionally all the same.
@@ -172,6 +192,12 @@ export function ApertureIcon({
   const cx = CENTER + shift(aperture.decenterX, glyph.rx, glyph.refX);
   const cy = CENTER - shift(aperture.decenterY, glyph.ry, glyph.refY);
   const stopping = isObscuration(aperture.kind);
+  /**
+   * Negated because `rollDeg` is counter-clockwise, the model's sense, while
+   * SVG's y grows downward and its `rotate` is therefore clockwise. The arms
+   * below negate their sine for the same reason.
+   */
+  const turn = Math.abs(rollDeg) < 1e-9 ? undefined : `rotate(${-rollDeg} ${CENTER} ${CENTER})`;
 
   return (
     <svg
@@ -181,44 +207,48 @@ export function ApertureIcon({
       aria-hidden="true"
     >
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
-      {arms.length > 0 ? (
-        // Vanes radiating from the middle, the first along +x exactly as the
-        // aperture defines them — so a three-armed spider in the icon points the
-        // same way it does in the layout. Screen y grows downward, hence the
-        // negated sine.
-        arms.map((angle, at) => (
-          <line
-            key={at}
-            x1={CENTER}
-            y1={CENTER}
-            x2={CENTER + DISC * Math.cos(angle)}
-            y2={CENTER - DISC * Math.sin(angle)}
-            className="aperture-arm"
+      <g transform={turn}>
+        {arms.length > 0 ? (
+          // Vanes radiating from the middle, the first along +x exactly as the
+          // aperture defines them — so a three-armed spider in the icon points the
+          // same way it does in the layout. Screen y grows downward, hence the
+          // negated sine.
+          arms.map((angle, at) => (
+            <line
+              key={at}
+              x1={CENTER}
+              y1={CENTER}
+              x2={CENTER + DISC * Math.cos(angle)}
+              y2={CENTER - DISC * Math.sin(angle)}
+              className="aperture-arm"
+            />
+          ))
+        ) : glyph.rectangular ? (
+          <rect
+            x={cx - glyph.rx}
+            y={cy - glyph.ry}
+            width={2 * glyph.rx}
+            height={2 * glyph.ry}
+            fill={stopping ? undefined : color}
+            className={stopping ? 'aperture-obscuration' : 'aperture-disc'}
           />
-        ))
-      ) : glyph.rectangular ? (
-        <rect
-          x={cx - glyph.rx}
-          y={cy - glyph.ry}
-          width={2 * glyph.rx}
-          height={2 * glyph.ry}
-          fill={stopping ? undefined : color}
-          className={stopping ? 'aperture-obscuration' : 'aperture-disc'}
-        />
-      ) : (
-        <ellipse
-          cx={cx}
-          cy={cy}
-          rx={glyph.rx}
-          ry={glyph.ry}
-          fill={stopping ? undefined : color}
-          className={stopping ? 'aperture-obscuration' : 'aperture-disc'}
-          // A floating aperture has no size of its own — it is wherever the
-          // semi-diameter is — so its rim is drawn as one that can move.
-          strokeDasharray={aperture.kind === 'FLOATING' ? '2 2' : undefined}
-        />
-      )}
-      {glyph.hole > 0 ? <circle cx={cx} cy={cy} r={glyph.hole} className="aperture-hole" /> : null}
+        ) : (
+          <ellipse
+            cx={cx}
+            cy={cy}
+            rx={glyph.rx}
+            ry={glyph.ry}
+            fill={stopping ? undefined : color}
+            className={stopping ? 'aperture-obscuration' : 'aperture-disc'}
+            // A floating aperture has no size of its own — it is wherever the
+            // semi-diameter is — so its rim is drawn as one that can move.
+            strokeDasharray={aperture.kind === 'FLOATING' ? '2 2' : undefined}
+          />
+        )}
+        {glyph.hole > 0 ? (
+          <circle cx={cx} cy={cy} r={glyph.hole} className="aperture-hole" />
+        ) : null}
+      </g>
     </svg>
   );
 }

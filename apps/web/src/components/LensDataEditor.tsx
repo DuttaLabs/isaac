@@ -40,6 +40,7 @@ import { ErrorNote, Panel, type PanelChoice } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
 import { TextCell } from './TextCell.tsx';
 import { ApertureIcon, SurfaceApertureDialog, apertureSummary } from './SurfaceApertureCell.tsx';
+import { apertureRollDegrees } from '../lib/aperture-roll.ts';
 import { ElementColorPicker } from './ElementColorPicker.tsx';
 import {
   colorsInUse,
@@ -726,6 +727,11 @@ export function LensDataEditor({
               // one thing the column is for. The ends are named in the Element
               // column instead, and the stop has a column of its own.
               const label = String(index);
+              // How far the coordinate breaks before this surface have turned it
+              // about the axis. The aperture is stated in the surface's own
+              // frame, so this is the only thing that says which way round a
+              // rectangle, an ellipse or a spider actually lies.
+              const apertureRoll = apertureRollDegrees(system, index);
 
               return (
                 <tr
@@ -823,11 +829,15 @@ export function LensDataEditor({
                         type="button"
                         className="aperture-button"
                         disabled={isFixed}
-                        title={`${apertureSummary(surface.aperture)}. Click to change.`}
-                        aria-label={`Aperture of surface ${label}: ${apertureSummary(surface.aperture)}`}
+                        title={`${apertureSummary(surface.aperture, apertureRoll)}. Click to change.`}
+                        aria-label={`Aperture of surface ${label}: ${apertureSummary(surface.aperture, apertureRoll)}`}
                         onClick={() => setApertureSurface(index)}
                       >
-                        <ApertureIcon aperture={surface.aperture} color={apertureColor(index)} />
+                        <ApertureIcon
+                          aperture={surface.aperture}
+                          color={apertureColor(index)}
+                          rollDeg={apertureRoll}
+                        />
                       </button>
                     )}
                   </td>

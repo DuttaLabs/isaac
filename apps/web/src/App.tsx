@@ -1053,7 +1053,11 @@ export function App() {
             input, which spends 190px on the words "No file chosen", and no way
             back to a file already opened. Opening is the first item rather than
             a button of its own — a menu reads down the page, and Open Recent
-            under Open is where every editor puts it. */}
+            under Open is where every editor puts it.
+
+            Named for the thing it does rather than for the list it drops down:
+            it is the only way into a file now, so a button reading "Recent
+            files" hid the ordinary case behind the clever one. */}
         <button
           ref={recentsButton}
           onClick={() => {
@@ -1064,7 +1068,7 @@ export function App() {
           aria-expanded={recentsAt !== undefined}
           title="Open a .zmx file, or one opened before"
         >
-          Recent files
+          Open .zmx
         </button>
         <input
           ref={filePicker}

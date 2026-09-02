@@ -491,6 +491,20 @@ body {
   stroke-width: 0.5;
 }
 
+/*
+   "It carries on this way." Drawn when a decenter is too large for the icon to
+   place honestly and the glyph has been clamped to the edge -- Zemax's off-axis
+   Gregorian is a 55 mm circle cut 100 mm off axis, which lands nearly two
+   glyph-radii out. Without it the disc simply sits half off the edge and reads
+   as badly drawn rather than as far away.
+
+   An annotation about the drawing rather than a part of the optic, so it wears
+   neither the surface's color nor the obscuration's black.
+*/
+.aperture-overflow {
+  fill: rgba(0, 0, 0, 0.55);
+}
+
 .aperture-dialog .aperture-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

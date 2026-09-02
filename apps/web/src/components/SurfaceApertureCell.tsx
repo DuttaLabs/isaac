@@ -100,7 +100,9 @@ export function apertureSummary(
       ? `, turned ${Math.round(rollDeg * 1000) / 1000}° by the coordinate breaks before it`
       : '';
   const where =
-    (decentered ? `, decentered (${aperture.decenterX}, ${aperture.decenterY})` : '') + turned;
+    (decentered
+      ? `, decentered (${aperture.decenterX}${inUnits}, ${aperture.decenterY}${inUnits})`
+      : '') + turned;
   if (aperture.kind === 'FLOATING') {
     return `${APERTURE_KIND_LABELS.FLOATING}${where}`;
   }
@@ -206,13 +208,38 @@ export function ApertureIcon({
    * altogether. Clamped, it sits against the edge it went out of, which is the
    * thing worth seeing; the tooltip carries the numbers.
    */
-  const shift = (decenter: number, glyphHalf: number, systemHalf: number): number =>
-    decenter === 0 || !Number.isFinite(systemHalf) || systemHalf <= 0
-      ? 0
-      : Math.max(-CENTER, Math.min(CENTER, (glyphHalf * decenter) / systemHalf));
-  const cx = CENTER + shift(aperture.decenterX, glyph.rx, glyph.refX);
-  const cy = CENTER - shift(aperture.decenterY, glyph.ry, glyph.refY);
+  const shift = (
+    decenter: number,
+    glyphHalf: number,
+    systemHalf: number,
+  ): { at: number; beyond: number } => {
+    if (decenter === 0 || !Number.isFinite(systemHalf) || systemHalf <= 0) {
+      return { at: 0, beyond: 0 };
+    }
+    const wanted = (glyphHalf * decenter) / systemHalf;
+    const at = Math.max(-CENTER, Math.min(CENTER, wanted));
+    return { at, beyond: Math.sign(wanted - at) };
+  };
+  const alongX = shift(aperture.decenterX, glyph.rx, glyph.refX);
+  const alongY = shift(aperture.decenterY, glyph.ry, glyph.refY);
+  const cx = CENTER + alongX.at;
+  const cy = CENTER - alongY.at;
   const stopping = isObscuration(aperture.kind);
+  /**
+   * Which way the aperture ran off, once it has been clamped — `undefined` while
+   * the icon is still telling the truth about where it is.
+   *
+   * The clamp keeps a far-flung aperture on the icon, but at the cost of drawing
+   * it somewhere it is not, and nothing said so: Zemax's off-axis Gregorian is a
+   * 55 mm circle cut 100 mm off axis, which lands almost two glyph-radii out, so
+   * the disc sat half off the bottom edge looking merely badly drawn.
+   *
+   * Taken *after* the view transform, because that is the direction a reader
+   * sees. The clamp happens in the icon's own upright coordinates, and both the
+   * mirror and the roll move it: an aperture that overflows the +x side ends up
+   * pointing somewhere else entirely once the glyph is turned 45° and flipped.
+   */
+  const overflow = markerDirection(alongX.beyond, alongY.beyond, rollDeg);
   /**
    * The icon looks at the surface the way the 3-D view's home camera does:
    * **+x to the left, +y up**, from off the −x side. That mirror is the whole
@@ -244,6 +271,11 @@ export function ApertureIcon({
       aria-hidden="true"
     >
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
+      {/* Drawn outside the turned group: it is a mark on the *icon*, pinned to
+          the frame, and the direction it points has already been turned. */}
+      {overflow === undefined ? null : (
+        <polygon className="aperture-overflow" points={overflowArrow(overflow)} />
+      )}
       <g transform={turn}>
         {arms.length > 0 ? (
           // Vanes radiating from the hub, the first along +x exactly as the
@@ -294,6 +326,65 @@ export function ApertureIcon({
       </g>
     </svg>
   );
+}
+
+/** How far the overflow arrow reaches, and how far in from the frame it sits. */
+const MARK = 3;
+const MARK_INSET = 0.6;
+
+/**
+ * Which way a clamped aperture ran off, as a unit direction **on screen** —
+ * `undefined` when nothing was clamped.
+ *
+ * `bx` and `by` are the signs of the overflow in the icon's own upright
+ * coordinates, where y runs up. Both of the view's transforms have to be applied
+ * to get the direction a reader actually sees, and in the order the group
+ * applies them: the roll first, then the mirror.
+ */
+function markerDirection(
+  bx: number,
+  by: number,
+  rollDeg: number,
+): { x: number; y: number } | undefined {
+  if (bx === 0 && by === 0) {
+    return undefined;
+  }
+  // Into SVG's own frame, where y grows downward.
+  const vx = bx;
+  const vy = -by;
+  // The group turns by `-rollDeg`, and SVG's positive rotation is clockwise.
+  const angle = (-rollDeg * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  // Then the mirror, which negates x and leaves y alone.
+  const x = -(vx * cos - vy * sin);
+  const y = vx * sin + vy * cos;
+  const length = Math.hypot(x, y) || 1;
+  return { x: x / length, y: y / length };
+}
+
+/**
+ * The arrow itself: a small triangle with its point on the frame, aimed out.
+ *
+ * Placed where a ray from the middle of the icon in that direction meets the
+ * square — so it lands mid-edge for a straight overflow and in the corner for a
+ * diagonal one, which is where the reader's eye already is.
+ */
+function overflowArrow(direction: { x: number; y: number }): string {
+  const reach =
+    (CENTER - MARK_INSET) / Math.max(Math.abs(direction.x), Math.abs(direction.y), 1e-9);
+  const tipX = CENTER + direction.x * reach;
+  const tipY = CENTER + direction.y * reach;
+  const backX = tipX - direction.x * MARK;
+  const backY = tipY - direction.y * MARK;
+  // Across the arrow, to put the two base corners either side of it.
+  const acrossX = -direction.y * MARK * 0.6;
+  const acrossY = direction.x * MARK * 0.6;
+  return [
+    `${tipX},${tipY}`,
+    `${backX + acrossX},${backY + acrossY}`,
+    `${backX - acrossX},${backY - acrossY}`,
+  ].join(' ');
 }
 
 /**

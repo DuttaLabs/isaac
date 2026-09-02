@@ -79,10 +79,15 @@ export const APERTURE_KIND_HINTS: Record<ApertureKind, string> = {
   FLOATING: 'A circular aperture that follows the semi-diameter (Zemax FLAP).',
 };
 
-export function apertureSummary(aperture: SurfaceAperture | undefined, rollDeg = 0): string {
+export function apertureSummary(
+  aperture: SurfaceAperture | undefined,
+  rollDeg = 0,
+  units = '',
+): string {
   if (aperture === undefined) {
     return 'No aperture — this surface stops no light';
   }
+  const inUnits = units === '' ? '' : ` ${units}`;
   const decentered = aperture.decenterX !== 0 || aperture.decenterY !== 0;
   /**
    * Said only where it can be seen. A turn is a fact about the surface whatever
@@ -99,15 +104,23 @@ export function apertureSummary(aperture: SurfaceAperture | undefined, rollDeg =
   if (aperture.kind === 'FLOATING') {
     return `${APERTURE_KIND_LABELS.FLOATING}${where}`;
   }
+  // A spider is described by its arms, not by any radius or width. It fell
+  // through to the half-width branch and reported "0 × 0 half-widths" — the
+  // zeros a normalized spider carries because those fields have no meaning on
+  // one.
+  if (aperture.kind === 'SPIDER') {
+    const arms = aperture.armCount === 1 ? '1 arm' : `${aperture.armCount} arms`;
+    return `${APERTURE_KIND_LABELS.SPIDER}, ${arms}, ${aperture.armWidth}${inUnits} wide${where}`;
+  }
   if (!isCircularAperture(aperture.kind)) {
-    const size = `${aperture.halfWidthX} × ${aperture.halfWidthY} half-widths`;
+    const size = `${aperture.halfWidthX} × ${aperture.halfWidthY}${inUnits} half-widths`;
     return `${APERTURE_KIND_LABELS[aperture.kind]}, ${size}${where}`;
   }
   const ring =
     aperture.minRadius > 0
       ? `${aperture.minRadius}–${aperture.maxRadius}`
       : `${aperture.maxRadius}`;
-  return `${APERTURE_KIND_LABELS[aperture.kind]}, radius ${ring}${where}`;
+  return `${APERTURE_KIND_LABELS[aperture.kind]}, radius ${ring}${inUnits}${where}`;
 }
 
 /**
@@ -118,9 +131,17 @@ export function ApertureIcon({
   aperture,
   color,
   rollDeg = 0,
+  semiDiameter = Infinity,
 }: {
   aperture: SurfaceAperture | undefined;
   color: string;
+  /**
+   * How far the surface is drawn out, which is what a decenter is measured
+   * against for the two kinds that have no size of their own: a spider, whose
+   * whole description is its vanes, and a floating aperture, which *is* the
+   * semi-diameter. Every other kind is measured against its own half-size.
+   */
+  semiDiameter?: number;
   /**
    * How far the aperture is turned on its surface — the cumulative z tilt of the
    * coordinate transforms before it, from `apertureRollDegrees`.
@@ -163,7 +184,7 @@ export function ApertureIcon({
     );
   }
 
-  const glyph = glyphFor(aperture);
+  const glyph = glyphFor(aperture, semiDiameter);
   const arms =
     aperture.kind === 'SPIDER'
       ? Array.from(
@@ -192,11 +213,6 @@ export function ApertureIcon({
   const cx = CENTER + shift(aperture.decenterX, glyph.rx, glyph.refX);
   const cy = CENTER - shift(aperture.decenterY, glyph.ry, glyph.refY);
   const stopping = isObscuration(aperture.kind);
-  /**
-   * Negated because `rollDeg` is counter-clockwise, the model's sense, while
-   * SVG's y grows downward and its `rotate` is therefore clockwise. The arms
-   * below negate their sine for the same reason.
-   */
   /**
    * The icon looks at the surface the way the 3-D view's home camera does:
    * **+x to the left, +y up**, from off the −x side. That mirror is the whole
@@ -230,17 +246,23 @@ export function ApertureIcon({
       <rect x={0} y={0} width={SIDE} height={SIDE} rx={2} className="aperture-ground" />
       <g transform={turn}>
         {arms.length > 0 ? (
-          // Vanes radiating from the middle, the first along +x exactly as the
+          // Vanes radiating from the hub, the first along +x exactly as the
           // aperture defines them — so a three-armed spider in the icon points the
           // same way it does in the layout. Screen y grows downward, hence the
           // negated sine.
+          //
+          // From `cx`/`cy` rather than the middle: the vanes are struck from the
+          // spider's own center, so a decentered one hangs off to the side the
+          // way it really does. They were drawn from the middle regardless,
+          // which made LSST's two spiders at (400, 400) and (−400, −400)
+          // identical pictures of opposite things.
           arms.map((angle, at) => (
             <line
               key={at}
-              x1={CENTER}
-              y1={CENTER}
-              x2={CENTER + DISC * Math.cos(angle)}
-              y2={CENTER - DISC * Math.sin(angle)}
+              x1={cx}
+              y1={cy}
+              x2={cx + DISC * Math.cos(angle)}
+              y2={cy - DISC * Math.sin(angle)}
               className="aperture-arm"
             />
           ))
@@ -289,7 +311,10 @@ export function ApertureIcon({
  * surface, so there is no outer bound in the icon for it to be measured
  * against.
  */
-function glyphFor(aperture: SurfaceAperture): {
+function glyphFor(
+  aperture: SurfaceAperture,
+  semiDiameter: number,
+): {
   rx: number;
   ry: number;
   refX: number;
@@ -301,26 +326,44 @@ function glyphFor(aperture: SurfaceAperture): {
   const full = stopping ? OBSCURATION : DISC;
   const rectangular =
     aperture.kind === 'RECTANGULAR' || aperture.kind === 'RECTANGULAR_OBSCURATION';
-
-  if (isCircularAperture(aperture.kind)) {
-    const hole =
-      aperture.kind === 'CIRCULAR' && aperture.minRadius > 0
-        ? full * Math.min(aperture.minRadius / aperture.maxRadius, 0.8)
-        : 0;
-    return {
-      rx: full,
-      ry: full,
-      refX: aperture.maxRadius,
-      refY: aperture.maxRadius,
-      rectangular: false,
-      hole,
-    };
-  }
+  /** The fallback reference for a kind with no half-size of its own. */
+  const surface = Number.isFinite(semiDiameter) && semiDiameter > 0 ? semiDiameter : 0;
 
   if (aperture.kind === 'SPIDER') {
     // Drawn as lines rather than as a region, so the glyph carries only the
-    // reference the decenter is measured against.
-    return { rx: full, ry: full, refX: full, refY: full, rectangular: false, hole: 0 };
+    // reference the decenter is measured against — and that has to be the
+    // *surface*, since a spider has no size but its vanes. `DISC` is the reach
+    // of an arm, which is what the hub's offset is read against.
+    return { rx: DISC, ry: DISC, refX: surface, refY: surface, rectangular: false, hole: 0 };
+  }
+
+  if (isCircularAperture(aperture.kind)) {
+    // A floating aperture has no radius of its own: it *is* the semi-diameter,
+    // so that is what its decenter is measured against.
+    const outer = Number.isFinite(aperture.maxRadius) ? aperture.maxRadius : surface;
+    /**
+     * An annulus, whichever way it reads. A `CIRCULAR` aperture passes light
+     * between the two radii and a `CIRCULAR_OBSCURATION` stops it there — both
+     * are a *ring*, and only the ink differs. The hole used to be drawn for the
+     * aperture alone, so every annular obscuration came out a solid disc: seven
+     * of LSST's baffles are rings, four of them thinner than a sixth of their
+     * own radius, and all seven read as plugs.
+     *
+     * Capped, because these are routinely far thinner than the glyph can show
+     * — LSST's 2390.5–2400.5 baffle is a ring four parts in a thousand thick,
+     * which at this size is nothing at all. The cap keeps it legible as a ring;
+     * the tooltip carries the radii.
+     */
+    const hole =
+      aperture.minRadius > 0 && outer > 0 ? full * Math.min(aperture.minRadius / outer, 0.8) : 0;
+    return {
+      rx: full,
+      ry: full,
+      refX: outer,
+      refY: outer,
+      rectangular: false,
+      hole,
+    };
   }
   const largest = Math.max(aperture.halfWidthX, aperture.halfWidthY);
   return {

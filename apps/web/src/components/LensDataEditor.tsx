@@ -829,14 +829,15 @@ export function LensDataEditor({
                         type="button"
                         className="aperture-button"
                         disabled={isFixed}
-                        title={`${apertureSummary(surface.aperture, apertureRoll)}. Click to change.`}
-                        aria-label={`Aperture of surface ${label}: ${apertureSummary(surface.aperture, apertureRoll)}`}
+                        title={`${apertureSummary(surface.aperture, apertureRoll, system.units)}. Click to change.`}
+                        aria-label={`Aperture of surface ${label}: ${apertureSummary(surface.aperture, apertureRoll, system.units)}`}
                         onClick={() => setApertureSurface(index)}
                       >
                         <ApertureIcon
                           aperture={surface.aperture}
                           color={apertureColor(index)}
                           rollDeg={apertureRoll}
+                          semiDiameter={surface.semiDiameter}
                         />
                       </button>
                     )}

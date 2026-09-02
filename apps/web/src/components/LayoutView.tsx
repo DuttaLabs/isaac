@@ -263,7 +263,18 @@ const LayoutContent = memo(function LayoutContent({
                 key={`obscured-${at}`}
                 d={toPath(profile.points.slice(run.from, run.to + 1), project)}
                 fill="none"
-                stroke="var(--obscuration)"
+                // Highlighted with everything else on its row. `--obscuration` is
+                // the one token here that does not follow the theme, black being
+                // what "light does not get through" looks like in either — but a
+                // highlight is a passing state rather than a color the mark has,
+                // exactly as it is for the outline above.
+                //
+                // It matters most where it is the *only* mark: a surface whose job
+                // is only to obscure draws no outline at all, so without this its
+                // row was the one row in the table that lit up and pointed at
+                // nothing. On a design like the LSST, which is mostly baffles,
+                // that is most of the rows.
+                stroke={highlighted ? 'var(--surface-highlight)' : 'var(--obscuration)'}
                 // Three times a ray's width, and — like every stroke in this
                 // drawing — a screen width rather than a drawing one, so it
                 // holds its weight at any zoom.

@@ -750,32 +750,30 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   than the counter-per-panel-type it replaced — two Layout 3D panels used to refit together, because
   the counter belonged to the type rather than to the copy.
 
-  Both take wheel to zoom and a left drag to pan; the 3-D view adds the wheel pressed, or the right
-  button, to orbit. The 2-D view pans and zooms by rewriting the SVG `viewBox`.
+  Both take wheel to zoom and a left drag to pan; the 3-D view adds a middle-button drag to orbit,
+  which is *not* Three's default mapping (it rotates with the left button) — the two views share a
+  gesture vocabulary deliberately. The 2-D view pans and zooms by rewriting the SVG `viewBox`.
 
-  **The 3-D view pans its frustum, not its camera**, and that is what holds the orbit point still.
-  `OrbitControls` pans by translating the camera **and its target** together — in its model panning
-  *is* moving the target — and `zoomToCursor` drags it too, so every pan and cursor-zoom walked the
-  point everything turns about a little further from the optics, silently, with no gesture to put it
-  back. It cannot be fixed by restoring the target afterwards either: the target is also where the
-  camera looks, so putting it back undoes the pan.
+  **The 3-D orbit point moves when you pan, and a cross is drawn where it is.** `OrbitControls` pans
+  by translating the camera *and its target* together — in its model panning **is** moving the target
+  — and `zoomToCursor` drags it too, so the point everything turns about walks further from the optics
+  with every gesture. Where it starts is already poor: the scene's bounding centre, which on the
+  sample doublet is z = 52.7 with the glass at z = 0–9 and the image at 106.4, so 53 units of empty
+  space from anything there is to look at.
 
-  So `enablePan` and `zoomToCursor` are off, and `usePanOffset` pans with `camera.setViewOffset` —
-  a window onto a larger virtual image, which slides the picture across the canvas while
-  `camera.position`, `camera.quaternion` and `controls.target` all stay exactly where they were. The
-  orbit point is then fixed because nothing that could move it is involved. It is also the truer
-  picture: moving a camera sideways changes what occludes what, and shifting the frustum does not,
-  which is what a view camera's rising front does and what "slide the drawing across the panel" ought
-  to mean. `MOUSE_BUTTONS` still maps `LEFT: PAN` so that `OrbitControls` claims the left button and
-  then declines it — mapped to `ROTATE` instead, a left drag would orbit and pan at once.
+  **Holding it still was built and then reverted, and the reason is worth keeping.** Panning the
+  *frustum* instead of the camera — `camera.setViewOffset`, a window onto a larger virtual image —
+  leaves position, quaternion and target untouched, so the orbit point genuinely cannot move. It
+  works, and it is arguably the truer picture: a view camera's rising front, where what occludes what
+  does not change. But it is a uniform 1:1 translation of the projection, while a pan driven by a
+  *pointer* is expected to keep the thing you grabbed under the cursor — which at any other depth it
+  does not. It stopped feeling like a pan. Restoring the target after an ordinary pan is not an option
+  either: the target is also where the camera *looks*, so putting it back undoes the pan.
 
-  A small cross marks the point, drawn over everything (it is inside the glass as often as not) and
-  rescaled every frame to hold one size on screen, since the target is nowhere near the camera and a
-  fixed world size would be a speck from one angle and fill the frame from another. **Where it starts
-  is a poor default and known to be one**: the scene's bounding centre, which on the sample doublet is
-  z = 52.7 with the glass at z = 0–9 and the image at 106.4 — 53 units of empty space from anything
-  there is to look at, which is why the orbit felt like it was pivoting around nothing. Letting the
-  user **choose an element to orbit about** is what fixes that, and is the better control anyway.
+  So the mark is the answer for now, and letting the user **choose an element to orbit about** is the
+  real one. It is rescaled every frame to hold one size on screen, since the target is nowhere near
+  the camera and a fixed world size would be a speck from one angle and fill the frame from another,
+  and drawn over everything because the point is inside the glass as often as not.
 
   There is no `camera.lookAt` anywhere in the app. `OrbitControls.update()` calls it every frame with
   `controls.target`, so **the target is the only thing that decides where the camera looks** — set in

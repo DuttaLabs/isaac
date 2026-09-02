@@ -126,52 +126,104 @@ function openDatabase(): Promise<IDBDatabase | undefined> {
   });
 }
 
-/**
- * Remembers a handle under a recent entry's key, so the entry can reopen the
- * file later. Silent on failure: a recent list that cannot reopen is a smaller
- * loss than an error in front of someone who only opened a file.
- */
-export async function rememberHandle(key: string, handle: unknown): Promise<void> {
-  const database = await openDatabase();
-  if (database === undefined) {
-    return;
-  }
-  try {
-    const transaction = database.transaction(STORE, 'readwrite');
-    transaction.objectStore(STORE).put(handle, key);
-  } catch {
-    // A handle that cannot be cloned — an older browser — is simply not kept.
-  } finally {
-    database.close();
-  }
+/** A failure, in the one line a caller can put in front of someone. */
+function describe(error: unknown): string {
+  return error instanceof DOMException || error instanceof Error
+    ? `${error.name}: ${error.message}`
+    : 'an unknown error';
 }
 
 /**
- * Which entries have a handle kept for them, in one read rather than one per
- * entry. A menu needs this *before* it is drawn: an entry with no handle cannot
- * reopen anything, and offering it as though it could turns a click into an
- * error message.
+ * Remembers a handle under a recent entry's key, so the entry can reopen the
+ * file later. Resolves to `undefined` when it was stored, and to the **reason**
+ * when it was not.
+ *
+ * It used to resolve to nothing either way, on the grounds that a recent list
+ * which cannot reopen is a smaller loss than an error in front of someone who
+ * only opened a file. The first half of that still holds — this must not raise
+ * an alarm over a file that loaded perfectly — but reporting nothing at all is
+ * what made an empty handle store indistinguishable from a browser that had
+ * never been asked to store one. The caller decides how loudly to say it; this
+ * only has to *know*.
+ *
+ * **Waiting for the transaction is the substantive fix.** `put` returning is not
+ * the value being there: the write is real only once the transaction commits, so
+ * a quota failure, a rejected structured clone or an aborted transaction all
+ * used to happen after this function had already resolved and closed the
+ * connection, with nowhere to report to.
  */
-export async function keysWithHandles(): Promise<ReadonlySet<string>> {
+export async function rememberHandle(key: string, handle: unknown): Promise<string | undefined> {
   const database = await openDatabase();
   if (database === undefined) {
-    return new Set();
+    return 'the handle store would not open';
   }
   return new Promise((resolve) => {
+    let transaction: IDBTransaction;
     try {
-      const request = database.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
-      request.onsuccess = () => {
-        database.close();
-        resolve(new Set(request.result.map(String)));
-      };
-      request.onerror = () => {
-        database.close();
-        resolve(new Set());
-      };
-    } catch {
+      transaction = database.transaction(STORE, 'readwrite');
+      transaction.objectStore(STORE).put(handle, key);
+    } catch (error) {
+      // A store that is not there, or a handle this browser cannot clone.
       database.close();
-      resolve(new Set());
+      resolve(describe(error));
+      return;
     }
+    transaction.oncomplete = () => {
+      database.close();
+      resolve(undefined);
+    };
+    transaction.onerror = () => {
+      database.close();
+      resolve(describe(transaction.error));
+    };
+    transaction.onabort = () => {
+      database.close();
+      resolve(describe(transaction.error));
+    };
+  });
+}
+
+/**
+ * Which entries have a handle kept for them, and whether the answer can be
+ * trusted.
+ *
+ * Read in one transaction rather than one per entry, and *before* the menu is
+ * drawn: an entry with no handle cannot reopen anything, and offering it as
+ * though it could turns a click into an error message.
+ *
+ * `problem` is the point of the shape. This used to answer an empty set for a
+ * store that is missing, a read that failed and a list nothing has been added
+ * to yet — three different facts, one indistinguishable answer, and every entry
+ * ghosted with the same misleading reason ("this browser kept no handle").
+ */
+export interface HandleIndex {
+  readonly keys: ReadonlySet<string>;
+  /** Why the index could not be read. Absent when the answer is trustworthy. */
+  readonly problem?: string;
+}
+
+export async function keysWithHandles(): Promise<HandleIndex> {
+  const database = await openDatabase();
+  if (database === undefined) {
+    return { keys: new Set(), problem: 'the handle store would not open' };
+  }
+  return new Promise((resolve) => {
+    let request: IDBRequest<IDBValidKey[]>;
+    try {
+      request = database.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+    } catch (error) {
+      database.close();
+      resolve({ keys: new Set(), problem: describe(error) });
+      return;
+    }
+    request.onsuccess = () => {
+      database.close();
+      resolve({ keys: new Set(request.result.map(String)) });
+    };
+    request.onerror = () => {
+      database.close();
+      resolve({ keys: new Set(), problem: describe(request.error) });
+    };
   });
 }
 

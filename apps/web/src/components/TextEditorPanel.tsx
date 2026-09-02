@@ -103,7 +103,18 @@ export function TextEditorPanel({ settings, onSettings, supplied, choice }: Prop
         setRecents(next);
         saveRecents(next);
         if (handle !== undefined) {
-          void rememberHandle(handleKey ?? `file:${file.name}`, handle);
+          void rememberHandle(handleKey ?? `file:${file.name}`, handle).then((problem) => {
+            if (problem !== undefined) {
+              // Not `setError`: the document opened, and only the shortcut was
+              // lost. Reported all the same, for the same reason the app bar
+              // reports it — a handle store that quietly refuses every write
+              // looks exactly like one nothing has been written to.
+              console.error(
+                `Isaac: could not remember a handle for ${file.name} (${problem}). ` +
+                  'It will still open, but not from the recent files list.',
+              );
+            }
+          });
         }
       } catch (problem) {
         setError(problem instanceof Error ? problem.message : String(problem));

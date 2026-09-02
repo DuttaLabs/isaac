@@ -8,6 +8,7 @@ import { ContextMenu, type MenuItem } from './components/ContextMenu.tsx';
 import {
   keysWithHandles,
   lensFileRecents,
+  type HandleIndex,
   loadRecents,
   readHandle,
   recallHandle,
@@ -177,7 +178,7 @@ export function App() {
    * drawn: resolving it on open would ghost half the entries a moment after
    * they appeared, which is worse than either state on its own.
    */
-  const [reopenable, setReopenable] = useState<ReadonlySet<string>>(() => new Set());
+  const [handleIndex, setHandleIndex] = useState<HandleIndex>(() => ({ keys: new Set() }));
   /**
    * What the user has named and colored each element, keyed by the id of the
    * element's front surface. View state, like the field checkboxes and the
@@ -505,7 +506,19 @@ export function App() {
       setRecents(next);
       saveRecents(next);
       if (handle !== undefined) {
-        void rememberHandle(`file:${file.name}`, handle);
+        void rememberHandle(`file:${file.name}`, handle).then((problem) => {
+          if (problem !== undefined) {
+            // Deliberately not a notice. The file opened, which is what was
+            // asked for; only the shortcut was lost, and the menu says so where
+            // the user will look for it. But it is no longer *silent* — an
+            // empty handle store used to be indistinguishable from a browser
+            // that had never been asked to fill one.
+            console.error(
+              `Isaac: could not remember a handle for ${file.name} (${problem}). ` +
+                'It will still open, but not from the recent files menu.',
+            );
+          }
+        });
       }
 
       const { system: loaded, warnings, ignoredTokens } = result;
@@ -557,6 +570,24 @@ export function App() {
       if (problem instanceof DOMException && problem.name === 'AbortError') {
         return;
       }
+      /*
+         Anything else is a real failure, and the fallback stays — being unable
+         to open a file at all would be far worse than opening one without a
+         handle. What changes is that it no longer happens quietly.
+
+         A silent fallback here is how a broken picker would look exactly like a
+         working one: the dialog appears, the file loads, and the only symptom
+         is a recent entry that ghosts afterwards with no reason given. That is
+         a whole class of bug this cannot afford to hide, because the failure
+         and the success produce the same screen.
+      */
+      setNotice({
+        kind: 'error',
+        text:
+          `The file picker failed (${describeError(problem)}), so Isaac is falling back to a ` +
+          'plain file dialog. The file will open, but it will not be reopenable from the ' +
+          'recent files menu.',
+      });
       filePicker.current?.click();
     }
   };
@@ -571,9 +602,9 @@ export function App() {
 
   useEffect(() => {
     let current = true;
-    void keysWithHandles().then((keys) => {
+    void keysWithHandles().then((index) => {
       if (current) {
-        setReopenable(keys);
+        setHandleIndex(index);
       }
     });
     return () => {
@@ -638,10 +669,15 @@ export function App() {
           // that opened it never kept one, so there is nothing to reopen from.
           // Ghosted with the reason rather than left looking live, which turns
           // the click into an error message and the menu into a guess.
-          disabled: !reopenable.has(recent.key),
-          hint: reopenable.has(recent.key)
+          disabled: !handleIndex.keys.has(recent.key),
+          hint: handleIndex.keys.has(recent.key)
             ? `Opened ${new Date(recent.openedAt).toLocaleString()}`
-            : `Opened ${new Date(recent.openedAt).toLocaleString()}, but this browser kept no handle for it — open it again to add one`,
+            : handleIndex.problem !== undefined
+              ? // The store itself could not be read, so *nothing* is reopenable
+                // and this entry is not the reason. Saying "no handle was kept"
+                // here would blame the file for the database.
+                `Opened ${new Date(recent.openedAt).toLocaleString()}, but the handle store could not be read (${handleIndex.problem})`
+              : `Opened ${new Date(recent.openedAt).toLocaleString()}, but this browser kept no handle for it — open it again to add one`,
           startsGroup: index === 0,
           onSelect: () => void reopenRecent(recent),
         }))),

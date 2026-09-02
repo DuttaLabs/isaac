@@ -423,30 +423,53 @@ export function Layout3DView({
               material here is translucent or metallic. It is also the only mark
               that means the same in both themes without being given two
               values. */}
-          {scene.obscurations.map((blocked) => (
-            <mesh key={`obscuration-${blocked.surfaceIndex}`} geometry={blocked.geometry}>
-              <meshStandardMaterial
-                // Lit with its row, like the shells above. Black is what "light
-                // does not get through" looks like and is why this one color is
-                // written rather than taken from the theme — but a highlight is
-                // a passing state, not a color the thing has. On a design that is
-                // mostly baffles it is the only way to tell which row is which.
-                color={blocked.surfaceIndex === highlightedSurface ? colors.highlight : '#000000'}
-                roughness={0.9}
-                metalness={0}
-                side={DoubleSide}
-                // An obscuration lies *exactly* on the surface it blocks — same
-                // sag, same frame — so the depth buffer has no way to choose
-                // between them and the two flicker against each other. The
-                // offset biases this one toward the camera in depth alone,
-                // which is what it is for: nothing moves, and the vane stops
-                // fighting the mirror it is bolted to.
-                polygonOffset
-                polygonOffsetFactor={-1}
-                polygonOffsetUnits={-1}
-              />
-            </mesh>
-          ))}
+          {scene.obscurations.map((blocked) => {
+            const lit = blocked.surfaceIndex === highlightedSurface;
+            return (
+              <mesh
+                key={`obscuration-${blocked.surfaceIndex}`}
+                geometry={blocked.geometry}
+                renderOrder={lit ? 1 : 0}
+              >
+                <meshStandardMaterial
+                  // Lit with its row, like the shells above. Black is what "light
+                  // does not get through" looks like and is why this one color is
+                  // written rather than taken from the theme — but a highlight is
+                  // a passing state, not a color the thing has. On a design that is
+                  // mostly baffles it is the only way to tell which row is which.
+                  color={lit ? colors.highlight : '#000000'}
+                  roughness={0.9}
+                  metalness={0}
+                  side={DoubleSide}
+                  /*
+                     An obscuration lies *exactly* on the surface it blocks — same
+                     sag, same frame — so the depth buffer has no way to choose
+                     between them and the two flicker against each other. The
+                     offset biases this one toward the camera in depth alone:
+                     nothing moves, and the vane stops fighting the mirror it is
+                     bolted to.
+
+                     **Obscurations also stack on one another**, which is the case
+                     that needed the highlight to bias further. A designer defines
+                     several on one plane: LSST puts six at z = 1200 — two
+                     rectangular baffles, two more, and a pair of spiders — and
+                     four more at z = 4440.81. While they are all black their
+                     fighting is invisible, since the pixels agree whichever wins.
+                     Light one of them and it does not: an orange disc and its
+                     black neighbours trade pixels, and the row you are pointing at
+                     is the one that flickers.
+
+                     So the lit one is biased far enough to win outright, and drawn
+                     after. It is the only one whose colour differs, so it is the
+                     only one that has to.
+                  */
+                  polygonOffset
+                  polygonOffsetFactor={lit ? -4 : -1}
+                  polygonOffsetUnits={lit ? -16 : -1}
+                />
+              </mesh>
+            );
+          })}
 
           {scene.rays.map((bundle, index) => {
             // Color by field, as the 2-D view does. There is no dash pattern in a

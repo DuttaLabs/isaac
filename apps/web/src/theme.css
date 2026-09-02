@@ -1542,8 +1542,31 @@ svg.layout * {
   pointer-events: none;
 }
 
+/*
+   The canvas is sized by CSS, and it has to be.
+
+   React Three Fiber sets the `width` and `height` *attributes* -- the drawing
+   buffer, which is the panel times `devicePixelRatio` -- and never touches the
+   element's style. It ships no stylesheet of its own and never calls Three's
+   `setSize`, which is the thing that would otherwise write the layout size back
+   onto the element. Its only inline style is `display: block`.
+
+   So without these two lines the canvas lays out at its attributes, which makes
+   it exactly `devicePixelRatio` times too large; the container is
+   `overflow: hidden`, so what shows is the top-left corner of it, and the model
+   -- centered in the canvas -- sits off the bottom-right of the panel at twice
+   the size.
+
+   **On a 1x display that is right by coincidence**, the buffer and the layout
+   size being the same number, which is why this survived so long: it is
+   invisible until a window is moved to a display of a different density, and
+   then it looks like a camera bug rather than a sizing one. The aspect ratio
+   stays correct throughout, so the fit is never at fault.
+*/
 .layout-3d canvas {
   display: block;
+  width: 100%;
+  height: 100%;
   border-radius: 0;
   outline: none;
 }

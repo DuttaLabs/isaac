@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -525,6 +526,120 @@ function asPerspective(camera: object): PerspectiveCamera | undefined {
  */
 const MARK_SIZE = 0.018;
 
+/**
+ * Orbiting about a point in the *system* rather than about wherever panning has
+ * left the camera looking.
+ *
+ * `OrbitControls` turns about `controls.target`, and it also pans by translating
+ * the camera **and that target** together — panning, in its model, *is* moving
+ * the target. So the two are the same number, and after a pan the thing
+ * everything spins about is a spot in mid-air off the side of the picture.
+ * Neither half can simply be switched off: the target is where the camera looks,
+ * so pinning it undoes the pan, and panning the frustum instead (which does hold
+ * it still) stops the cursor tracking what it grabbed.
+ *
+ * So rotation is taken over here and pan is left alone. A drag rotates the camera
+ * **and** the target rigidly about `anchor`, which preserves the offset between
+ * them — the pan survives, the view turns about the optics, and `update()` goes
+ * on pointing the camera at its target as before.
+ *
+ * Angles follow `OrbitControls`' own scaling, a full turn per canvas height, so
+ * the gesture feels the same as the one it replaces. The polar angle is clamped
+ * short of either pole, where the up vector degenerates and the picture flips.
+ */
+function useOrbitAbout(
+  camera: PerspectiveCamera | OrthographicCamera,
+  domElement: HTMLElement,
+  controls: RefObject<OrbitControls | null>,
+  anchor: readonly [number, number, number],
+  onGesture: (phase: 'start' | 'end') => void,
+) {
+  const pivot = useRef(new Vector3(...anchor));
+  pivot.current.set(...anchor);
+
+  useEffect(() => {
+    let turning = false;
+    let lastX = 0;
+    let lastY = 0;
+    const axis = new Vector3();
+    const spin = new Quaternion();
+    const arm = new Vector3();
+
+    /** Rotates a point about the pivot, in place. */
+    const swing = (point: Vector3): void => {
+      arm.copy(point).sub(pivot.current).applyQuaternion(spin);
+      point.copy(pivot.current).add(arm);
+    };
+
+    const down = (event: PointerEvent): void => {
+      // Left is pan, and OrbitControls still owns it.
+      if (event.button === 0) {
+        return;
+      }
+      turning = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      domElement.setPointerCapture(event.pointerId);
+      onGesture('start');
+    };
+
+    const move = (event: PointerEvent): void => {
+      const orbit = controls.current;
+      if (!turning || orbit === null) {
+        return;
+      }
+      const height = domElement.clientHeight || 1;
+      const azimuth = (-2 * Math.PI * (event.clientX - lastX)) / height;
+      let polar = (-2 * Math.PI * (event.clientY - lastY)) / height;
+      lastX = event.clientX;
+      lastY = event.clientY;
+
+      // How far the camera already is from the up axis, so a drag cannot be
+      // carried over the pole — past it the up vector reverses and the picture
+      // turns upside down mid-gesture.
+      arm.copy(camera.position).sub(pivot.current);
+      const fromPole = arm.angleTo(camera.up);
+      const LIMIT = 0.01;
+      polar = Math.min(Math.max(polar, LIMIT - (Math.PI - fromPole)), fromPole - LIMIT);
+
+      // Azimuth about the world up, elevation about the camera's own right —
+      // which is what makes a sideways drag spin the system and an upward one
+      // lift the eye, whatever angle the camera is already at.
+      axis.setFromMatrixColumn(camera.matrix, 0);
+      spin.setFromAxisAngle(camera.up, azimuth);
+      spin.multiply(new Quaternion().setFromAxisAngle(axis, polar));
+
+      swing(camera.position);
+      swing(orbit.target);
+      orbit.update();
+    };
+
+    const stop = (event: PointerEvent): void => {
+      if (!turning) {
+        return;
+      }
+      turning = false;
+      if (domElement.hasPointerCapture(event.pointerId)) {
+        domElement.releasePointerCapture(event.pointerId);
+      }
+      onGesture('end');
+    };
+
+    domElement.addEventListener('pointerdown', down);
+    domElement.addEventListener('pointermove', move);
+    domElement.addEventListener('pointerup', stop);
+    domElement.addEventListener('pointercancel', stop);
+    return () => {
+      domElement.removeEventListener('pointerdown', down);
+      domElement.removeEventListener('pointermove', move);
+      domElement.removeEventListener('pointerup', stop);
+      domElement.removeEventListener('pointercancel', stop);
+    };
+  }, [camera, domElement, controls, onGesture]);
+
+  return pivot;
+}
+
 function Controls({
   framing,
   tweaks,
@@ -558,6 +673,38 @@ function Controls({
   const touched = useRef(false);
   /** Whether a view has been applied at all — false until the canvas is measured. */
   const settled = useRef(false);
+  /**
+   * Reported on our own rotate gesture, since `OrbitControls` no longer fires
+   * `start`/`end` for one: it still owns pan and dolly, and those go on firing.
+   */
+  const onGesture = useCallback(
+    (phase: 'start' | 'end') => {
+      const orbit = controls.current;
+      if (phase === 'start') {
+        touched.current = true;
+        return;
+      }
+      if (orbit) {
+        report.current?.({
+          position: camera.position.toArray() as [number, number, number],
+          target: orbit.target.toArray() as [number, number, number],
+          zoom: camera.zoom,
+        });
+      }
+    },
+    [camera],
+  );
+
+  // The point the picture turns about: the middle of the system, held there
+  // whatever panning does to where the camera happens to be looking.
+  const pivot = useOrbitAbout(
+    camera as PerspectiveCamera | OrthographicCamera,
+    domElement,
+    controls,
+    framing.target,
+    onGesture,
+  );
+
   const lastFov = useRef(tweaks.fieldOfView);
   const lastDistance = useRef(tweaks.cameraDistance);
   const { projection, fieldOfView, fitMargin, cameraDistance } = tweaks;
@@ -752,13 +899,15 @@ function Controls({
     if (!orbit || !cross) {
       return;
     }
-    cross.position.copy(orbit.target);
+    // The pivot, not the target: after a pan those are different points, and the
+    // one worth marking is the one the picture turns about.
+    cross.position.copy(pivot.current);
     // How much world the frame spans where the target is. For a perspective
     // camera that grows with distance; orthographically it is the frustum,
     // which distance does not change at all.
     const span =
       'isPerspectiveCamera' in camera && camera.isPerspectiveCamera
-        ? 2 * camera.position.distanceTo(orbit.target) * Math.tan((camera.fov * Math.PI) / 360)
+        ? 2 * camera.position.distanceTo(pivot.current) * Math.tan((camera.fov * Math.PI) / 360)
         : ((camera as OrthographicCamera).top - (camera as OrthographicCamera).bottom) /
           camera.zoom;
     cross.scale.setScalar(span * MARK_SIZE);
@@ -772,7 +921,14 @@ function Controls({
         mouseButtons={MOUSE_BUTTONS}
         enableDamping
         dampingFactor={0.12}
-        zoomToCursor
+        // Rotation is `useOrbitAbout`'s, so that it turns about the system
+        // rather than about wherever a pan has left the target. Pan and dolly
+        // stay here, unchanged — a pan that moves the camera and its target
+        // together is exactly what keeps the cursor on what it grabbed.
+        enableRotate={false}
+        // Off: it drags the target toward the cursor, which is a second thing
+        // moving the point the mark is meant to be pinned to.
+        zoomToCursor={false}
       />
       {/*
         Drawn over everything rather than into the scene. The point turned about

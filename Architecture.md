@@ -30,7 +30,9 @@ The architecture keeps that door open — see "The performance path" below.
 - Three.js 3-D optical visualization
 - Sequential optical ray tracing
 - Import of publicly available ZEMAX/ZMX files
-- Local computation initially
+- Local computation always: everything Isaac can do in a browser stays doable in
+  a browser, with no account and no connection
+- Collaboration — two or more people in a room, looking at the same design
 - Ability to move computationally intensive work to a faster runtime, or to a
   server, later
 
@@ -80,7 +82,6 @@ permission.
 
 **High priority:**
 
-- Coordinate transforms (tilts and decenters)
 - Optimization (merit functions, variables, damped least squares)
 - MTF
 - PSF
@@ -94,7 +95,8 @@ permission.
 - Coatings
 - Thermal analysis
 - Diffractive, holographic, and gradient-index surfaces
-- Additional Zemax-compatible surface types
+- Additional Zemax-compatible surface types — diffraction gratings first, since
+  the reader refuses eight real files for want of one
 
 ### The discipline that replaces a scope limit
 
@@ -123,23 +125,93 @@ Implemented and working:
 - `@isaac/optical-core` — geometry, data model, sequential tracing, and
   first-order/paraxial analysis (EFL, BFD, FFD, entrance/exit pupils,
   magnification), plus ray generation from the system's aperture and fields.
-- `@isaac/zemax-io` — `.zmx` reader; imports 133 of the 471 OpticStudio sample
-  files today, refusing the rest rather than approximating them.
-- `@isaac/glass-catalog` — 162 SCHOTT glasses as published Sellmeier fits.
+- `@isaac/zemax-io` — `.zmx` reader **and writer**; imports 196 of the 471
+  OpticStudio sample files, refusing the rest rather than approximating them,
+  and round-trips every one of those 196 back to an identical system.
+- `@isaac/glass-catalog` — 366 SCHOTT glasses, 433 Ohara, and 23 materials
+  (fused silica, the plastics, water), read from the makers' own catalogs and
+  each carrying the dispersion formula its coefficients belong to.
 - `@isaac/three-optics` — Three.js geometry for a system; no React, no renderer.
-- `apps/web` — React + Vite UI: lens data editor, layout (2D and 3D), ray fans,
-  spot diagrams, first-order summary.
+- `@isaac/session-protocol` — the envelope two Isaacs send each other. Payloads
+  are opaque, so the relay never learns what a surface is.
+- `apps/web` — React + Vite UI: a tiling workspace of panels across two windows,
+  lens data editor, layout (2D and 3D), ray fans, spot diagrams, first-order
+  summary, and a text view of the file.
+- `apps/session-server` — the relay. Rooms, members, and nothing about optics.
 
-Surface types today: `OBJECT`, `STANDARD`, `EVEN_ASPHERE`, `PARAXIAL`, `IMAGE`.
-`STANDARD` covers planes, spheres and conics; `EVEN_ASPHERE` adds the even-power
-polynomial terms, which is how nearly every molded plastic lens is described.
-Reflection is a `reflective` flag on a surface rather than a distinct `MIRROR`
-type, which matches how OpticStudio models it (`GLAS MIRROR`); mirrors are
-traced, analyzed to first order, and drawn as metal in both layout views.
+Surface types today: `OBJECT`, `STANDARD`, `EVEN_ASPHERE`, `PARAXIAL`,
+`TILTED`, `COORDINATE_TRANSFORM`, `IMAGE`. `STANDARD` covers planes, spheres and
+conics; `EVEN_ASPHERE` adds the even-power polynomial terms, which is how nearly
+every molded plastic lens is described; `TILTED` is a plane at an angle, and
+`COORDINATE_TRANSFORM` is not a surface at all but a change of frame for
+everything after it, which is what makes a fold mirror or a decentered group
+possible. Reflection is a `reflective` flag on a surface rather than a distinct
+`MIRROR` type, which matches how OpticStudio models it (`GLAS MIRROR`); mirrors
+are traced, analyzed to first order, and drawn as metal in both layout views.
+
+**What stops light is separate from what is drawn.** `semiDiameter` is the drawn
+extent; `Surface.aperture` is what vignettes, in eight kinds across three
+families — circular, rectangular and elliptical, each with its obscuration, plus
+a floating aperture and a spider. `Surface.blocksAt` is the single definition of
+the boundary, asked by the tracer and by anything drawing a hole, so a picture
+cannot show an aperture the trace does not have.
 
 `CLAUDE.md` is the detailed map of how these packages actually work and the
-conventions that span them. This document is the charter: the goals, the hard
-rule, and the priorities.
+conventions that span them, and it is the one kept current. This document is the
+charter: the goals, the hard rule, and the priorities.
+
+## The server
+
+Isaac runs entirely in the browser and always will: opening a lens, tracing it,
+drawing it and saving it need nothing but the page. A user who never signs in
+loses no capability. The server exists for the three things a page alone cannot
+do.
+
+**Collaboration.** Two or more people in a room, looking at the same design.
+This is built and working: `wss://api.isaacoptics.com/`. The design travels as
+`.zmx` text — not a compromise but the reason it was cheap, since
+`exportZmx`/`importZmx` is verified across the whole sample corpus and the
+serializer therefore already existed and was already trusted. Class instances
+could not have been cloned across the wire anyway.
+
+**Distribution.** Isaac itself is static files, so serving it worldwide is a CDN
+rather than a fleet of servers. Not a thing to build.
+
+**Computation.** The escape route above, arrived at from the other end: work too
+heavy for a browser — optimization over many configurations, MTF across a field,
+Monte Carlo, non-sequential tracing at scale — sent to a machine that can do it.
+This is the one part that will cost real money to run and is therefore the one
+part that may have to be paid for. It is also the furthest away, and it must
+stay optional: everything Isaac can do in a browser must remain doable in a
+browser.
+
+### What the relay knows, and what it must not
+
+**The relay routes; it does not understand.** Every payload crossing it is
+opaque — it does not parse a `.zmx`, resolve a glass, or know what a surface is.
+That is the same rule that keeps `optical-core` free of React, pointed at the
+server, and it has the same payoff: the whole relay depends on a WebSocket
+library and one file of type definitions, so it runs comfortably on the smallest
+machine anyone sells.
+
+Two kinds of traffic, and the split is one the UI already draws between a
+*setting* and a *signal*:
+
+- **State** — the design, the arrangement. What somebody joining late needs. It
+  is whole, it is kept by the room, and it is replayed to whoever arrives next.
+- **Signal** — a camera orbit, a pointer. Worthless a moment later, never
+  stored, never replayed, and safe to drop when it arrives out of order.
+
+A single channel would have forced one discipline on both, and neither is right
+for the other: a design sent sixty times a second is absurd, and a camera that
+arrives only when the far end lets go is a jump rather than a movement.
+
+### The machine is a file
+
+`infra/bootstrap.sh` builds the server from a bare Ubuntu image; `infra/deploy.sh`
+ships to it and verifies itself over the public URL. Nothing about the server
+lives only in an SSH session, which is what makes it disposable: destroy it, run
+the script, and the same machine comes back.
 
 ## The optical model
 

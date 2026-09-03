@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo. Four packages live under `packages/`, and the React UI is `apps/web`: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader for `.zmx` lens files; `@isaac/glass-catalog` (`packages/glass-catalog`), the SCHOTT glass data; and `@isaac/three-optics` (`packages/three-optics`), Three.js geometry for the 3D layout. `Architecture.md` is the source of truth for scope and conventions.
+Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is an npm-workspaces monorepo. Five packages live under `packages/`, and two applications under `apps/`: `@isaac/optical-core` (`packages/optical-core`), the portable optical calculation engine; `@isaac/zemax-io` (`packages/zemax-io`), the reader and writer for `.zmx` lens files; `@isaac/glass-catalog` (`packages/glass-catalog`), the manufacturers' glass data; `@isaac/three-optics` (`packages/three-optics`), Three.js geometry for the 3D layout; `@isaac/session-protocol` (`packages/session-protocol`), the wire format for a collaborative session; `apps/web`, the React UI; and `apps/session-server`, the relay that carries a session between browsers.
+
+**`Architecture.md` is the charter and this file is the map.** That document says why Isaac exists, states the one hard rule, and orders the priorities; when a question is about *purpose* — is this worth doing, does it belong here, what standard does it have to meet — that is where the answer is. Everything about how the code actually works, and every convention that spans files, is here, and here is where it stays current. Where the two disagree about a detail, this file is right and the other one is out of date.
 
 ## Commands
 

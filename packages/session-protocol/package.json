@@ -1,0 +1,23 @@
+{
+  "name": "@isaac/session-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The wire format for a collaborative Isaac session: the envelope both the browser and the relay understand.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test 'tests/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1"
+  }
+}

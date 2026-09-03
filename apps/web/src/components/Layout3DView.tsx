@@ -354,27 +354,52 @@ export function Layout3DView({
             opacity={tweaks.axisOpacity}
           />
 
-          {scene.elements.map((element) => (
-            <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
-              <meshStandardMaterial
-                // A crossed element keeps the fault color whatever the user
-                // chose: it is the only thing saying the solid cannot be made.
-                color={
-                  element.crossed
-                    ? colors.faulty
-                    : (elementColors?.get(element.frontIndex) ?? colors.glass)
-                }
-                transparent
-                opacity={element.crossed ? tweaks.crossedElementOpacity : tweaks.elementOpacity}
-                roughness={0.12}
-                metalness={0}
-                // A lens is looked through, so its far wall has to still be there
-                // when the camera goes round behind it.
-                side={DoubleSide}
-                depthWrite={false}
-              />
-            </mesh>
-          ))}
+          {scene.elements.map((element) => {
+            const opacity = element.crossed ? tweaks.crossedElementOpacity : tweaks.elementOpacity;
+            return (
+              <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
+                <meshStandardMaterial
+                  // A crossed element keeps the fault color whatever the user
+                  // chose: it is the only thing saying the solid cannot be made.
+                  color={
+                    element.crossed
+                      ? colors.faulty
+                      : (elementColors?.get(element.frontIndex) ?? colors.glass)
+                  }
+                  /*
+                   Blended only while it is actually see-through.
+
+                   Three picks the render queue from `material.transparent`, not
+                   from the opacity *value*, so glass set transparent
+                   unconditionally stayed in the back-to-front pass at full
+                   opacity — a solid-looking lens still writing no depth. Two
+                   bodies then occlude each other purely by draw order, which
+                   Three takes from their centroid depths, and a cemented
+                   doublet's two centroids are millimetres apart: down the axis
+                   the order is stable, at 90° they are equidistant and it flips
+                   on a hair. At 0.42 that was a muddle; at 1 the last-drawn body
+                   hides the other outright, so orbiting past perpendicular swaps
+                   which lens exists.
+
+                   At full opacity there is nothing to blend, so it belongs in
+                   the opaque pass, where the depth buffer settles occlusion
+                   exactly and the question never arises. Below 1 nothing changes:
+                   `depthWrite: false` is what lets you see *through* one piece of
+                   glass to another rather than the nearer one punching a hole in
+                   the farther, and that is worth the sorting artifact.
+                  */
+                  transparent={opacity < 1}
+                  opacity={opacity}
+                  roughness={0.12}
+                  metalness={0}
+                  // A lens is looked through, so its far wall has to still be there
+                  // when the camera goes round behind it.
+                  side={DoubleSide}
+                  depthWrite={opacity >= 1}
+                />
+              </mesh>
+            );
+          })}
 
           {/*
              The one face the table's cursor is on, laid over the solid it is

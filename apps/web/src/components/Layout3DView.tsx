@@ -41,7 +41,24 @@ import { placeCamera, type SystemExtent } from '../lib/camera-fit.ts';
 extend({ OrbitControls });
 
 /** How often a moving camera is published to a session, in milliseconds. */
-const SHARE_INTERVAL_MS = 50;
+const SHARE_INTERVAL_MS = 30;
+
+/**
+ * How quickly the view eases toward a collaborator's, as a time constant: after
+ * this long it has closed 63% of the gap, after three times it is there.
+ *
+ * The counter-intuitive part of following somebody is that the cure for lag is
+ * *more* lag. Poses arrive as thirty discrete jumps a second, and snapping to
+ * each one reads as stepping however fast the network is — the eye is comparing
+ * it against sixty frames a second of its own. Easing renders the far camera
+ * deliberately behind where it really is, and continuous motion at 70 ms in
+ * arrears beats correct motion in visible steps. Games have called this entity
+ * interpolation for thirty years.
+ */
+const FOLLOW_TAU_MS = 70;
+
+/** Close enough to stop easing and sit exactly on the pose. */
+const FOLLOW_SETTLED = 1e-4;
 
 declare module '@react-three/fiber' {
   interface ThreeElements {
@@ -954,6 +971,10 @@ function Controls({
     }
     const onStart = (): void => {
       touched.current = true;
+      // A hand on the mouse wins. Following resumes on the next pose that
+      // arrives, so letting go hands it back without anything to press.
+      following.current = false;
+      followTarget.current = undefined;
     };
     // The *end* of the gesture is when it is worth recording: an orbit is one
     // gesture however many frames it takes, and reporting per frame would
@@ -995,6 +1016,10 @@ function Controls({
     if (orbit === null || onShare === undefined) return;
 
     const onChange = (): void => {
+      // Easing toward somebody moves the camera every frame, and `change` fires
+      // for each one. Publishing those would send their own motion back to them
+      // sixty times a second, smoothed — a feedback loop that looks like drift.
+      if (following.current) return;
       const now = performance.now();
       if (now < shareAfter.current) return;
       const pose: CameraState = {
@@ -1024,20 +1049,19 @@ function Controls({
    * target every frame — moving the camera without moving the target would be
    * undone immediately.
    */
+  const followTarget = useRef<CameraState | undefined>(undefined);
+  /** True while this view is chasing somebody else's, false once a hand is on it. */
+  const following = useRef(false);
   useEffect(() => {
-    const orbit = controls.current;
-    if (orbit === null || shared === undefined) return;
+    if (shared === undefined) return;
     if (sameCamera(shared, appliedFromShare.current)) return;
     appliedFromShare.current = shared;
+    followTarget.current = shared;
+    following.current = true;
     // Their view is a view somebody framed, so this counts as framed here too:
     // a later refit must not throw it away.
     touched.current = true;
-    camera.position.set(...(shared.position as [number, number, number]));
-    orbit.target.set(...(shared.target as [number, number, number]));
-    camera.zoom = shared.zoom;
-    camera.updateProjectionMatrix();
-    orbit.update();
-  }, [shared, camera]);
+  }, [shared]);
 
   /**
    * The two knobs that slide the camera along its own view ray, applied to
@@ -1102,9 +1126,50 @@ function Controls({
   }, []);
   useEffect(() => () => markGeometry.dispose(), [markGeometry]);
 
+  /** Scratch for the easing below; allocating per frame would be sixty a second. */
+  const followPosition = useMemo(() => new Vector3(), []);
+  const followLookAt = useMemo(() => new Vector3(), []);
+
   // Damping only settles if the controls are stepped every frame.
-  useFrame(() => {
+  useFrame((_, delta) => {
     const orbit = controls.current;
+
+    // Ease toward a collaborator's view, if there is one to follow. Done here,
+    // *before* `update()`, so the controls carry the change through to the
+    // camera exactly as they would a drag.
+    const wanted = followTarget.current;
+    if (orbit !== null && wanted !== undefined && following.current) {
+      // Frame-rate independent, which a plain `lerp(target, 0.2)` per frame is
+      // not: that closes the same *fraction* per frame, so it converges twice
+      // as fast at 120 fps as at 60 and the motion changes character with the
+      // machine. Exponential decay over elapsed *time* is the same curve
+      // everywhere.
+      const alpha = 1 - Math.exp((-delta * 1000) / FOLLOW_TAU_MS);
+
+      followPosition.set(...(wanted.position as [number, number, number]));
+      followLookAt.set(...(wanted.target as [number, number, number]));
+
+      const reach = Math.max(followPosition.length(), 1);
+      const arrived =
+        followPosition.distanceTo(camera.position) / reach < FOLLOW_SETTLED &&
+        followLookAt.distanceTo(orbit.target) / reach < FOLLOW_SETTLED &&
+        Math.abs(camera.zoom - wanted.zoom) < FOLLOW_SETTLED;
+
+      if (arrived) {
+        // Settle exactly, and stop: an asymptote never arrives, and a camera
+        // creeping the last thousandth forever is a frame of work per frame.
+        camera.position.copy(followPosition);
+        orbit.target.copy(followLookAt);
+        camera.zoom = wanted.zoom;
+        followTarget.current = undefined;
+      } else {
+        camera.position.lerp(followPosition, alpha);
+        orbit.target.lerp(followLookAt, alpha);
+        camera.zoom += (wanted.zoom - camera.zoom) * alpha;
+      }
+      camera.updateProjectionMatrix();
+    }
+
     orbit?.update();
 
     const cross = mark.current;

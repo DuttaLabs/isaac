@@ -197,6 +197,70 @@ export function LensDataEditor({
     }
     return rows;
   }, [elements, elementStyles]);
+
+  /*
+     Bring a selected element's rows into view.
+
+     Only the vertical axis, and deliberately: this table scrolls sideways too,
+     and a click in the 3-D view has nothing to say about which *columns* you
+     were reading. `scrollIntoView` would have moved both.
+
+     The usable top is below the frozen header, not at the top of the box --
+     rows scroll *under* it, so aligning to the box would tuck the row out of
+     sight behind it. The header is measured rather than assumed, since it wraps
+     in a narrow pane.
+
+     Centred, rather than nudged just far enough to be visible. A selected
+     element then always arrives in the same place, so the eye knows where to
+     look before the scroll has finished -- and the alternative leaves it hard
+     against whichever edge it came in from, which reads as "only just made it"
+     rather than "here it is".
+
+     Centring is a *request*, and the clamp is what makes it safe: an element
+     near either end lands as close to the middle as the scroll range allows,
+     which is why surface 1 stays at the top and the image plane at the bottom.
+     Neither is special-cased.
+
+     Smooth, so the eye can follow the table moving rather than find it somewhere
+     new -- the whole point being to say *where* the thing you clicked lives.
+     `behavior: 'smooth'` is the browser's own easing, which accelerates and
+     decelerates; it is dropped for anyone who has asked for reduced motion, read
+     from this panel's own window so the second one answers for itself.
+  */
+  useEffect(() => {
+    const container = table.current;
+    if (container === null || selectedElement === undefined) {
+      return;
+    }
+    const element = elements.find((one) => one.key === selectedElement);
+    if (element === undefined) {
+      return;
+    }
+    const first = rows.current[element.firstIndex];
+    const last = rows.current[element.lastIndex];
+    if (first === null || first === undefined || last === null || last === undefined) {
+      return;
+    }
+
+    const box = container.getBoundingClientRect();
+    const header = container.querySelector('thead')?.getBoundingClientRect().height ?? 0;
+    const top = first.getBoundingClientRect().top - box.top + container.scrollTop;
+    const bottom = last.getBoundingClientRect().bottom - box.top + container.scrollTop;
+    // The middle of what can actually be seen, which begins under the header.
+    const middle = header + (container.clientHeight - header) / 2;
+    const furthest = Math.max(0, container.scrollHeight - container.clientHeight);
+    const next = Math.max(0, Math.min((top + bottom) / 2 - middle, furthest));
+
+    // Already there: a click should not shuffle the table by a pixel.
+    if (Math.abs(next - container.scrollTop) < 1) {
+      return;
+    }
+
+    const reduced =
+      container.ownerDocument.defaultView?.matchMedia('(prefers-reduced-motion: reduce)')
+        .matches === true;
+    container.scrollTo({ top: next, behavior: reduced ? 'auto' : 'smooth' });
+  }, [selectedElement, elements]);
   const coveredRows = useMemo(() => {
     const covered = new Set<number>();
     for (const element of elements) {

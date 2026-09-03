@@ -2678,3 +2678,92 @@ input.coefficient {
   border-radius: 2px;
   flex: none;
 }
+
+/* ------------------------------------------------------------------ session */
+
+.session {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  max-width: 360px;
+}
+
+.session-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-field span {
+  flex: none;
+  width: 78px;
+  color: var(--text-muted);
+}
+
+.session-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.session-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.session-room {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-label {
+  color: var(--text-muted);
+}
+
+/* The room name is the thing being read aloud or pasted into a chat, so it is
+   set apart from the prose around it rather than merely emphasized. */
+.session-code {
+  flex: 1 1 auto;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+
+.session-members {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-members li {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+/* You are in the room too, and a list that omits you reads as a list of
+   everyone — which is wrong by one the moment somebody counts. */
+.session-you {
+  border-color: var(--accent) !important;
+  color: var(--accent);
+}
+
+.session-problem {
+  margin: 0;
+  color: var(--danger);
+}
+
+.session-server {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  opacity: 0.6;
+}

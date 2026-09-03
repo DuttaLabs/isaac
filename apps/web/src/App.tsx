@@ -32,6 +32,7 @@ import { Splitter } from './components/Splitter.tsx';
 import { cssRect, tile } from './lib/tiling.ts';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
+import { isSessionState, useSession } from './lib/session.ts';
 import { TextCell } from './components/TextCell.tsx';
 import { attempt, describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -81,6 +82,7 @@ import { LensDataEditor } from './components/LensDataEditor.tsx';
 import { Layout2DPanel } from './components/Layout2DPanel.tsx';
 import { Layout3DPanel } from './components/Layout3DPanel.tsx';
 import { RayFanPanel } from './components/RayFanPanel.tsx';
+import { SessionPanel } from './components/SessionPanel.tsx';
 import { SourcePanel } from './components/SourcePanel.tsx';
 import { SpotPanel } from './components/SpotPanel.tsx';
 import { TextEditorPanel } from './components/TextEditorPanel.tsx';
@@ -357,6 +359,88 @@ export function App() {
     },
     [pushSystem],
   );
+
+  // ------------------------------------------------------------- session ---
+
+  /**
+   * The design as it was last put on the wire, or as it last came off it.
+   *
+   * This one string is the whole of the echo suppression. A remote design is
+   * recorded here *before* it is applied, so the effect below sees the export
+   * it already knows and stays quiet — where a flag would have to be cleared at
+   * exactly the right moment and a render is not a moment.
+   *
+   * It works because the round trip is exact: `exportZmx` is a function of the
+   * model alone, so re-exporting what was just imported reproduces the same
+   * text, which is the property the corpus round-trip test pins.
+   */
+  const lastSynced = useRef<string | undefined>(undefined);
+
+  /**
+   * True between joining a room that already had people in it and hearing what
+   * they are looking at. Nothing is sent while it holds — a joiner broadcasting
+   * their own design would overwrite the meeting they just walked into.
+   */
+  const [awaitingRoomState, setAwaitingRoomState] = useState(false);
+
+  const session = useSession({
+    onWelcome: (present) => {
+      if (present.length === 0) {
+        // First in: this design *is* the room's design. Clearing the record
+        // makes the effect below send it.
+        lastSynced.current = undefined;
+        setAwaitingRoomState(false);
+        return;
+      }
+      setAwaitingRoomState(true);
+      // A room can have members and no state — two people joining an empty
+      // room at once — so waiting is given a deadline rather than being
+      // indefinite. Whoever's timer fires first seeds it.
+      window.setTimeout(() => setAwaitingRoomState(false), 1500);
+    },
+    onState: (payload) => {
+      setAwaitingRoomState(false);
+      if (!isSessionState(payload)) return;
+      const read = attempt(() =>
+        importZmx(payload.design, { resolveMaterial: GLASS_CATALOG.resolver() }),
+      );
+      if (!read.ok) {
+        setNotice({ kind: 'error', text: `Could not read the shared design: ${read.error}` });
+        return;
+      }
+      lastSynced.current = payload.design;
+      // Through the undo stack like any other edit, because that is what it is
+      // from here: somebody changed the design. Deliberately *not* treated as a
+      // replacement — no `designSignal`, so a collaborator editing does not
+      // reframe the 3-D camera under you every time they touch a radius.
+      pushSystem(read.value.system);
+      setFileName(payload.fileName);
+    },
+  });
+
+  /**
+   * Publishes the design whenever it differs from what the room last saw.
+   *
+   * Keyed on the system rather than on each edit, so every route to a change —
+   * a cell, an undo, a file opened, Reset — is covered by one thing rather than
+   * by remembering to call a sender from each of them.
+   */
+  useEffect(() => {
+    if (session.status !== 'joined') {
+      lastSynced.current = undefined;
+      return;
+    }
+    if (awaitingRoomState) return;
+    const written = attempt(
+      () => exportZmx(system, { glassCatalogs: GLASS_CATALOG_NAMES }).text,
+    );
+    // A system that cannot be written cannot be shared. The panel that can say
+    // why already does; failing silently here beats a notice on every keystroke.
+    if (!written.ok) return;
+    if (written.value === lastSynced.current) return;
+    lastSynced.current = written.value;
+    session.sendState({ design: written.value, fileName });
+  }, [system, fileName, session.status, session.sendState, awaitingRoomState]);
 
   /**
    * Takes the panels back and forgets the window. Called both when the user
@@ -973,6 +1057,8 @@ export function App() {
             choice={choice}
           />
         );
+      case 'session':
+        return <SessionPanel session={session} choice={choice} />;
     }
   };
 

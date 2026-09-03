@@ -13,6 +13,7 @@
   "dependencies": {
     "@isaac/glass-catalog": "*",
     "@isaac/optical-core": "*",
+    "@isaac/session-protocol": "*",
     "@isaac/three-optics": "*",
     "@isaac/zemax-io": "*",
     "@react-three/fiber": "^9.7.0",

@@ -28,6 +28,7 @@ export const PANELS = [
   'rayFan',
   'spot',
   'textEditor',
+  'session',
 ] as const;
 
 export type PanelId = (typeof PANELS)[number];
@@ -41,4 +42,5 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   rayFan: 'Ray fan',
   spot: 'Spot diagram',
   textEditor: 'Text editor',
+  session: 'Session',
 };

@@ -6,7 +6,7 @@ import {
   gridAcrossPupil,
   type FirstOrder,
 } from '../lib/analysis.ts';
-import { fieldShown, type Layout3DSettings } from '../lib/panel-settings.ts';
+import { fieldShown, type CameraState, type Layout3DSettings } from '../lib/panel-settings.ts';
 import type { Result } from '../lib/result.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { FieldLegend } from './FieldLegend.tsx';
@@ -47,6 +47,9 @@ interface Props {
   surfaceColors: ReadonlyMap<number, string>;
   highlightedSurface: number | undefined;
   onSelectSurface?: (surfaceIndex: number | undefined) => void;
+  /** Where a collaborator is standing, or undefined outside a session. */
+  sharedCamera?: CameraState;
+  onShareCamera?: (camera: CameraState) => void;
 }
 
 export function Layout3DPanel({
@@ -62,6 +65,8 @@ export function Layout3DPanel({
   surfaceColors,
   highlightedSurface,
   onSelectSurface,
+  sharedCamera,
+  onShareCamera,
 }: Props) {
   /** See `Layout2DPanel`: a signal from this panel's button to its own picture. */
   const [resetSignal, setResetSignal] = useState(0);
@@ -137,6 +142,8 @@ export function Layout3DPanel({
                 defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                 highlightedSurface={highlightedSurface}
                 onSelectSurface={onSelectSurface}
+                sharedCamera={sharedCamera}
+                onShareCamera={onShareCamera}
                 elementColors={elementColors}
                 hiddenSurfaces={hiddenSurfaces}
                 surfaceColors={surfaceColors}

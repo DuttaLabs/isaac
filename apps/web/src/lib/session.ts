@@ -19,6 +19,8 @@ import {
 } from '@isaac/session-protocol';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { CameraState } from './panel-settings.ts';
+
 /** Overridable per deployment; the hostname is never written into the source. */
 const SERVER_URL: string =
   (import.meta.env as Record<string, string | undefined>)['VITE_SESSION_URL'] ??
@@ -44,6 +46,49 @@ export function isSessionState(value: unknown): value is SessionState {
   if (typeof record['design'] !== 'string') return false;
   const name = record['fileName'];
   return name === undefined || typeof name === 'string';
+}
+
+/**
+ * Where somebody is standing in the 3-D view.
+ *
+ * A *signal*, not a setting: it is sent many times a second while a drag is in
+ * progress, never stored by the relay, and never replayed to a latecomer — a
+ * camera position from a minute ago says nothing about where anyone is looking
+ * now. `CameraState` is reused rather than redefined so the pose that travels
+ * is the same pose a pane saves.
+ */
+export interface CameraSignal {
+  readonly kind: 'camera';
+  readonly camera: CameraState;
+}
+
+export function isCameraSignal(value: unknown): value is CameraSignal {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (record['kind'] !== 'camera') return false;
+  const camera = record['camera'] as Record<string, unknown> | undefined;
+  if (typeof camera !== 'object' || camera === null) return false;
+  const triple = (v: unknown): boolean =>
+    Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n));
+  return (
+    triple(camera['position']) && triple(camera['target']) && typeof camera['zoom'] === 'number'
+  );
+}
+
+/**
+ * Two poses are the same picture. Used to stop a camera that was just applied
+ * from being sent straight back out — the same trick as `lastSynced` for the
+ * design, and needed for the same reason: `OrbitControls` raises `change` for
+ * a programmatic update exactly as it does for a drag.
+ */
+export function sameCamera(a: CameraState | undefined, b: CameraState | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  const near = (x: number, y: number): boolean => Math.abs(x - y) < 1e-6;
+  return (
+    a.zoom === b.zoom &&
+    a.position.every((v, i) => near(v, b.position[i] ?? NaN)) &&
+    a.target.every((v, i) => near(v, b.target[i] ?? NaN))
+  );
 }
 
 export interface SessionHandlers {

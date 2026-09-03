@@ -32,7 +32,7 @@ import { Splitter } from './components/Splitter.tsx';
 import { cssRect, tile } from './lib/tiling.ts';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
-import { isSessionState, useSession } from './lib/session.ts';
+import { isCameraSignal, isSessionState, useSession } from './lib/session.ts';
 import { TextCell } from './components/TextCell.tsx';
 import { attempt, describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -53,6 +53,7 @@ import {
   DEFAULT_SPOT,
   DEFAULT_TEXT_EDITOR,
   settingsOf,
+  type CameraState,
   type PanelSettings,
 } from './lib/panel-settings.ts';
 import {
@@ -383,6 +384,14 @@ export function App() {
    */
   const [awaitingRoomState, setAwaitingRoomState] = useState(false);
 
+  /**
+   * Where the last person to move it is standing in the 3-D view, or undefined
+   * while nobody has. Every Layout 3D pane follows it — a session shares *the*
+   * 3-D view rather than one particular copy of it, since the panes on the two
+   * screens are not the same panes and there is nothing to match them up by.
+   */
+  const [remoteCamera, setRemoteCamera] = useState<CameraState | undefined>(undefined);
+
   const session = useSession({
     onWelcome: (present) => {
       if (present.length === 0) {
@@ -416,7 +425,24 @@ export function App() {
       pushSystem(read.value.system);
       setFileName(payload.fileName);
     },
+    onSignal: (payload) => {
+      if (isCameraSignal(payload)) setRemoteCamera(payload.camera);
+    },
   });
+
+  /**
+   * Publishes where this browser is looking, while a drag is in progress.
+   *
+   * A signal rather than a setting, so it is neither kept by the relay nor
+   * pushed through the undo stack — and it is deliberately *not* the same write
+   * that saves the camera to the pane, which happens once at the end of a
+   * gesture. Watching somebody orbit is the whole point, and an orbit that
+   * arrives only when they let go is a jump rather than a movement.
+   */
+  const shareCamera = useCallback(
+    (camera: CameraState) => session.sendSignal({ kind: 'camera', camera }),
+    [session.sendSignal],
+  );
 
   /**
    * Publishes the design whenever it differs from what the room last saw.
@@ -1028,6 +1054,8 @@ export function App() {
             surfaceColors={surfaceColors}
             highlightedSurface={highlightedSurface}
             onSelectSurface={selectSurface}
+            sharedCamera={remoteCamera}
+            onShareCamera={shareCamera}
           />
         );
       case 'rayFan':

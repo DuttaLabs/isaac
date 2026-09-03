@@ -27,6 +27,7 @@ import type { OpticalSystem } from '@isaac/optical-core';
 import { buildOpticalScene, type OpticalScene } from '@isaac/three-optics';
 import type { LayoutTrace } from '../lib/analysis.ts';
 import type { CameraState } from '../lib/panel-settings.ts';
+import { sameCamera } from '../lib/session.ts';
 import { fieldStyle } from '../lib/fields.ts';
 import { useThemeColors } from '../lib/theme-colors.ts';
 import { AxisTriad } from './AxisTriad.tsx';
@@ -38,6 +39,9 @@ import { placeCamera, type SystemExtent } from '../lib/camera-fit.ts';
 // Three's own controls rather than a wrapper library: the app needs one class
 // from them, and the mouse mapping below is the whole of the configuration.
 extend({ OrbitControls });
+
+/** How often a moving camera is published to a session, in milliseconds. */
+const SHARE_INTERVAL_MS = 50;
 
 declare module '@react-three/fiber' {
   interface ThreeElements {
@@ -248,6 +252,8 @@ export function Layout3DView({
   overlay,
   camera: savedCamera,
   onCamera,
+  sharedCamera,
+  onShareCamera,
   onSelectSurface,
 }: {
   system: OpticalSystem;
@@ -285,6 +291,9 @@ export function Layout3DView({
   overlay?: ReactNode;
   /** Where the camera was left, if it has been framed by hand. */
   camera?: CameraState;
+  /** Where a collaborator is standing, and how to tell them where we are. */
+  sharedCamera?: CameraState;
+  onShareCamera?: (camera: CameraState) => void;
   /** Reports a new one at the end of a gesture, and `undefined` on a reset. */
   onCamera?: (state: CameraState | undefined) => void;
 }) {
@@ -381,6 +390,8 @@ export function Layout3DView({
             subject={system}
             saved={savedCamera}
             onCamera={onCamera}
+            shared={sharedCamera}
+            onShare={onShareCamera}
           />
           <CameraOrientation publish={publishAxes} />
 
@@ -778,6 +789,8 @@ function Controls({
   subject,
   saved,
   onCamera,
+  shared,
+  onShare,
   markColor,
 }: {
   framing: Framing;
@@ -793,6 +806,8 @@ function Controls({
   subject: OpticalSystem;
   saved: CameraState | undefined;
   onCamera: ((state: CameraState | undefined) => void) | undefined;
+  shared: CameraState | undefined;
+  onShare: ((camera: CameraState) => void) | undefined;
   /** Ink for the orbit-point mark. */
   markColor: string;
 }) {
@@ -957,6 +972,72 @@ function Controls({
       orbit.removeEventListener('end', onEnd);
     };
   }, [camera, domElement]);
+
+  /**
+   * Publishes the camera to a session *while* it moves, not at the end.
+   *
+   * This is the one place where a per-frame report is right, and it is exactly
+   * the case the `end`-only rule above was written against. That rule is about
+   * a **setting**: where the pane reopens, worth recording once, and expensive
+   * because it re-renders the app. This is a **signal** — it goes out on a
+   * socket, touches no React state here, and an orbit that arrives only when
+   * the far end lets go is a jump rather than a movement.
+   *
+   * Throttled to 20 a second, which is smooth to watch and an order of
+   * magnitude less than the frames a drag produces.
+   */
+  const lastShared = useRef<CameraState | undefined>(undefined);
+  const shareAfter = useRef(0);
+  /** The pose most recently taken from a collaborator, so it is not sent back. */
+  const appliedFromShare = useRef<CameraState | undefined>(undefined);
+  useEffect(() => {
+    const orbit = controls.current;
+    if (orbit === null || onShare === undefined) return;
+
+    const onChange = (): void => {
+      const now = performance.now();
+      if (now < shareAfter.current) return;
+      const pose: CameraState = {
+        position: camera.position.toArray() as [number, number, number],
+        target: orbit.target.toArray() as [number, number, number],
+        zoom: camera.zoom,
+      };
+      // `OrbitControls` raises `change` for its own `update()` exactly as it
+      // does for a drag, so applying somebody else's camera would send it
+      // straight back to them. Comparing poses is what stops the loop — the
+      // same trick as `lastSynced` for the design, and stateless enough to
+      // survive a render happening in the middle of a gesture.
+      if (sameCamera(pose, appliedFromShare.current)) return;
+      if (sameCamera(pose, lastShared.current)) return;
+      lastShared.current = pose;
+      shareAfter.current = now + SHARE_INTERVAL_MS;
+      onShare(pose);
+    };
+
+    orbit.addEventListener('change', onChange);
+    return () => orbit.removeEventListener('change', onChange);
+  }, [camera, onShare]);
+
+  /**
+   * Follows a collaborator. Applied through the controls rather than by setting
+   * the camera alone, because `OrbitControls.update()` points the camera at its
+   * target every frame — moving the camera without moving the target would be
+   * undone immediately.
+   */
+  useEffect(() => {
+    const orbit = controls.current;
+    if (orbit === null || shared === undefined) return;
+    if (sameCamera(shared, appliedFromShare.current)) return;
+    appliedFromShare.current = shared;
+    // Their view is a view somebody framed, so this counts as framed here too:
+    // a later refit must not throw it away.
+    touched.current = true;
+    camera.position.set(...(shared.position as [number, number, number]));
+    orbit.target.set(...(shared.target as [number, number, number]));
+    camera.zoom = shared.zoom;
+    camera.updateProjectionMatrix();
+    orbit.update();
+  }, [shared, camera]);
 
   /**
    * The two knobs that slide the camera along its own view ray, applied to

@@ -834,6 +834,28 @@ function Controls({
   const controls = useRef<OrbitControls>(null);
   /** Whether the user has framed something since the last deliberate reframe. */
   const touched = useRef(false);
+  /** The pose being eased toward, or undefined once it has been reached. */
+  const followTarget = useRef<CameraState | undefined>(undefined);
+  /** True while this view is chasing somebody else's, false once a hand is on it. */
+  const following = useRef(false);
+
+  /**
+   * The user is driving: stop following, and start publishing again.
+   *
+   * Called from **both** gesture sources, which is the whole point of it being
+   * a function. Rotation is `useOrbitAbout`'s and reports through `onGesture`;
+   * pan and dolly are still `OrbitControls`' and fire its `start`. Anything
+   * that means "a hand is on this" has to be told by both, and putting it in
+   * only one of them is a bug that hides: pan and dolly take control while an
+   * orbit silently does not, so following comes and goes depending on which
+   * gesture was used last.
+   */
+  const takeControl = useCallback(() => {
+    touched.current = true;
+    following.current = false;
+    followTarget.current = undefined;
+  }, []);
+
   /** Whether a view has been applied at all — false until the canvas is measured. */
   const settled = useRef(false);
   /**
@@ -844,7 +866,7 @@ function Controls({
     (phase: 'start' | 'end') => {
       const orbit = controls.current;
       if (phase === 'start') {
-        touched.current = true;
+        takeControl();
         return;
       }
       if (orbit) {
@@ -855,7 +877,7 @@ function Controls({
         });
       }
     },
-    [camera],
+    [camera, takeControl],
   );
 
   // The point the picture turns about: the middle of the system, held there
@@ -969,13 +991,7 @@ function Controls({
     if (orbit === null) {
       return;
     }
-    const onStart = (): void => {
-      touched.current = true;
-      // A hand on the mouse wins. Following resumes on the next pose that
-      // arrives, so letting go hands it back without anything to press.
-      following.current = false;
-      followTarget.current = undefined;
-    };
+    const onStart = takeControl;
     // The *end* of the gesture is when it is worth recording: an orbit is one
     // gesture however many frames it takes, and reporting per frame would
     // re-render the app sixty times a second over something still in progress.
@@ -992,7 +1008,7 @@ function Controls({
       orbit.removeEventListener('start', onStart);
       orbit.removeEventListener('end', onEnd);
     };
-  }, [camera, domElement]);
+  }, [camera, domElement, takeControl]);
 
   /**
    * Publishes the camera to a session *while* it moves, not at the end.
@@ -1049,9 +1065,6 @@ function Controls({
    * target every frame — moving the camera without moving the target would be
    * undone immediately.
    */
-  const followTarget = useRef<CameraState | undefined>(undefined);
-  /** True while this view is chasing somebody else's, false once a hand is on it. */
-  const following = useRef(false);
   useEffect(() => {
     if (shared === undefined) return;
     if (sameCamera(shared, appliedFromShare.current)) return;

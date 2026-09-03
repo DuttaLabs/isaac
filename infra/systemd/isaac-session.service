@@ -1,0 +1,34 @@
+[Unit]
+Description=Isaac session relay
+Documentation=https://github.com/subratadutta/isaac
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=/srv/isaac-session/apps/session-server
+
+# systemd does not read shell profiles, so nvm's shims are invisible to it and
+# this must be the absolute path. deploy.sh resolves it at deploy time rather
+# than freezing a version number into this file.
+ExecStart=__NODE__ src/main.ts
+
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+EnvironmentFile=-/etc/isaac-session.env
+
+Restart=always
+RestartSec=2
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

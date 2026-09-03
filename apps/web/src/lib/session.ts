@@ -38,6 +38,31 @@ export type SessionStatus = 'offline' | 'connecting' | 'joined' | 'failed';
 export interface SessionState {
   readonly design: string;
   readonly fileName?: string;
+  /**
+   * The rest of what is on screen. Optional so an older build's state still
+   * carries a design, which is the half that matters most.
+   *
+   * Left as `unknown` here on purpose: this module knows about sessions, not
+   * about workspaces, and `App` validates every piece of it with the same
+   * readers that guard the stored layout. Trusting a tree because it arrived
+   * over a socket would be worse than trusting one from `localStorage`.
+   */
+  readonly screen?: SharedScreen;
+}
+
+/**
+ * Everything that makes two people's screens the same screen, beyond the design.
+ *
+ * A meeting is a shared *screen*, not a shared design — nobody should be
+ * wondering why they cannot see the X–Z profile everyone else is discussing —
+ * so the arrangement travels with the lens.
+ */
+export interface SharedScreen {
+  readonly main?: unknown;
+  readonly secondary?: unknown;
+  readonly fields?: unknown;
+  readonly elementStyles?: unknown;
+  readonly selected?: unknown;
 }
 
 export function isSessionState(value: unknown): value is SessionState {
@@ -45,7 +70,9 @@ export function isSessionState(value: unknown): value is SessionState {
   const record = value as Record<string, unknown>;
   if (typeof record['design'] !== 'string') return false;
   const name = record['fileName'];
-  return name === undefined || typeof name === 'string';
+  if (name !== undefined && typeof name !== 'string') return false;
+  const screen = record['screen'];
+  return screen === undefined || (typeof screen === 'object' && screen !== null);
 }
 
 /**

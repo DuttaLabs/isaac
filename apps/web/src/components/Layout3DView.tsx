@@ -271,6 +271,7 @@ export function Layout3DView({
   onCamera,
   sharedCamera,
   onShareCamera,
+  onClaimView,
   onSelectSurface,
 }: {
   system: OpticalSystem;
@@ -311,6 +312,7 @@ export function Layout3DView({
   /** Where a collaborator is standing, and how to tell them where we are. */
   sharedCamera?: CameraState;
   onShareCamera?: (camera: CameraState) => void;
+  onClaimView?: () => void;
   /** Reports a new one at the end of a gesture, and `undefined` on a reset. */
   onCamera?: (state: CameraState | undefined) => void;
 }) {
@@ -409,6 +411,7 @@ export function Layout3DView({
             onCamera={onCamera}
             shared={sharedCamera}
             onShare={onShareCamera}
+            onClaim={onClaimView}
           />
           <CameraOrientation publish={publishAxes} />
 
@@ -808,6 +811,7 @@ function Controls({
   onCamera,
   shared,
   onShare,
+  onClaim,
   markColor,
 }: {
   framing: Framing;
@@ -825,6 +829,8 @@ function Controls({
   onCamera: ((state: CameraState | undefined) => void) | undefined;
   shared: CameraState | undefined;
   onShare: ((camera: CameraState) => void) | undefined;
+  /** A gesture began here — in a meeting, that is a claim on the screen. */
+  onClaim: (() => void) | undefined;
   /** Ink for the orbit-point mark. */
   markColor: string;
 }) {
@@ -854,7 +860,11 @@ function Controls({
     touched.current = true;
     following.current = false;
     followTarget.current = undefined;
-  }, []);
+    // A *gesture*, which is a different thing from the camera merely changing:
+    // a fit or a damping settle raises `change` too, and in a meeting those
+    // must not be mistaken for somebody reaching for the wheel.
+    onClaim?.();
+  }, [onClaim]);
 
   /** Whether a view has been applied at all — false until the canvas is measured. */
   const settled = useRef(false);

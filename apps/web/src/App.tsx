@@ -32,7 +32,7 @@ import { Splitter } from './components/Splitter.tsx';
 import { cssRect, tile } from './lib/tiling.ts';
 import { saveTextToFile, suggestedFileName } from './lib/save-file.ts';
 import { GLASS_CATALOG, GLASS_CATALOG_NAMES } from './lib/materials.ts';
-import { isCameraSignal, isSessionState, useSession } from './lib/session.ts';
+import { isCameraSignal, isSessionState, useSession, type SharedScreen } from './lib/session.ts';
 import { TextCell } from './components/TextCell.tsx';
 import { attempt, describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -43,6 +43,7 @@ import {
   saveLibrary,
   shownKey,
   withWorkspace,
+  readWorkspace,
   workspaceIn,
   type WindowId,
 } from './lib/layout-storage.ts';
@@ -225,12 +226,14 @@ export function App() {
    */
   const updateWorkspace =
     (key: string): Dispatch<SetStateAction<Workspace>> =>
-    (action) =>
+    (action) => {
+      claimWheel.current();
       setLibrary((current) => {
         const tree = workspaceIn(current, key, DEFAULT_WORKSPACE);
         const next = typeof action === 'function' ? action(tree) : action;
         return next === tree ? current : withWorkspace(current, key, next);
       });
+    };
   /** Development only: whether the tweak panel is showing. See `dev/tweaks.ts`. */
   const [showTweaks, setShowTweaks] = useState(false);
 
@@ -327,12 +330,46 @@ export function App() {
   const canUndo = history.index > 0;
   const canRedo = history.index < history.stack.length - 1;
 
-  const pushSystem = useCallback((next: OpticalSystem) => {
+  /**
+   * Claims the wheel, if there is one to claim.
+   *
+   * Anything that changes what is on screen calls this first, which is the
+   * whole of the interactive-meeting rule: you take control by *doing*
+   * something, not by asking permission. Nobody steals a screen by accident in
+   * a meeting where everyone is also on a call — they would hear about it — and
+   * the alternative, a room full of dead-looking controls, teaches nobody what
+   * the tool can do.
+   *
+   * Through a ref because the callbacks that need it are defined above the
+   * session, and threading a not-yet-existing function through them would
+   * reorder half this component for nothing.
+   */
+  const claimWheel = useRef<() => void>(() => {});
+
+  /**
+   * Puts a design on the undo stack **without** claiming the wheel, for designs
+   * that came from somebody else.
+   *
+   * The distinction is the whole of it: `pushSystem` means *this* user changed
+   * the design, and in a meeting that is a claim on the screen. Adopting the
+   * driver's design is the opposite — and routing it through the claiming path
+   * had every passenger seize control the instant the driver's screen arrived,
+   * which is a wheel that changes hands on every keystroke.
+   */
+  const adoptSystem = useCallback((next: OpticalSystem) => {
     setHistory((current) => {
       const stack = [...current.stack.slice(0, current.index + 1), next].slice(-HISTORY_LIMIT);
       return { stack, index: stack.length - 1 };
     });
   }, []);
+
+  const pushSystem = useCallback(
+    (next: OpticalSystem) => {
+      claimWheel.current();
+      adoptSystem(next);
+    },
+    [adoptSystem],
+  );
 
   /**
    * Puts a whole design on screen — the New button's blank one, the Reset
@@ -392,6 +429,76 @@ export function App() {
    */
   const [remoteCamera, setRemoteCamera] = useState<CameraState | undefined>(undefined);
 
+  /**
+   * The driver's arrangement, while we are a passenger — drawn *instead of* our
+   * own rather than written into the library.
+   *
+   * That is the whole design of it. The library is the one truth for named
+   * layouts, so applying a meeting's arrangement into it would overwrite a
+   * layout somebody built and saved. An override layer means a passenger's own
+   * layouts are never touched at all, which also makes "put my screen back when
+   * the meeting ends" nothing more than dropping this — no snapshot to take,
+   * and nothing to restore incorrectly.
+   */
+  const [followedWorkspaces, setFollowedWorkspaces] = useState<
+    { readonly main?: Workspace; readonly secondary?: Workspace } | undefined
+  >(undefined);
+
+  /**
+   * How long a screen change settles before it is published. A divider drag
+   * calls `resizeSplit` on every pointer move, and a message per frame would be
+   * the one thing making the gesture stutter.
+   */
+  const SCREEN_PUBLISH_MS = 120;
+
+  /** The arrangement each window is showing, before any meeting overrides it. */
+  const ownMain = workspaceIn(library, shownKey(library, 'main'), DEFAULT_WORKSPACE);
+  const ownSecondary = workspaceIn(
+    library,
+    shownKey(library, 'secondary'),
+    DEFAULT_SECONDARY_WORKSPACE,
+  );
+
+  /**
+   * Everything that is the screen, as one value — so that a pane split, a plane
+   * switched or a field hidden is a change the publishing effect can see.
+   */
+  const screenNow = useMemo<SharedScreen>(
+    () => ({
+      main: ownMain,
+      secondary: ownSecondary,
+      fields: fieldVisibility,
+      elementStyles,
+      selected: selectedElement,
+    }),
+    [ownMain, ownSecondary, fieldVisibility, elementStyles, selectedElement],
+  );
+
+  /**
+   * Wears the driver's screen.
+   *
+   * Every piece is checked on the way in with the same readers that guard the
+   * stored layout — a tree that arrived over a socket deserves *more* suspicion
+   * than one from `localStorage`, not less, and `JSON.parse` hands back `any`
+   * either way. A piece that does not survive its reader is left alone rather
+   * than blanked, so half a bad message cannot empty the screen.
+   */
+  const applyScreen = useCallback((screen: SharedScreen | undefined) => {
+    if (screen === undefined) return;
+    const main = readWorkspace(screen.main);
+    const secondary = readWorkspace(screen.secondary);
+    if (main !== undefined || secondary !== undefined) {
+      setFollowedWorkspaces({ main, secondary });
+    }
+    if (Array.isArray(screen.fields) && screen.fields.every((f) => typeof f === 'boolean')) {
+      setFieldVisibility(screen.fields as boolean[]);
+    }
+    if (typeof screen.elementStyles === 'object' && screen.elementStyles !== null) {
+      setElementStyles(screen.elementStyles as ElementStyles);
+    }
+    setSelectedElement(typeof screen.selected === 'string' ? screen.selected : undefined);
+  }, []);
+
   const session = useSession({
     onWelcome: (_present, driving) => {
       if (driving) {
@@ -421,13 +528,30 @@ export function App() {
       // from here: somebody changed the design. Deliberately *not* treated as a
       // replacement — no `designSignal`, so a collaborator editing does not
       // reframe the 3-D camera under you every time they touch a radius.
-      pushSystem(read.value.system);
+      adoptSystem(read.value.system);
       setFileName(payload.fileName);
+      applyScreen(payload.screen);
     },
     onSignal: (payload) => {
       if (isCameraSignal(payload)) setRemoteCamera(payload.camera);
     },
   });
+
+  // Assigned on every render rather than in an effect: a claim made between a
+  // render and an effect would be made with the previous render's answer to
+  // "am I already driving?".
+  claimWheel.current = () => {
+    if (session.status === 'joined' && !session.driving) session.take();
+  };
+
+  /**
+   * The meeting's screen is only worn while there is a meeting, and only while
+   * somebody else is driving it. Taking the wheel drops the override, so what
+   * everyone then sees is what this window was going to show anyway.
+   */
+  useEffect(() => {
+    if (session.status !== 'joined' || session.driving) setFollowedWorkspaces(undefined);
+  }, [session.status, session.driving]);
 
   /**
    * Publishes where this browser is looking, while a drag is in progress.
@@ -440,6 +564,9 @@ export function App() {
    */
   const shareCamera = useCallback(
     (camera: CameraState) => {
+      // Not a claim: `onShare` fires for a fit and for a damping settle as
+      // well as for a drag, and a passenger's view settling must not seize the
+      // screen. `onClaimView` is the gesture, and that is what claims.
       if (!session.driving) return;
       session.sendSignal({ kind: 'camera', camera });
     },
@@ -475,8 +602,24 @@ export function App() {
     if (!written.ok) return;
     if (written.value === lastSynced.current) return;
     lastSynced.current = written.value;
-    session.sendState({ design: written.value, fileName });
-  }, [system, fileName, session.status, session.driving, session.sendState, awaitingRoomState]);
+    session.sendState({ design: written.value, fileName, screen: screenNow });
+  }, [system, fileName, session.status, session.driving, session.sendState, awaitingRoomState, screenNow]);
+
+  /**
+   * Publishes the screen when only the *screen* has changed — a pane split, a
+   * plane switched, a field hidden. The design effect above covers the lens;
+   * this covers the furniture around it, and they are separate because a
+   * divider being dragged must not re-export a lens sixty times.
+   */
+  useEffect(() => {
+    if (session.status !== 'joined' || !session.driving || awaitingRoomState) return;
+    if (lastSynced.current === undefined) return; // the design effect will carry it
+    const at = window.setTimeout(
+      () => session.sendState({ design: lastSynced.current!, fileName, screen: screenNow }),
+      SCREEN_PUBLISH_MS,
+    );
+    return () => window.clearTimeout(at);
+  }, [screenNow, fileName, session.status, session.driving, session.sendState, awaitingRoomState]);
 
   /**
    * Takes the panels back and forgets the window. Called both when the user
@@ -1066,6 +1209,7 @@ export function App() {
             onSelectSurface={selectSurface}
             sharedCamera={remoteCamera}
             onShareCamera={shareCamera}
+            onClaimView={() => claimWheel.current()}
           />
         );
       case 'rayFan':
@@ -1188,12 +1332,23 @@ export function App() {
    */
   const renderWorkspace = (which: WindowId): ReactNode => {
     const key = shownKey(library, which);
-    const tree = workspaceIn(
-      library,
-      key,
-      which === 'main' ? DEFAULT_WORKSPACE : DEFAULT_SECONDARY_WORKSPACE,
-    );
-    const update = updateWorkspace(key);
+    // A meeting's arrangement is drawn *instead of* this window's own, never
+    // into it: the library holds layouts somebody built and named, and a
+    // passenger's must come back untouched when the meeting ends.
+    const followed = which === 'main' ? followedWorkspaces?.main : followedWorkspaces?.secondary;
+    const tree = followed ?? (which === 'main' ? ownMain : ownSecondary);
+    const update = followed
+      ? (action: SetStateAction<Workspace>) => {
+          claimWheel.current();
+          setFollowedWorkspaces((current) => {
+            const held = current ?? {};
+            const now = which === 'main' ? held.main : held.secondary;
+            if (now === undefined) return current;
+            const next = typeof action === 'function' ? action(now) : action;
+            return which === 'main' ? { ...held, main: next } : { ...held, secondary: next };
+          });
+        }
+      : updateWorkspace(key);
     const { panes, splitters } = tile(tree.root, SPLITTER_PX, WORKSPACE_INSET);
     const onlyPane = tree.root.kind === 'pane';
     return (

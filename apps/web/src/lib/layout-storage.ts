@@ -323,7 +323,18 @@ function readLayout(value: unknown): NamedLayout | undefined {
   };
 }
 
-function readWorkspace(value: unknown): Workspace | undefined {
+/**
+ * Checks an arrangement that came from outside this build.
+ *
+ * Exported because a workspace arriving over a *network* needs exactly the
+ * hardening one arriving from `localStorage` does, and for the same reason:
+ * `JSON.parse` returns `any`, so a tree written by an older or newer Isaac
+ * type-checks perfectly and renders nothing. Repair rather than reject — a pane
+ * naming a panel this build lacks is blanked and keeps its place — except for
+ * the two faults that cannot be repaired: a tree that is not a tree, and
+ * duplicate pane keys, which would silently merge two panes into one.
+ */
+export function readWorkspace(value: unknown): Workspace | undefined {
   if (!isRecord(value)) {
     return undefined;
   }

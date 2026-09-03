@@ -50,6 +50,7 @@ interface Props {
   /** Where a collaborator is standing, or undefined outside a session. */
   sharedCamera?: CameraState;
   onShareCamera?: (camera: CameraState) => void;
+  onClaimView?: () => void;
 }
 
 export function Layout3DPanel({
@@ -67,6 +68,7 @@ export function Layout3DPanel({
   onSelectSurface,
   sharedCamera,
   onShareCamera,
+  onClaimView,
 }: Props) {
   /** See `Layout2DPanel`: a signal from this panel's button to its own picture. */
   const [resetSignal, setResetSignal] = useState(0);
@@ -144,6 +146,7 @@ export function Layout3DPanel({
                 onSelectSurface={onSelectSurface}
                 sharedCamera={sharedCamera}
                 onShareCamera={onShareCamera}
+                onClaimView={onClaimView}
                 elementColors={elementColors}
                 hiddenSurfaces={hiddenSurfaces}
                 surfaceColors={surfaceColors}

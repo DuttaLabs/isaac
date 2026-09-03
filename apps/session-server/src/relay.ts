@@ -131,10 +131,17 @@ export function createRelay(log: Log = defaultLog): Relay {
         return;
       }
 
-      if (message.kind === 'state') {
-        rooms.relayState(session.room, session.member.id, message.payload);
-      } else {
-        rooms.relaySignal(session.room, session.member.id, message.seq, message.payload);
+      switch (message.kind) {
+        case 'state':
+          rooms.relayState(session.room, session.member.id, message.payload);
+          return;
+        case 'signal':
+          rooms.relaySignal(session.room, session.member.id, message.seq, message.payload);
+          return;
+        case 'take':
+          rooms.take(session.room, session.member.id);
+          log('take', { room: session.room, member: session.member.id });
+          return;
       }
     });
 

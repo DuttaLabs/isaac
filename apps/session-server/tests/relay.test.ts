@@ -60,6 +60,11 @@ test('two clients meet through the relay', async () => {
 
     const welcome = await grace.next();
     assert.equal(welcome.kind, 'welcome');
+    assert.equal(
+      (welcome as Extract<ServerMessage, { kind: 'welcome' }>).driver,
+      'm1',
+      'the first in drives, and a joiner is told so',
+    );
     assert.deepEqual(
       (welcome as Extract<ServerMessage, { kind: 'welcome' }>).members.map((m) => m.name),
       ['Ada'],
@@ -76,11 +81,25 @@ test('two clients meet through the relay', async () => {
     assert.equal(state.kind, 'state');
     assert.deepEqual((state as Extract<ServerMessage, { kind: 'state' }>).payload, design);
 
-    // And a camera orbit, which is a signal rather than a setting.
+    // A passenger is not relayed: one screen is the meeting's screen.
     grace.send({ kind: 'signal', seq: 1, payload: { camera: [3, 4, 5] } });
+
+    // So Grace takes the wheel first, and both are told.
+    grace.send({ kind: 'take' });
+    const handoverA = await ada.next();
+    assert.equal(handoverA.kind, 'driver');
+    const handoverG = await grace.next();
+    assert.equal(handoverG.kind, 'driver');
+    assert.equal(
+      (handoverG as Extract<ServerMessage, { kind: 'driver' }>).id,
+      (welcome as Extract<ServerMessage, { kind: 'welcome' }>).you,
+    );
+
+    // And a camera orbit, which is a signal rather than a setting.
+    grace.send({ kind: 'signal', seq: 2, payload: { camera: [3, 4, 5] } });
     const signal = await ada.next();
-    assert.equal(signal.kind, 'signal');
-    assert.equal((signal as Extract<ServerMessage, { kind: 'signal' }>).seq, 1);
+    assert.equal(signal.kind, 'signal', 'the shout before taking it was dropped, not queued');
+    assert.equal((signal as Extract<ServerMessage, { kind: 'signal' }>).seq, 2);
 
     assert.deepEqual(relay.counts(), { rooms: 1, members: 2 });
 

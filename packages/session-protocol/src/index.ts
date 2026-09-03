@@ -62,7 +62,14 @@ export type ClientMessage =
       readonly name: string;
     }
   | { readonly kind: 'state'; readonly payload: unknown }
-  | { readonly kind: 'signal'; readonly seq: number; readonly payload: unknown };
+  | { readonly kind: 'signal'; readonly seq: number; readonly payload: unknown }
+  /**
+   * Take the wheel. There is one driver in a room and the relay decides who it
+   * is — not the clients agreeing among themselves, because two people reaching
+   * for it at the same moment must resolve to one answer and only a single
+   * place can give one.
+   */
+  | { readonly kind: 'take' };
 
 export type ServerMessage =
   | {
@@ -71,6 +78,8 @@ export type ServerMessage =
       readonly room: string;
       readonly you: MemberId;
       readonly members: readonly Member[];
+      /** Who is driving. Null only in the instant before anyone is. */
+      readonly driver: MemberId | null;
     }
   /** `from` is null when the relay is replaying the room's last state to a joiner. */
   | { readonly kind: 'state'; readonly from: MemberId | null; readonly payload: unknown }
@@ -81,6 +90,7 @@ export type ServerMessage =
       readonly payload: unknown;
     }
   | { readonly kind: 'joined'; readonly member: Member }
+  | { readonly kind: 'driver'; readonly id: MemberId | null }
   | { readonly kind: 'left'; readonly id: MemberId }
   | { readonly kind: 'error'; readonly code: ErrorCode; readonly detail: string };
 
@@ -169,6 +179,9 @@ export function parseClientMessage(text: string): Parsed<ClientMessage> {
       if (!('payload' in raw)) return bad('BAD_MESSAGE', 'state needs a payload');
       return { ok: true, message: { kind: 'state', payload: raw['payload'] } };
     }
+
+    case 'take':
+      return { ok: true, message: { kind: 'take' } };
 
     case 'signal': {
       const seq = raw['seq'];

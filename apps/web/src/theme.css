@@ -2767,3 +2767,15 @@ input.coefficient {
   font-size: 0.85em;
   opacity: 0.6;
 }
+
+/* Who has the wheel, marked in the list of who is here rather than named
+   separately: "who is present" and "who is driving" should be one glance. */
+.session-members .is-driving {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.session-take {
+  align-self: flex-start;
+}

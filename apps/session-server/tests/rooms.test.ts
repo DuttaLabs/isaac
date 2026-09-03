@@ -92,7 +92,10 @@ test('leaving is announced, and an empty room is forgotten', () => {
   rooms.relayState('lab', 'm1', { design: 'a doublet' });
 
   rooms.leave('lab', 'm1');
-  assert.equal(grace.kinds.at(-1), 'left');
+  // Two things happened, in this order: somebody left, and because they had the
+  // wheel it passed to the only person still here.
+  assert.deepEqual(grace.kinds.slice(-2), ['left', 'driver']);
+  assert.equal(rooms.driverOf('lab'), 'm2');
   assert.equal(rooms.roomCount, 1);
 
   rooms.leave('lab', 'm2');
@@ -133,4 +136,106 @@ test('relaying into a room nobody is in does nothing', () => {
   rooms.relaySignal('ghost', 'm1', 1, {});
   rooms.leave('ghost', 'm1');
   assert.equal(rooms.roomCount, 0);
+});
+
+test('the first in drives, and everyone is told the same thing', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  rooms.join('lens-lab', 'Ada', ada);
+  const welcomeA = ada.sent[0] as Extract<ServerMessage, { kind: 'welcome' }>;
+  assert.equal(welcomeA.driver, welcomeA.you, 'the first in takes the wheel');
+
+  const grace = recorder();
+  rooms.join('lens-lab', 'Grace', grace);
+  const welcomeG = grace.sent[0] as Extract<ServerMessage, { kind: 'welcome' }>;
+  assert.equal(welcomeG.driver, 'm1', 'a joiner is told who has it, and it is not them');
+  assert.notEqual(welcomeG.you, welcomeG.driver);
+});
+
+test('only the driver is relayed — one screen is an invariant, not an agreement', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  const grace = recorder();
+  rooms.join('lens-lab', 'Ada', ada);   // m1 drives
+  rooms.join('lens-lab', 'Grace', grace);
+
+  rooms.relayState('lens-lab', 'm2', { design: 'a passenger shouting' });
+  rooms.relaySignal('lens-lab', 'm2', 1, { camera: 'likewise' });
+  assert.deepEqual(ada.kinds, ['welcome', 'joined'], 'nothing from a passenger reaches the room');
+
+  rooms.relayState('lens-lab', 'm1', { design: 'the driver' });
+  assert.equal(grace.kinds.at(-1), 'state');
+});
+
+test('taking the wheel is announced to everyone, the taker included', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  const grace = recorder();
+  rooms.join('lens-lab', 'Ada', ada);
+  rooms.join('lens-lab', 'Grace', grace);
+
+  rooms.take('lens-lab', 'm2');
+  assert.equal(rooms.driverOf('lens-lab'), 'm2');
+  for (const [who, seat] of [['ada', ada], ['grace', grace]] as const) {
+    const last = seat.sent.at(-1) as Extract<ServerMessage, { kind: 'driver' }>;
+    assert.equal(last.kind, 'driver', `${who} was told`);
+    assert.equal(last.id, 'm2');
+  }
+
+  // And now the roles are exactly reversed.
+  rooms.relayState('lens-lab', 'm1', { design: 'no longer the driver' });
+  assert.equal(grace.kinds.at(-1), 'driver', 'the old driver has stopped being relayed');
+  rooms.relayState('lens-lab', 'm2', { design: 'the new driver' });
+  assert.equal(ada.kinds.at(-1), 'state');
+});
+
+test('taking it twice says nothing the second time', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  const grace = recorder();
+  rooms.join('lens-lab', 'Ada', ada);
+  rooms.join('lens-lab', 'Grace', grace);
+  const before = grace.sent.length;
+  rooms.take('lens-lab', 'm1');   // already driving
+  assert.equal(grace.sent.length, before);
+});
+
+test('somebody who is not in the room cannot take it', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  rooms.join('lens-lab', 'Ada', ada);
+  rooms.take('lens-lab', 'stranger');
+  assert.equal(rooms.driverOf('lens-lab'), 'm1');
+});
+
+test('the wheel passes when the driver leaves, to whoever has been here longest', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  const grace = recorder();
+  const hopper = recorder();
+  rooms.join('lens-lab', 'Ada', ada);      // m1 drives
+  rooms.join('lens-lab', 'Grace', grace);  // m2
+  rooms.join('lens-lab', 'Hopper', hopper);// m3
+
+  rooms.leave('lens-lab', 'm1');
+  assert.equal(rooms.driverOf('lens-lab'), 'm2', 'not to nobody, and not to the newest');
+  assert.equal(grace.kinds.at(-1), 'driver');
+  assert.equal(hopper.kinds.at(-1), 'driver');
+
+  // A meeting survives the organizer's laptop shutting.
+  rooms.relayState('lens-lab', 'm2', { design: 'carrying on' });
+  assert.equal(hopper.kinds.at(-1), 'state');
+});
+
+test('a passenger leaving does not disturb the wheel', () => {
+  const rooms = new Rooms();
+  const ada = recorder();
+  const grace = recorder();
+  rooms.join('lens-lab', 'Ada', ada);
+  rooms.join('lens-lab', 'Grace', grace);
+  const before = ada.sent.length;
+  rooms.leave('lens-lab', 'm2');
+  assert.equal(rooms.driverOf('lens-lab'), 'm1');
+  assert.equal(ada.sent.length, before + 1, 'just the departure');
+  assert.equal(ada.kinds.at(-1), 'left');
 });

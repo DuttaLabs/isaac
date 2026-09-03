@@ -12,6 +12,11 @@ import { Panel, type PanelChoice } from './Panel.tsx';
  * So this is an *input* panel in the sense `panel-settings.ts` means: it keeps
  * no settings of its own, reads the session directly, and every copy agrees.
  */
+/** The driver's name, or undefined if it is us or nobody yet. */
+function driverName(session: Session): string | undefined {
+  return session.members.find((member) => member.id === session.driver)?.name;
+}
+
 export function SessionPanel({ session, choice }: { session: Session; choice?: PanelChoice }) {
   const [room, setRoom] = useState(suggestRoomId);
   const [name, setName] = useState('');
@@ -38,16 +43,38 @@ export function SessionPanel({ session, choice }: { session: Session; choice?: P
 
             <ul className="session-members">
               {/* The relay does not send you your own membership — you are the
-                  one thing you already know about — so it is added here. */}
-              <li className="session-you">You</li>
+                  one thing you already know about — so it is added here. The
+                  driver is marked in the same list rather than named separately:
+                  "who is here" and "who has the wheel" are one glance. */}
+              <li className={session.driving ? 'session-you is-driving' : 'session-you'}>
+                You{session.driving && ' · driving'}
+              </li>
               {session.members.map((member) => (
-                <li key={member.id}>{member.name}</li>
+                <li key={member.id} className={member.id === session.driver ? 'is-driving' : ''}>
+                  {member.name}
+                  {member.id === session.driver && ' · driving'}
+                </li>
               ))}
             </ul>
-            {session.members.length === 0 && (
+
+            {session.members.length === 0 ? (
               <p className="hint">
                 Nobody else yet. Send them the room name and they will see this design.
               </p>
+            ) : session.driving ? (
+              <p className="hint">
+                Everyone is seeing your screen. Anyone can take over.
+              </p>
+            ) : (
+              <>
+                <button type="button" className="session-take" onClick={session.take}>
+                  Take control
+                </button>
+                <p className="hint">
+                  You are watching {driverName(session) ?? 'someone else'}. Take control to
+                  change the design or move the view.
+                </p>
+              </>
             )}
 
             <button type="button" onClick={session.leave}>

@@ -26,7 +26,18 @@ interface Occupant {
 }
 
 interface Room {
+  /**
+   * Insertion-ordered, which is what makes "whoever has been here longest"
+   * a fact the Map already knows rather than a timestamp to keep.
+   */
   readonly occupants: Map<MemberId, Occupant>;
+  /**
+   * Who is driving. One person's screen is the meeting's screen, so this is
+   * arbitrated here and not agreed between clients: two people reaching for
+   * the wheel at the same moment have to resolve to one answer, and only a
+   * single place can give one.
+   */
+  driver?: MemberId;
   /**
    * The last whole state anyone sent, replayed to whoever joins next. Held as
    * the *encoded* payload rather than a parsed one — the relay has no business
@@ -75,12 +86,16 @@ export class Rooms {
     const member: Member = { id: `m${this.#nextId++}`, name };
     const others = [...room.occupants.values()].map((o) => o.member);
 
+    // The first in drives; anyone after joins as a passenger.
+    const wasEmpty = room.occupants.size === 0;
+
     send(sink, {
       kind: 'welcome',
       version: PROTOCOL_VERSION,
       room: roomId,
       you: member.id,
       members: others,
+      driver: wasEmpty ? member.id : (room.driver ?? null),
     });
 
     if (room.lastState !== undefined) {
@@ -88,6 +103,7 @@ export class Rooms {
     }
 
     room.occupants.set(member.id, { member, sink });
+    if (wasEmpty) room.driver = member.id;
     this.#broadcast(room, member.id, { kind: 'joined', member });
 
     return { ok: true, member };
@@ -104,12 +120,50 @@ export class Rooms {
       return;
     }
     this.#broadcast(room, id, { kind: 'left', id });
+
+    // The driver leaving would otherwise freeze the room: nobody's screen is
+    // the meeting's screen, and nothing is relayed. It passes to whoever has
+    // been here longest rather than to nobody, so a meeting survives the
+    // organizer's laptop shutting.
+    if (room.driver === id) {
+      const [next] = room.occupants.keys();
+      room.driver = next;
+      this.#announceDriver(room);
+    }
   }
 
-  /** A whole state: remembered for joiners, then passed on. */
+  /** Hand the wheel over. Anyone in the room may ask; the answer is here. */
+  take(roomId: string, id: MemberId): void {
+    const room = this.#rooms.get(roomId);
+    if (room === undefined || !room.occupants.has(id)) return;
+    if (room.driver === id) return;
+    room.driver = id;
+    this.#announceDriver(room);
+  }
+
+  driverOf(roomId: string): MemberId | undefined {
+    return this.#rooms.get(roomId)?.driver;
+  }
+
+  #announceDriver(room: Room): void {
+    const message: ServerMessage = { kind: 'driver', id: room.driver ?? null };
+    const text = encode(message);
+    // Everyone, the new driver included: one announcement, so nobody can hold
+    // a different idea of who has it.
+    for (const occupant of room.occupants.values()) occupant.sink.send(text);
+  }
+
+  /**
+   * A whole state: remembered for joiners, then passed on.
+   *
+   * Refused from anyone but the driver, which makes "one screen" an invariant
+   * rather than an agreement. A client that has not taken the wheel yet and
+   * sends anyway is ignored rather than corrected — it will take it and send
+   * again, and TCP keeps those in order.
+   */
   relayState(roomId: string, from: MemberId, payload: unknown): void {
     const room = this.#rooms.get(roomId);
-    if (room === undefined) return;
+    if (room === undefined || room.driver !== from) return;
     room.lastState = payload;
     this.#broadcast(room, from, { kind: 'state', from, payload });
   }
@@ -117,7 +171,7 @@ export class Rooms {
   /** A signal: passed on and forgotten. */
   relaySignal(roomId: string, from: MemberId, seq: number, payload: unknown): void {
     const room = this.#rooms.get(roomId);
-    if (room === undefined) return;
+    if (room === undefined || room.driver !== from) return;
     this.#broadcast(room, from, { kind: 'signal', from, seq, payload });
   }
 

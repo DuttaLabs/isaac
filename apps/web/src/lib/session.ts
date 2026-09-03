@@ -98,7 +98,7 @@ export interface SessionHandlers {
    * its design rather than wait for someone else's, and what stops a joiner
    * broadcasting their own doublet over a meeting already in progress.
    */
-  onWelcome?(members: readonly Member[]): void;
+  onWelcome?(members: readonly Member[], driving: boolean): void;
   onState?(payload: unknown, from: MemberId | null): void;
   onSignal?(payload: unknown, from: MemberId): void;
 }
@@ -108,11 +108,17 @@ export interface Session {
   readonly room?: string;
   readonly you?: MemberId;
   readonly members: readonly Member[];
+  /** Whose screen the meeting is looking at. */
+  readonly driver?: MemberId;
+  /** Whether that is us — the only state in which anything is published. */
+  readonly driving: boolean;
   /** Why the last attempt failed, in the relay's own words. */
   readonly problem?: string;
   readonly serverUrl: string;
   join(room: string, name: string): void;
   leave(): void;
+  /** Take the wheel. The relay decides, so this asks rather than asserts. */
+  take(): void;
   sendState(state: SessionState): void;
   sendSignal(payload: unknown): void;
 }
@@ -136,6 +142,7 @@ export function useSession(handlers: SessionHandlers): Session {
   const [room, setRoom] = useState<string | undefined>(undefined);
   const [you, setYou] = useState<MemberId | undefined>(undefined);
   const [members, setMembers] = useState<readonly Member[]>([]);
+  const [driver, setDriver] = useState<MemberId | undefined>(undefined);
   const [problem, setProblem] = useState<string | undefined>(undefined);
 
   const socket = useRef<WebSocket | undefined>(undefined);
@@ -158,6 +165,7 @@ export function useSession(handlers: SessionHandlers): Session {
     setRoom(undefined);
     setYou(undefined);
     setMembers([]);
+    setDriver(undefined);
     lastSeen.current.clear();
   }, []);
 
@@ -199,7 +207,11 @@ export function useSession(handlers: SessionHandlers): Session {
             setRoom(message.room);
             setYou(message.you);
             setMembers(message.members);
-            latest.current.onWelcome?.(message.members);
+            setDriver(message.driver ?? undefined);
+            latest.current.onWelcome?.(message.members, message.driver === message.you);
+            return;
+          case 'driver':
+            setDriver(message.id ?? undefined);
             return;
           case 'joined':
             setMembers((present) => [...present, message.member]);
@@ -232,6 +244,7 @@ export function useSession(handlers: SessionHandlers): Session {
         setRoom(undefined);
         setYou(undefined);
         setMembers([]);
+        setDriver(undefined);
         // A relay that refused us has already said why; do not overwrite it
         // with the close that followed.
         setStatus((was) => (was === 'failed' ? 'failed' : 'offline'));
@@ -244,6 +257,12 @@ export function useSession(handlers: SessionHandlers): Session {
     },
     [],
   );
+
+  const take = useCallback(() => {
+    const ws = socket.current;
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    ws.send(encode({ kind: 'take' }));
+  }, []);
 
   const sendState = useCallback((state: SessionState) => {
     const ws = socket.current;
@@ -262,5 +281,19 @@ export function useSession(handlers: SessionHandlers): Session {
   // relay's heartbeat to notice a socket that will never answer again.
   useEffect(() => () => socket.current?.close(1000, 'unmounted'), []);
 
-  return { status, room, you, members, problem, serverUrl: SERVER_URL, join, leave, sendState, sendSignal };
+  return {
+    status,
+    room,
+    you,
+    members,
+    driver,
+    driving: you !== undefined && driver === you,
+    problem,
+    serverUrl: SERVER_URL,
+    join,
+    leave,
+    take,
+    sendState,
+    sendSignal,
+  };
 }

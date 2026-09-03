@@ -393,18 +393,17 @@ export function App() {
   const [remoteCamera, setRemoteCamera] = useState<CameraState | undefined>(undefined);
 
   const session = useSession({
-    onWelcome: (present) => {
-      if (present.length === 0) {
-        // First in: this design *is* the room's design. Clearing the record
-        // makes the effect below send it.
+    onWelcome: (_present, driving) => {
+      if (driving) {
+        // First in, so this design *is* the meeting's design. Clearing the
+        // record makes the effect below publish it.
         lastSynced.current = undefined;
         setAwaitingRoomState(false);
         return;
       }
+      // A passenger waits for the driver's screen rather than broadcasting its
+      // own over a meeting it has just walked into.
       setAwaitingRoomState(true);
-      // A room can have members and no state — two people joining an empty
-      // room at once — so waiting is given a deadline rather than being
-      // indefinite. Whoever's timer fires first seeds it.
       window.setTimeout(() => setAwaitingRoomState(false), 1500);
     },
     onState: (payload) => {
@@ -440,8 +439,11 @@ export function App() {
    * arrives only when they let go is a jump rather than a movement.
    */
   const shareCamera = useCallback(
-    (camera: CameraState) => session.sendSignal({ kind: 'camera', camera }),
-    [session.sendSignal],
+    (camera: CameraState) => {
+      if (!session.driving) return;
+      session.sendSignal({ kind: 'camera', camera });
+    },
+    [session.driving, session.sendSignal],
   );
 
   /**
@@ -456,6 +458,14 @@ export function App() {
       lastSynced.current = undefined;
       return;
     }
+    // Only the driver's screen is the meeting's screen. The relay enforces this
+    // too, and deliberately — but a passenger that keeps publishing into a void
+    // would also keep *recording* what it published, and would then stay silent
+    // on taking the wheel because it believed the room already had it.
+    if (!session.driving) {
+      lastSynced.current = undefined;
+      return;
+    }
     if (awaitingRoomState) return;
     const written = attempt(
       () => exportZmx(system, { glassCatalogs: GLASS_CATALOG_NAMES }).text,
@@ -466,7 +476,7 @@ export function App() {
     if (written.value === lastSynced.current) return;
     lastSynced.current = written.value;
     session.sendState({ design: written.value, fileName });
-  }, [system, fileName, session.status, session.sendState, awaitingRoomState]);
+  }, [system, fileName, session.status, session.driving, session.sendState, awaitingRoomState]);
 
   /**
    * Takes the panels back and forgets the window. Called both when the user

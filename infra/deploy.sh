@@ -57,6 +57,19 @@ REMOTE
 node_bin="$(ssh "$HOST" 'bash -lc ". \$HOME/.nvm/nvm.sh; nvm which default"')"
 remote_user="${HOST%%@*}"
 
+# Who may connect, from the gitignored deploy file. The unit already reads
+# /etc/isaac-session.env, so this is the only place the secret has to land.
+say "Access"
+# shellcheck disable=SC1091
+[ -f "$repo/infra/.env.deploy" ] && . "$repo/infra/.env.deploy"
+printf 'ISAAC_ORIGINS=%s\nISAAC_TOKEN=%s\n' "${ISAAC_ORIGINS:-}" "${VITE_SESSION_TOKEN:-}" \
+  | ssh "$HOST" "sudo tee /etc/isaac-session.env >/dev/null && sudo chmod 600 /etc/isaac-session.env"
+if [ -n "${VITE_SESSION_TOKEN:-}" ]; then
+  echo "  a token is required, and origins are ${ISAAC_ORIGINS:-any}"
+else
+  echo "  open to anyone (no infra/.env.deploy)"
+fi
+
 say "Service"
 sed -e "s|__NODE__|$node_bin|" -e "s|__USER__|$remote_user|" \
     "$repo/infra/systemd/$SERVICE.service" \
@@ -92,7 +105,9 @@ ssh "$HOST" "systemctl is-active $SERVICE" >/dev/null || {
 # a browser takes. A check run on the server would miss DNS, the certificate and
 # the proxy — which is most of what a deploy can break.
 scp -q "$repo/infra/smoke.mjs" "$HOST:$REMOTE_DIR/"
-if ! node "$repo/infra/smoke.mjs" "wss://$DOMAIN/"; then
+smoke_url="wss://$DOMAIN/"
+[ -n "${VITE_SESSION_TOKEN:-}" ] && smoke_url="wss://$DOMAIN/?t=$VITE_SESSION_TOKEN"
+if ! node "$repo/infra/smoke.mjs" "$smoke_url"; then
   echo "  (falling back to running it on the server)"
-  ssh "$HOST" "bash -lc '. \$HOME/.nvm/nvm.sh && cd $REMOTE_DIR && node smoke.mjs wss://$DOMAIN/'"
+  ssh "$HOST" "bash -lc '. \$HOME/.nvm/nvm.sh && cd $REMOTE_DIR && node smoke.mjs \"$smoke_url\"'"
 fi

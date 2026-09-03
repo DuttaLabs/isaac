@@ -21,10 +21,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { CameraState } from './panel-settings.ts';
 
+const env = import.meta.env as Record<string, string | undefined>;
+
 /** Overridable per deployment; the hostname is never written into the source. */
-const SERVER_URL: string =
-  (import.meta.env as Record<string, string | undefined>)['VITE_SESSION_URL'] ??
-  'wss://api.isaacoptics.com/';
+const SERVER_URL: string = env['VITE_SESSION_URL'] ?? 'wss://api.isaacoptics.com/';
+
+/**
+ * The shared secret the relay asks for, if this build was given one.
+ *
+ * In the query string because the WebSocket API cannot set headers, and there
+ * is nowhere else to put it. It is a secret only because the app itself sits
+ * behind a login — the two protections are one protection. A build without one
+ * connects without one, which is what a public Isaac will do.
+ */
+const TOKEN: string | undefined = env['VITE_SESSION_TOKEN'] || undefined;
+
+function serverUrlWithToken(): string {
+  if (TOKEN === undefined) return SERVER_URL;
+  const url = new URL(SERVER_URL);
+  url.searchParams.set('t', TOKEN);
+  return url.toString();
+}
 
 export type SessionStatus = 'offline' | 'connecting' | 'joined' | 'failed';
 
@@ -214,7 +231,7 @@ export function useSession(handlers: SessionHandlers): Session {
       setProblem(undefined);
       setStatus('connecting');
 
-      const ws = new WebSocket(SERVER_URL);
+      const ws = new WebSocket(serverUrlWithToken());
       socket.current = ws;
 
       ws.addEventListener('open', () => {

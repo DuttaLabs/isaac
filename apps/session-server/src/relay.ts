@@ -20,6 +20,27 @@ import { Rooms, send, type Sink } from './rooms.ts';
 export const JOIN_TIMEOUT_MS = 10_000;
 export const HEARTBEAT_MS = 30_000;
 
+/**
+ * Who may connect. Both are optional, and absent means "anybody" — which is
+ * right for development and for a relay that is meant to be public.
+ */
+export interface Access {
+  /**
+   * Exact origins a browser may connect from. A browser always sends `Origin`
+   * and cannot forge it, so this genuinely stops a page on another site from
+   * opening a socket here. It stops nothing that is not a browser: `curl` will
+   * send whatever origin it likes, which is why the token exists as well.
+   */
+  readonly origins?: readonly string[];
+  /**
+   * A shared secret in the query string. The WebSocket API cannot set headers,
+   * so there is nowhere else to put one. It is baked into the app at build
+   * time, and is only a secret because the app itself is behind a login — the
+   * two protections are one protection, and removing either removes both.
+   */
+  readonly token?: string;
+}
+
 export interface Relay {
   readonly httpServer: Server;
   /** Members and rooms, for the health endpoint and for tests. */
@@ -43,7 +64,7 @@ interface Session {
   alive: boolean;
 }
 
-export function createRelay(log: Log = defaultLog): Relay {
+export function createRelay(log: Log = defaultLog, access: Access = {}): Relay {
   const rooms = new Rooms();
   const started = Date.now();
 
@@ -64,7 +85,30 @@ export function createRelay(log: Log = defaultLog): Relay {
     response.end('not found\n');
   });
 
-  const wss = new WebSocketServer({ server: httpServer });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    /**
+     * Refused before the socket opens rather than after, so a rejected caller
+     * gets an HTTP 401 it can read instead of a connection that closes for no
+     * stated reason.
+     */
+    verifyClient: ({ origin, req }, done) => {
+      if (access.origins !== undefined && !access.origins.includes(origin ?? '')) {
+        log('refused', { why: 'origin', origin: origin ?? null });
+        done(false, 403, 'origin not allowed');
+        return;
+      }
+      if (access.token !== undefined) {
+        const url = new URL(req.url ?? '/', 'http://placeholder');
+        if (url.searchParams.get('t') !== access.token) {
+          log('refused', { why: 'token' });
+          done(false, 401, 'token required');
+          return;
+        }
+      }
+      done(true);
+    },
+  });
   const sessions = new WeakMap<WebSocket, Session>();
 
   const sinkFor = (socket: WebSocket): Sink => ({

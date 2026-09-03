@@ -1,10 +1,13 @@
 import WebSocket from '/Users/subratadutta/Documents/javascript/isaac/node_modules/ws/index.js';
+
+/** The relay may be restricted to the app's own origin. */
+const ORIGIN = process.env.ISAAC_ORIGIN ?? 'https://isaacoptics.com';
 const URL = 'wss://api.isaacoptics.com/';
 const room = `drv-${Math.random().toString(36).slice(2, 8)}`;
 const fail = (w) => { console.error('FAIL ' + w); process.exit(1); };
 
 const open = (name) => new Promise((res) => {
-  const ws = new WebSocket(URL); const inbox = []; let wake;
+  const ws = new WebSocket(URL, { origin: ORIGIN }); const inbox = []; let wake;
   ws.on('message', (d) => { inbox.push(JSON.parse(d.toString())); wake?.(); });
   ws.on('open', () => { ws.send(JSON.stringify({ kind: 'join', version: 1, room, name }));
     res({ ws, send: (m) => ws.send(JSON.stringify(m)),

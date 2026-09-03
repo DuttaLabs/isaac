@@ -22,3 +22,10 @@ ZMX files/myZMXfiles/
 # Lens files collected from published papers — third-party supplementary
 # material, kept on disk for testing Isaac against real designs, not pushed.
 ZMX files/Papers/
+
+# Deploy secrets: the shared relay token.
+infra/.env.deploy
+
+# Local environment: never committed. Vite reads apps/web/.env.local.
+.env.local
+.env.*.local

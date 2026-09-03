@@ -733,9 +733,27 @@ function useOrbitAbout(
       point.copy(pivot.current).add(arm);
     };
 
+    /**
+     * The fingers currently down. A tablet has no middle button, so one finger
+     * has to mean orbit — but two fingers mean pinch and pan, which are
+     * `OrbitControls`' own touch gestures and must be left alone.
+     */
+    const fingers = new Set<number>();
+
     const down = (event: PointerEvent): void => {
-      // Left is pan, and OrbitControls still owns it.
-      if (event.button === 0) {
+      if (event.pointerType === 'touch') {
+        fingers.add(event.pointerId);
+        // A second finger arriving ends the orbit and hands the gesture over,
+        // so a pinch that begins with one finger down still works.
+        if (fingers.size > 1) {
+          if (turning) {
+            turning = false;
+            onGesture('end');
+          }
+          return;
+        }
+      } else if (event.button === 0) {
+        // Left is pan, and OrbitControls still owns it.
         return;
       }
       turning = true;
@@ -777,6 +795,7 @@ function useOrbitAbout(
     };
 
     const stop = (event: PointerEvent): void => {
+      fingers.delete(event.pointerId);
       if (!turning) {
         return;
       }

@@ -9,6 +9,9 @@
 
 import WebSocket from 'ws';
 
+/** The relay may be restricted to the app's own origin. */
+const ORIGIN = process.env.ISAAC_ORIGIN ?? 'https://isaacoptics.com';
+
 const url = process.argv[2] ?? 'wss://api.isaacoptics.com/';
 const room = `smoke-${Math.random().toString(36).slice(2, 8)}`;
 const design = { zmx: 'VERS 1\nNAME A DOUBLET\n', filename: 'doublet.zmx' };
@@ -21,7 +24,7 @@ const timer = setTimeout(() => fail('timed out after 15s'), 15_000);
 
 const open = (name) =>
   new Promise((resolve, reject) => {
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(url, { origin: ORIGIN });
     const inbox = [];
     let wake;
     socket.on('message', (data) => {
@@ -63,6 +66,15 @@ const state = await grace.next();
 if (state.kind !== 'state') fail(`expected state, got ${state.kind}`);
 if (JSON.stringify(state.payload) !== JSON.stringify(design)) fail('the design was altered in transit');
 console.log('  ok   a design crossed unaltered');
+
+// A passenger is not relayed, so Grace takes the wheel first — and both ends
+// are told, by the relay, in one announcement.
+grace.send({ kind: 'take' });
+const toAda = await ada.next();
+const toGrace = await grace.next();
+if (toAda.kind !== 'driver' || toGrace.kind !== 'driver') fail('the handover was not announced');
+if (toAda.id !== toGrace.id) fail('the two were told different drivers');
+console.log('  ok   the wheel changed hands, announced identically');
 
 grace.send({ kind: 'signal', seq: 1, payload: { camera: [1, 2, 3] } });
 const signal = await ada.next();

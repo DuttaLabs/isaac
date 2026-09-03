@@ -161,3 +161,67 @@ test('health reports what the relay is holding', async () => {
     await relay.close();
   }
 });
+
+test('an origin the relay does not know is refused before the socket opens', async () => {
+  const relay = createRelay(() => {}, { origins: ['https://isaacoptics.com'] });
+  await new Promise<void>((resolve) => relay.httpServer.listen(0, '127.0.0.1', resolve));
+  const { port } = relay.httpServer.address() as AddressInfo;
+  try {
+    const wrong = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'https://not-isaac.example' });
+    const code = await new Promise<number>((resolve) => {
+      wrong.on('error', () => {});
+      wrong.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
+    });
+    assert.equal(code, 403, 'refused with a status a caller can read');
+
+    const right = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'https://isaacoptics.com' });
+    await new Promise<void>((resolve, reject) => {
+      right.on('open', resolve);
+      right.on('error', reject);
+    });
+    right.close();
+  } finally {
+    await relay.close();
+  }
+});
+
+test('a token, when one is required, is required', async () => {
+  const relay = createRelay(() => {}, { token: 'a-shared-secret' });
+  await new Promise<void>((resolve) => relay.httpServer.listen(0, '127.0.0.1', resolve));
+  const { port } = relay.httpServer.address() as AddressInfo;
+  try {
+    for (const query of ['', '?t=', '?t=wrong']) {
+      const refused = new WebSocket(`ws://127.0.0.1:${port}/${query}`);
+      const code = await new Promise<number>((resolve) => {
+        refused.on('error', () => {});
+        refused.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
+      });
+      assert.equal(code, 401, `expected ${JSON.stringify(query)} to be refused`);
+    }
+
+    const allowed = new WebSocket(`ws://127.0.0.1:${port}/?t=a-shared-secret`);
+    await new Promise<void>((resolve, reject) => {
+      allowed.on('open', resolve);
+      allowed.on('error', reject);
+    });
+    allowed.close();
+  } finally {
+    await relay.close();
+  }
+});
+
+test('with neither set, anybody may connect — which is what development wants', async () => {
+  const relay = createRelay(() => {});
+  await new Promise<void>((resolve) => relay.httpServer.listen(0, '127.0.0.1', resolve));
+  const { port } = relay.httpServer.address() as AddressInfo;
+  try {
+    const anyone = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'https://anywhere.example' });
+    await new Promise<void>((resolve, reject) => {
+      anyone.on('open', resolve);
+      anyone.on('error', reject);
+    });
+    anyone.close();
+  } finally {
+    await relay.close();
+  }
+});

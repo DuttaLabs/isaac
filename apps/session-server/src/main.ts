@@ -8,7 +8,15 @@ import { createRelay } from './relay.ts';
 const PORT = Number(process.env['PORT'] ?? 3000);
 const HOST = process.env['HOST'] ?? '127.0.0.1';
 
-const relay = createRelay();
+/**
+ * Read from the environment, never from the source. Absent means open, which is
+ * what a development machine wants and what a public relay will want later.
+ */
+const origins = process.env['ISAAC_ORIGINS']?.split(',').map((o) => o.trim()).filter(Boolean);
+const relay = createRelay(undefined, {
+  origins: origins?.length ? origins : undefined,
+  token: process.env['ISAAC_TOKEN'] || undefined,
+});
 
 relay.httpServer.listen(PORT, HOST, () => {
   console.log(JSON.stringify({ at: new Date().toISOString(), event: 'listening', host: HOST, port: PORT }));

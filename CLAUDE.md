@@ -297,6 +297,52 @@ React 19 + Vite. The UI talks to the engine only through `OpticalSystem`, `trace
   because such a profile no longer closes on the axis, the two faces are not welded into one solid,
   for the same reason a transform between them is not.
 
+- **Six rules the aperture icon settled, which every schematic here now follows.**
+  They came out of one long pass over that icon and are written down so the next
+  component does not rediscover them.
+
+  **Floor, ceiling, and a real proportion in between.** Draw the true proportion
+  where it can be seen, and clamp at both ends where reality runs off what a glyph
+  that size can show — then say which case it is. Applied three times over: a
+  vane's width, a hole's radius, a ring's thickness. Real designs reach both ends,
+  and two proved it: a spatial-filter pinhole is five microns in ten millimetres,
+  one part in two thousand, and LSST's thinnest baffle is a ring four parts in a
+  thousand thick. State a limit as the thing that has to stay visible — a *ring
+  thickness*, not a fraction of the disc — so it survives the glyph being resized.
+
+  **Say when the drawing stops telling the truth.** A clamped decenter is a lie
+  about position, so the icon marks the edge the aperture left through. Without
+  it, Zemax's off-axis Gregorian — 55 mm cut 100 mm off axis — simply looked badly
+  drawn rather than far away.
+
+  **One geometry, many presentations.** `ApertureArtwork` is shared by the table
+  icon and the dialog preview while their sizes are not, and `ApertureIcon` and
+  `AperturePreview` are separate components on purpose. Size and surroundings are
+  presentation and may diverge; *where a decentered obscuration sits* may not. It
+  is the same rule as `Surface.blocksAt` being the single definition of a
+  boundary, and the same failure if broken.
+
+  **A picture that follows the edit beats a paragraph.** The dialog led with prose
+  explaining what an aperture is; it now leads with the aperture, drawn large,
+  changing as the numbers below it are typed. No sentence can do that.
+
+  **Name the viewpoint.** A 2-D picture of a 3-D thing must say which side it is
+  seen from or two views will quietly disagree. The icon draws the surface as the
+  3-D home camera sees it — **+x left, +y up** — which is the *opposite hand* from
+  the X–Y layout, and that is deliberate and documented rather than an accident.
+  A bare sign flip is never the fix: there is no viewpoint with +x right, +y up in
+  which a right-handed roll looks clockwise, so flipping a rotation without its
+  decenter draws the tilt from one side and the position from the other.
+
+  **A failure must not look like a success.** The recent-files store swallowed
+  every error, so a missing object store, a refused write, a rejected clone and
+  "nothing opened yet" all produced one screen: names with no handles and no
+  reason. It took a console session to tell apart what should have been four
+  different messages. This is the same discipline as *refuse rather than
+  approximate* on the reader's side, and it applies to any silent fallback — a
+  broken file picker and a working one must not produce the same result.
+
+
 - **A surface's shape is two columns and a window.** Radius and conic sit side by side, because together they are the shape: the radius is where it starts, the conic is how it departs from a sphere. The eight aspheric coefficients would be eight more columns, pushing radius, thickness and glass off the side of the screen for numbers that are set once and then optimized — so the table keeps one cell summarizing the series and the terms live in a `<dialog>` (`AsphericCoefficients.tsx`). `showModal()` is what makes it modal; the `open` attribute gives no focus trap, no backdrop, and no Escape. Editing there is live, exactly like a table cell, so the layout and plots follow along behind the open dialog.
 - Plots are hand-drawn SVG (`lib/plot.ts` has the scale and tick helpers); there is no charting dependency.
 - **Cycling the fields** (the button under the Display column) shows the checked fields one at a time, 750 ms each, so a bundle can be told from its neighbours when several cross. It drives the Display checkboxes themselves, so the row shows which field is up — which is why `App` holds the selection to put back when it stops. It ends on the button (restoring), on the design changing underfoot (the saved flags no longer line up), or on a checkbox the user clicks mid-cycle (keeping what is on screen, since that is what they just edited). The button is only *disabled* below two checked fields: cycling leaves one checked, so a live-count guard would let it switch on and then refuse to switch off.

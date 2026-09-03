@@ -2236,6 +2236,24 @@ input.coefficient {
 }
 
 /*
+   The element picked in a layout view.
+
+   A *selection*, not the row highlight: it is set by a click and stays until it
+   is cleared, so it has to read as a state the element is in rather than as
+   something following the cursor. Hence a ring around the whole cell — which on
+   a cemented doublet is one cell spanning three rows, and correctly encloses the
+   lot.
+
+   `inset` so it does not change the cell's size and shuffle the columns, and on
+   the same `--surface-highlight` the row mark uses, because it is the same idea:
+   this is the one you mean.
+*/
+.element-cell.is-selected {
+  box-shadow: inset 0 0 0 2px var(--surface-highlight);
+  background: color-mix(in srgb, var(--surface-highlight) 12%, transparent);
+}
+
+/*
  * The cell is one stack — name over swatches — with the switch laid over its
  * left edge rather than placed in the flow beside it. That is what keeps the
  * colors centered in the *column* on every row: an element has a switch and an

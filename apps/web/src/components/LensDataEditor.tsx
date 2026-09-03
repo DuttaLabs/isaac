@@ -86,6 +86,7 @@ export function LensDataEditor({
   onChange,
   onHighlight,
   highlightedSurface,
+  selectedElement,
   elementStyles,
   onElementStyle,
   choice,
@@ -103,6 +104,11 @@ export function LensDataEditor({
   onHighlight: (surfaceIndex: number | undefined) => void;
   /** The surface currently pointed out, which the arrow keys step through. */
   highlightedSurface: number | undefined;
+  /**
+   * The element picked in a layout view, by its front surface's id. A
+   * *selection*, so unlike the highlight it stays put when the pointer moves.
+   */
+  selectedElement?: string | undefined;
   choice?: PanelChoice;
 }) {
   const [error, setError] = useState<string | undefined>(undefined);
@@ -323,7 +329,14 @@ export function LensDataEditor({
     const isMirror = element.kind === 'MIRROR';
     const shown = !isHidden(element, elementStyles);
     return (
-      <td className="element-cell" rowSpan={elementRowSpan(element)}>
+      <td
+        // Picked in a layout view. Marked on the cell rather than on the row,
+        // because a selection names the *element* — on a cemented doublet that
+        // is one cell spanning three rows, and lighting a row would say the
+        // wrong thing about which of them was chosen.
+        className={element.key === selectedElement ? 'element-cell is-selected' : 'element-cell'}
+        rowSpan={elementRowSpan(element)}
+      >
         <div className="element-body">
           {/* In or out of the light. A switch rather than a checkbox because it
               turns one thing on and off, and it is a thing done *to* this

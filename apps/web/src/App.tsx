@@ -20,7 +20,9 @@ import {
 import { defaultSystem, emptySystem } from './lib/default-system.ts';
 import { renameSystem } from './lib/edits.ts';
 import {
+  elementAt,
   elementColorsBySurface,
+  findElements,
   hiddenSurfaceIndices,
   surfaceColorsBySurface,
   systemAsTraced,
@@ -273,8 +275,52 @@ export function App() {
   // Which surface the pointer or the keyboard is currently on in the table. The
   // editor and the layout are siblings, so the link between them lives here.
   const [highlightedSurface, setHighlightedSurface] = useState<number | undefined>(undefined);
+  /**
+   * The element the user has *picked*, by its front surface's id — as opposed to
+   * the one the pointer happens to be over.
+   *
+   * A selection rather than a highlight, and the difference is the point: a
+   * highlight follows the cursor and is gone the moment it moves, while this
+   * survives until it is cleared deliberately. That is what makes it something
+   * an operation can be performed *on*, which is where element-based editing
+   * starts.
+   *
+   * Keyed by surface **id**, not by index. An index is a position in a list that
+   * an insert three rows above would silently shift, and a selection quietly
+   * moving to a different lens is worse than one that goes stale.
+   */
+  const [selectedElement, setSelectedElement] = useState<string | undefined>(undefined);
 
   const system = history.stack[history.index]!;
+  /**
+   * Elements as the table sees them, so a click in the 3-D view can be turned
+   * into the thing the Element column names.
+   *
+   * The view reports a *surface*; a cemented doublet is two bodies and one
+   * element, so clicking either half has to select the whole lens. `elementAt`
+   * is the same answer the table gives, and asking it here is what keeps the two
+   * from disagreeing.
+   */
+  const elements = useMemo(() => findElements(system), [system]);
+  /*
+     Memoized, and the deps are complete: `elements` is itself memoized on the
+     system and the setter is stable. The 3-D view takes this as a dependency of
+     the listener it binds for Escape, so a fresh function every render would
+     tear that listener down and rebuild it on every keystroke elsewhere in the
+     app.
+
+     Correct deps rather than `[]` — an empty list here would capture the first
+     render's `elements` and quietly select against a design that had since
+     changed, which is the same trap the file picker fell into.
+  */
+  const selectSurface = useCallback(
+    (surfaceIndex: number | undefined): void => {
+      setSelectedElement(
+        surfaceIndex === undefined ? undefined : elementAt(elements, surfaceIndex)?.key,
+      );
+    },
+    [elements],
+  );
   const canUndo = history.index > 0;
   const canRedo = history.index < history.stack.length - 1;
 
@@ -307,6 +353,7 @@ export function App() {
       // one system — two files both name their first surface `surf-1`. Carrying
       // them over would paint a new design in the last one's colors.
       setElementStyles({});
+      setSelectedElement(undefined);
     },
     [pushSystem],
   );
@@ -495,6 +542,7 @@ export function App() {
       setFileText(decodeZmx(bytes));
       // A different design brings different elements; see `startFrom`.
       setElementStyles({});
+      setSelectedElement(undefined);
       // A file brings its own field list, so flags set against the previous
       // design mean nothing against this one. Everything starts visible.
       setFieldVisibility([]);
@@ -853,6 +901,7 @@ export function App() {
               onChange={pushSystem}
               onHighlight={setHighlightedSurface}
               highlightedSurface={highlightedSurface}
+              selectedElement={selectedElement}
               elementStyles={elementStyles}
               onElementStyle={setElementStyle}
               choice={choice}
@@ -894,6 +943,7 @@ export function App() {
             elementColors={elementColors}
             surfaceColors={surfaceColors}
             highlightedSurface={highlightedSurface}
+            onSelectSurface={selectSurface}
           />
         );
       case 'rayFan':

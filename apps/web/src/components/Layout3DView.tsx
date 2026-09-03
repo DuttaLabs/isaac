@@ -248,6 +248,7 @@ export function Layout3DView({
   overlay,
   camera: savedCamera,
   onCamera,
+  onSelectSurface,
 }: {
   system: OpticalSystem;
   traces: readonly LayoutTrace[];
@@ -266,6 +267,16 @@ export function Layout3DView({
   surfaceColors?: ReadonlyMap<number, string>;
   /** Changes when the user asks for the view back, and at nothing else. */
   resetSignal: number;
+  /**
+   * Reports the surface index of an element the user clicked, and `undefined`
+   * when they clicked past everything or pressed Escape.
+   *
+   * An *index* rather than an element, because this view knows about bodies and
+   * surfaces and deliberately not about the table's idea of an element: a
+   * cemented doublet is two bodies and one element, and which is which is
+   * `lib/elements.ts`'s answer to give. This says what was touched.
+   */
+  onSelectSurface?: (surfaceIndex: number | undefined) => void;
   /**
    * Controls drawn over the picture — the per-plot field filter. Taken as a
    * prop rather than wrapped around this component from outside, because a box
@@ -295,6 +306,28 @@ export function Layout3DView({
    */
   const resize = useMemo(() => (view ? { polyfill: view.ResizeObserver } : undefined), [view]);
 
+  /*
+     Escape clears the selection.
+
+     Bound to *this panel's own document*, not the app's: the panel may be in the
+     second window, whose key events never reach the opener's listeners. That is
+     the same rule the lens table's keydown, the transform dialog's resize and
+     R3F's own `ResizeObserver` all follow here.
+  */
+  useEffect(() => {
+    const owner = mount.current?.ownerDocument;
+    if (owner === undefined || onSelectSurface === undefined) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        onSelectSurface(undefined);
+      }
+    };
+    owner.addEventListener('keydown', onKey);
+    return () => owner.removeEventListener('keydown', onKey);
+  }, [view, onSelectSurface]);
+
   const scene = useMemo(
     () => buildOpticalScene(system, traces, { defaultSemiDiameter, hiddenSurfaces }),
     [system, traces, defaultSemiDiameter],
@@ -322,6 +355,10 @@ export function Layout3DView({
           // pinned and a fitted position would be stomped back on the next
           // re-render. Where the camera goes is `Controls`' business alone.
           camera={{ fov: tweaks.fieldOfView }}
+          // A click that met nothing. R3F reports it separately from `onClick`,
+          // which is exactly the gesture for "never mind" — the same thing the
+          // context menus treat a click outside as.
+          onPointerMissed={() => onSelectSurface?.(undefined)}
           // A middle click starts autoscroll in some browsers, which fights the
           // orbit gesture; the canvas has no use for a context menu either.
           onPointerDown={(event) => {
@@ -357,7 +394,17 @@ export function Layout3DView({
           {scene.elements.map((element) => {
             const opacity = element.crossed ? tweaks.crossedElementOpacity : tweaks.elementOpacity;
             return (
-              <mesh key={`element-${element.frontIndex}`} geometry={element.geometry}>
+              <mesh
+                key={`element-${element.frontIndex}`}
+                geometry={element.geometry}
+                // `stopPropagation` because the raycaster reports every mesh
+                // along the ray, near to far: without it a click travelled
+                // through the front lens and selected whatever stood behind it.
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectSurface?.(element.frontIndex);
+                }}
+              >
                 <meshStandardMaterial
                   // A crossed element keeps the fault color whatever the user
                   // chose: it is the only thing saying the solid cannot be made.

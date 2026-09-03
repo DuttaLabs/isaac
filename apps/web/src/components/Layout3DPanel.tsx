@@ -46,6 +46,7 @@ interface Props {
   hiddenSurfaces: ReadonlySet<number>;
   surfaceColors: ReadonlyMap<number, string>;
   highlightedSurface: number | undefined;
+  onSelectSurface?: (surfaceIndex: number | undefined) => void;
 }
 
 export function Layout3DPanel({
@@ -60,6 +61,7 @@ export function Layout3DPanel({
   hiddenSurfaces,
   surfaceColors,
   highlightedSurface,
+  onSelectSurface,
 }: Props) {
   /** See `Layout2DPanel`: a signal from this panel's button to its own picture. */
   const [resetSignal, setResetSignal] = useState(0);
@@ -134,6 +136,7 @@ export function Layout3DPanel({
                 traces={traces.value}
                 defaultSemiDiameter={Number.isFinite(pupilRadius) ? pupilRadius : 10}
                 highlightedSurface={highlightedSurface}
+                onSelectSurface={onSelectSurface}
                 elementColors={elementColors}
                 hiddenSurfaces={hiddenSurfaces}
                 surfaceColors={surfaceColors}

@@ -980,6 +980,14 @@ function Controls({
   // record of the user having set anything up.
   useAfterFirst(() => {
     touched.current = false;
+    // Not `takeControl`, which would mark the view as framed by hand — this is
+    // the opposite, a hand-back. But it is still somebody deciding what to
+    // look at, so it must stop following, or the fit is eased away again a
+    // frame later and the button appears to do nothing. Whether it appeared to
+    // work at all depended on whether a pose happened to be in flight, which
+    // is what made it look intermittent rather than broken.
+    following.current = false;
+    followTarget.current = undefined;
     report.current?.(undefined);
     latestFit.current();
   }, [resetSignal, projection, fitMargin]);
@@ -1142,6 +1150,8 @@ function Controls({
   /** Scratch for the easing below; allocating per frame would be sixty a second. */
   const followPosition = useMemo(() => new Vector3(), []);
   const followLookAt = useMemo(() => new Vector3(), []);
+  const followArm = useMemo(() => new Vector3(), []);
+  const followWantedArm = useMemo(() => new Vector3(), []);
 
   // Damping only settles if the controls are stepped every frame.
   useFrame((_, delta) => {
@@ -1176,8 +1186,44 @@ function Controls({
         camera.zoom = wanted.zoom;
         followTarget.current = undefined;
       } else {
-        camera.position.lerp(followPosition, alpha);
+        // Ease along the sphere the camera orbits on, not straight through it.
+        //
+        // A camera being swung around a lens travels on an arc, and a straight
+        // line between two points of an arc is a *chord* — it passes inside.
+        // Interpolating the position directly therefore dives the follower
+        // toward the subject and back out again, which reads as the lens
+        // surging forward on a rubber band. Splitting the arm into a direction
+        // and a length, and easing those separately, keeps the radius honest.
+        followArm.copy(camera.position).sub(orbit.target);
+        followWantedArm.copy(followPosition).sub(followLookAt);
+        const reachNow = followArm.length();
+        const reachWanted = followWantedArm.length();
+
         orbit.target.lerp(followLookAt, alpha);
+
+        if (reachNow > 1e-9 && reachWanted > 1e-9) {
+          followArm.divideScalar(reachNow);
+          followWantedArm.divideScalar(reachWanted);
+          // Lerp the two unit vectors and re-normalize. True slerp would be
+          // exact; over the few degrees a frame covers the difference is far
+          // below a pixel, and it is the *re-normalizing* that matters — that
+          // is what puts the camera back on the sphere.
+          followArm.lerp(followWantedArm, alpha);
+          const length = followArm.length();
+          if (length > 1e-9) {
+            followArm.divideScalar(length);
+            camera.position
+              .copy(orbit.target)
+              .addScaledVector(followArm, reachNow + (reachWanted - reachNow) * alpha);
+          } else {
+            // The two directions are opposite, so there is no short way round
+            // and no plane to turn in. Straight through is the honest answer.
+            camera.position.lerp(followPosition, alpha);
+          }
+        } else {
+          // Degenerate: the camera is sitting on what it is looking at.
+          camera.position.lerp(followPosition, alpha);
+        }
         camera.zoom += (wanted.zoom - camera.zoom) * alpha;
       }
       camera.updateProjectionMatrix();

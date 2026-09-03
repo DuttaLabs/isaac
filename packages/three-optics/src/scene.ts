@@ -102,6 +102,21 @@ export interface OpticalScene {
   surfaces: SurfaceShellGeometry[];
   /** The parts of surfaces that stop light: drawn opaque and black. */
   obscurations: ObscurationGeometry[];
+  /**
+   * The faces welded into a glass body, each on its own — the geometry that
+   * exists nowhere else in this scene.
+   *
+   * A lens's two surfaces are revolved into one closed solid, so neither has a
+   * mesh of its own and nothing can be said about one without saying it about
+   * the whole lens. That is the right way to *draw* glass and the wrong way to
+   * *point at* a row: in 2-D every surface has a profile of its own and the
+   * table's highlight strokes exactly one of them.
+   *
+   * These are built for that, and are expected to be drawn one at a time and
+   * only when asked for. They lie exactly on the body's own face, so anything
+   * drawing one has to bias it forward or the two will fight.
+   */
+  faceShells: SurfaceShellGeometry[];
   rays: RayBundleGeometry[];
   /** Axis-aligned extent of everything drawn, for framing a camera. */
   bounds: { min: [number, number, number]; max: [number, number, number] };
@@ -297,13 +312,14 @@ export function buildOpticalScene(
   }
 
   const surfaces: SurfaceShellGeometry[] = [];
+  const faceShells: SurfaceShellGeometry[] = [];
   const obscurations: ObscurationGeometry[] = [];
   // From 0, so a finite object plane is drawn like the image plane at the other
   // end. An object at infinity has no pose to build one on, and no plane either.
   for (let index = 0; index < system.surfaces.length; index += 1) {
-    if (consumed.has(index)) {
-      continue;
-    }
+    // A face welded into a body still gets its shell built, but kept apart: it
+    // is not part of the picture, only of what can be pointed at.
+    const isBodyFace = consumed.has(index);
     if (index === 0 && !Number.isFinite(system.vertexZAt(0))) {
       continue;
     }
@@ -335,7 +351,7 @@ export function buildOpticalScene(
     const obscuringOnly =
       blocked !== undefined && !surface.reflective && surface.type === 'STANDARD';
     if (!obscuringOnly) {
-      surfaces.push({
+      (isBodyFace ? faceShells : surfaces).push({
         surfaceIndex: index,
         geometry: needsAperturePatch(surface)
           ? placed(
@@ -353,7 +369,7 @@ export function buildOpticalScene(
       });
     }
 
-    if (blocked !== undefined) {
+    if (blocked !== undefined && !isBodyFace) {
       obscurations.push({ surfaceIndex: index, geometry: placed(blocked, system.poseAt(index)) });
     }
   }
@@ -363,6 +379,7 @@ export function buildOpticalScene(
   return {
     elements,
     surfaces,
+    faceShells,
     obscurations,
     rays,
     bounds: sceneBounds(system, traces, radiusOf),
@@ -372,6 +389,9 @@ export function buildOpticalScene(
       }
       for (const shell of surfaces) {
         shell.geometry.dispose();
+      }
+      for (const face of faceShells) {
+        face.geometry.dispose();
       }
       for (const blocked of obscurations) {
         blocked.geometry.dispose();

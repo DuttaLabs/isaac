@@ -479,3 +479,49 @@ test('a surface whose only job is to obscure is drawn as the obscuration alone',
   assert.ok(blocked.has(2));
   scene.dispose();
 });
+
+test("a lens's welded faces are drawn nowhere, and pointable-at separately", () => {
+  const scene = buildOpticalScene(singlet(), [], { defaultSemiDiameter: 25 });
+
+  // The two faces are revolved into one solid, so neither is among the shells:
+  // there is no geometry for either in the picture itself.
+  const drawn = scene.surfaces.map((shell) => shell.surfaceIndex);
+  assert.ok(!drawn.includes(1), 'the front face must not be drawn on its own');
+  assert.ok(!drawn.includes(2), 'nor the back');
+  assert.equal(scene.elements.length, 1);
+
+  // But each has a shell built for the table's highlight, which needs to point
+  // at one surface rather than at the lens containing it.
+  const faces = scene.faceShells.map((face) => face.surfaceIndex).sort();
+  assert.deepEqual(faces, [1, 2]);
+
+  // The two lists never name the same surface: a surface is drawn as part of a
+  // body or on its own, never both, or the highlight would fight the picture.
+  for (const face of scene.faceShells) {
+    assert.ok(!drawn.includes(face.surfaceIndex), `surface ${face.surfaceIndex} is in both lists`);
+  }
+  scene.dispose();
+});
+
+test('a face shell sits exactly on the face it stands for', () => {
+  // It is laid over the body rather than near it — which is why the view has to
+  // bias it forward in depth, and why it must not be built from anything but the
+  // same profile the solid was.
+  const scene = buildOpticalScene(singlet(), [], { defaultSemiDiameter: 25 });
+  const front = scene.faceShells.find((face) => face.surfaceIndex === 1);
+  assert.ok(front !== undefined);
+
+  const points = vertices(front.geometry);
+  assert.ok(points.length > 0);
+  const system = singlet();
+  const shape = system.surfaceAt(1).shape;
+  const vertexZ = system.vertexZAt(1);
+  for (const [x, y, z] of points) {
+    const sag = surfaceProfileSag(shape, Math.hypot(x, y));
+    assert.ok(
+      Math.abs(z - (vertexZ + sag)) < 1e-6,
+      `point at r=${Math.hypot(x, y).toFixed(3)} sits at z=${z}, not ${vertexZ + sag}`,
+    );
+  }
+  scene.dispose();
+});

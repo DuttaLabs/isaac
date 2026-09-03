@@ -376,6 +376,42 @@ export function Layout3DView({
             </mesh>
           ))}
 
+          {/*
+             The one face the table's cursor is on, laid over the solid it is
+             welded into.
+
+             A row names a *surface*, so the highlight has to be that surface and
+             not the lens containing it — front and back are different rows, and
+             lighting the whole body for either would answer a question nobody
+             asked. This is the exact counterpart of the 2-D view stroking one
+             profile heavier: revolved, that profile *is* this face.
+
+             Only ever one of them is built into the scene graph, and only while
+             a row is under the cursor. It lies exactly on the body's own face,
+             so it is biased forward hard and drawn last, the same treatment a
+             highlighted obscuration gets.
+          */}
+          {scene.faceShells
+            .filter((face) => face.surfaceIndex === highlightedSurface)
+            .map((face) => (
+              <mesh key={`face-${face.surfaceIndex}`} geometry={face.geometry} renderOrder={2}>
+                <meshStandardMaterial
+                  color={colors.highlight}
+                  roughness={0.35}
+                  metalness={0}
+                  side={DoubleSide}
+                  transparent
+                  // Nearly solid: it is read *through* the glass in front of it,
+                  // and a faint mark under a translucent body is no mark at all.
+                  opacity={0.92}
+                  depthWrite={false}
+                  polygonOffset
+                  polygonOffsetFactor={-4}
+                  polygonOffsetUnits={-16}
+                />
+              </mesh>
+            ))}
+
           {scene.surfaces.map((shell) => (
             <mesh key={`surface-${shell.surfaceIndex}`} geometry={shell.geometry}>
               {/* A mirror is shaded as what it is: opaque and metallic, so it

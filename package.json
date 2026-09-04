@@ -17,6 +17,7 @@
     "deploy": "./infra/deploy.sh && ./infra/deploy-web.sh",
     "deploy:relay": "./infra/deploy.sh",
     "deploy:web": "./infra/deploy-web.sh",
+    "help:usage": "node infra/usage.mjs",
     "server:logs": "ssh subrata@172.234.157.52 'sudo journalctl -u isaac-session -n 60 --no-pager -o cat'",
     "server:follow": "ssh subrata@172.234.157.52 'sudo journalctl -u isaac-session -f -o cat'"
   },

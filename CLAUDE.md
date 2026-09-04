@@ -29,7 +29,11 @@ TypeScript is pinned at the root (`typescript@^7`). Before that pin the repo sil
   changed, the server should understand the new client before the new client
   arrives. Both scripts verify themselves against the public URL afterwards, so
   a deploy that reports success has been checked from outside. `npm run
-  server:logs` and `server:follow` read the relay's journal.
+  server:logs` and `server:follow` read the relay's journal, and `npm run
+  help:usage` (optionally `-- -7d`) totals what the help assistant has cost from
+  the same journal — the Console's billing figure is current but its analytics
+  panels lag it by about a day, so this reads the per-request accounting the API
+  itself returned rather than waiting for a rollup.
 
   Secrets and knobs come from the gitignored `infra/.env.deploy`, which
   `deploy.sh` pipes into `/etc/isaac-session.env` — never echoed, and never

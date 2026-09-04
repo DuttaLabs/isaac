@@ -137,18 +137,28 @@ const TOOLS = [
   {
     name: 'highlight_surface',
     description:
-      "Draw the user's eye to one surface in the lens grid — it flashes and scrolls into view. " +
-      'Use this whenever an answer names a surface the user has to go and find. ' +
+      "Draw the user's eye to a row of the lens grid, or to one cell of it. The row lights up, " +
+      'and a named cell is marked and scrolled into view — which matters, because the grid ' +
+      'scrolls sideways and Material and Semi-diameter are off the right edge in a narrow pane. ' +
+      'Use it whenever an answer names something the user has to go and find, and name the ' +
+      'column whenever the answer is about one value rather than a whole surface. ' +
       'It changes nothing about the design.',
     input_schema: {
       type: 'object' as const,
       properties: {
         surface: { type: 'integer', description: 'Surface number, as shown in the Surface column.' },
+        column: {
+          type: 'string',
+          description: 'Which cell of that row, when the answer is about one value.',
+          enum: [
+            'stop', 'type', 'label', 'aperture', 'radius', 'conic',
+            'asphere', 'focal', 'thickness', 'material', 'semiDiameter',
+          ],
+        },
       },
       required: ['surface'],
       additionalProperties: false,
     },
-    strict: true,
   },
   {
     name: 'open_panel',

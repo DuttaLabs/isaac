@@ -286,6 +286,17 @@ export function App() {
   // editor and the layout are siblings, so the link between them lives here.
   const [highlightedSurface, setHighlightedSurface] = useState<number | undefined>(undefined);
   /**
+   * The one cell the help assistant is pointing at.
+   *
+   * Kept apart from `highlightedSurface`, which is driven by hovering and by
+   * the layout views: those two say "the pointer is here" and this says "the
+   * thing you asked about is there". Sharing one piece of state would let a
+   * mouse moving across the grid wipe out an answer's own pointing gesture.
+   */
+  const [pointedCell, setPointedCell] = useState<{ surface: number; column: string } | undefined>(
+    undefined,
+  );
+  /**
    * The element the user has *picked*, by its front surface's id — as opposed to
    * the one the pointer happens to be over.
    *
@@ -773,10 +784,14 @@ export function App() {
             return { ok: false, error: `There is no surface ${action.surface} in this design.` };
           }
           setHighlightedSurface(action.surface);
+          if (action.column !== undefined) {
+            setPointedCell({ surface: action.surface, column: action.column });
+          }
           // A highlight is a pointing gesture, not a mode. It fades on its own
           // so the grid does not sit lit up for the rest of the session.
           window.setTimeout(() => {
             setHighlightedSurface((current) => (current === action.surface ? undefined : current));
+            setPointedCell((current) => (current?.surface === action.surface ? undefined : current));
           }, 6_000);
           return { ok: true };
         }
@@ -1297,6 +1312,7 @@ export function App() {
               onChange={pushSystem}
               onHighlight={setHighlightedSurface}
               highlightedSurface={highlightedSurface}
+              pointedCell={pointedCell}
               selectedElement={selectedElement}
               elementStyles={elementStyles}
               onElementStyle={setElementStyle}

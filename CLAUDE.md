@@ -1329,7 +1329,7 @@ and none of these are that.
 
 | Action | Does | Undone by |
 |---|---|---|
-| `highlight_surface` | Flashes a row in the grid, then fades | looking away |
+| `highlight_surface` | Flashes a row, or rings one **cell** and scrolls it into view | looking away |
 | `open_panel` | Splits the Help pane and puts a panel in the new half | closing it |
 | `load_design` | Replaces the design with one it wrote | Undo |
 | `propose_edits` | **Nothing** — draws a before-and-after and waits | not applying it |
@@ -1356,6 +1356,19 @@ Five things hold this together:
   through `edits.ts`, so a refusal comes back in the engine's own words. A row that cannot be made is
   *shown with its reason* rather than dropped, because a list with a line silently missing cannot be
   checked against what the assistant said it would do.
+- **The assistant names *what*, and the app decides how it looks.** Pointing at a cell takes a
+  column from a closed list (`HIGHLIGHT_COLUMNS`, matching `data-column` on the cells), never a
+  style. Handing over CSS was the obvious-looking alternative and is worse in three ways: an answer
+  could hide a row or break the layout with no undo; a literal color would be frozen to one theme,
+  which is the mistake `theme-colors.ts` exists to prevent; and the vocabulary would be tied to
+  whatever the stylesheet happens to be, so a class rename would silently stop the pointing working.
+  Naming a value is a stable fact about the table; naming a color is not. Most of the value is the
+  **scroll into view** — the grid scrolls sideways, and Material and Semi-diameter are off the right
+  edge in a narrow pane, so lighting a row the reader cannot see does nothing.
+- **`pointedCell` is deliberately not `highlightedSurface`.** That one is driven by hovering and by
+  the layout views; sharing it would let a mouse crossing the grid wipe out an answer's own pointing
+  gesture. Two gestures, two pieces of state: one says "the pointer is here", the other says "the
+  thing you asked about is *there*".
 - **A model calling a tool usually writes no prose at all** — the call *is* the answer, as far as it
   is concerned — and a blank space above a proposal reads as a fault. So the tools needing an
   explanation carry one as a *required field* (`note`, `why`) rather than relying on a prompt

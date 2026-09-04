@@ -86,6 +86,7 @@ export function LensDataEditor({
   onChange,
   onHighlight,
   highlightedSurface,
+  pointedCell,
   selectedElement,
   elementStyles,
   onElementStyle,
@@ -104,6 +105,13 @@ export function LensDataEditor({
   onHighlight: (surfaceIndex: number | undefined) => void;
   /** The surface currently pointed out, which the arrow keys step through. */
   highlightedSurface: number | undefined;
+  /**
+   * One cell the help assistant is pointing at, which is a different gesture
+   * from the hover highlight and must not fight with it: hovering says "the
+   * pointer is here", this says "the thing you asked about is *there*". It
+   * fades on its own, because a pointing finger that stays out is a mode.
+   */
+  pointedCell?: { surface: number; column: string };
   /**
    * The element picked in a layout view, by its front surface's id. A
    * *selection*, so unlike the highlight it stays put when the pointer moves.
@@ -485,6 +493,33 @@ export function LensDataEditor({
     highlightedSurface < system.surfaces.length &&
     system.surfaceAt(highlightedSurface).type === 'COORDINATE_TRANSFORM';
 
+  /**
+   * Marks the one cell the assistant is pointing at.
+   *
+   * A class rather than a style, so what "pointed at" looks like stays in
+   * `theme.css` with everything else and follows the theme — the same rule that
+   * keeps a second palette out of TypeScript.
+   */
+  const cellClass = (index: number, column: string, base?: string): string | undefined => {
+    const marked = pointedCell?.surface === index && pointedCell.column === column;
+    return [base, marked ? 'cell-pointed' : ''].filter(Boolean).join(' ') || undefined;
+  };
+
+  /**
+   * Brings a pointed cell into view.
+   *
+   * This is most of the value of pointing at a cell rather than a row: the grid
+   * scrolls sideways, and Material and Semi-diameter are off the right edge in
+   * a narrow pane. Lighting a row the reader cannot see does nothing.
+   * `'nearest'` on both axes so a cell already visible does not jump.
+   */
+  useEffect(() => {
+    if (pointedCell === undefined) return;
+    const row = rows.current[pointedCell.surface];
+    const cell = row?.querySelector(`[data-column="${pointedCell.column}"]`);
+    cell?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [pointedCell]);
+
   const apply = (result: Result<OpticalSystem>): void => {
     if (result.ok) {
       setError(undefined);
@@ -864,7 +899,7 @@ export function LensDataEditor({
                       the surface's number and the element it belongs to, and it
                       was the one such fact stranded at the far end of a table
                       that has to be scrolled. */}
-                  <td className="stop-cell">
+                  <td data-column="stop" className={cellClass(index, 'stop', 'stop-cell')}>
                     <input
                       type="radio"
                       name="stop-surface"
@@ -875,7 +910,7 @@ export function LensDataEditor({
                     />
                   </td>
 
-                  <td>
+                  <td data-column="type" className={cellClass(index, 'type')}>
                     <SurfaceTypeCell
                       type={surface.type}
                       fixed={isFixed}
@@ -884,7 +919,7 @@ export function LensDataEditor({
                     />
                   </td>
 
-                  <td className="text-column">
+                  <td data-column="label" className={cellClass(index, 'label', 'text-column')}>
                     <TextCell
                       disabled={isFixed}
                       value={surface.comment ?? ''}
@@ -898,7 +933,7 @@ export function LensDataEditor({
                   {/* A coordinate transform meets no ray, so it can have no
                       aperture — the model refuses one. The cell is blank rather
                       than a button that would only ever be rejected. */}
-                  <td className="aperture-column">
+                  <td data-column="aperture" className={cellClass(index, 'aperture', 'aperture-column')}>
                     {isTransform ? (
                       <span className="cell-empty">–</span>
                     ) : (
@@ -973,7 +1008,7 @@ export function LensDataEditor({
                       {/* Radius and focal length are the two ways a surface can
                           carry power, and no surface has both; the inapplicable
                           one is blank. */}
-                      <td>
+                      <td data-column="radius" className={cellClass(index, 'radius')}>
                         {isParaxial ? (
                           <EmptyCell reason="A paraxial surface is a plane; its power is its focal length." />
                         ) : (
@@ -996,7 +1031,7 @@ export function LensDataEditor({
                       {/* Conic sits beside the radius because the two together
                           are the surface's shape: the radius is where it starts,
                           the conic is how it departs from a sphere. */}
-                      <td>
+                      <td data-column="conic" className={cellClass(index, 'conic')}>
                         {isParaxial ? (
                           <EmptyCell reason="A paraxial surface is a plane; it has no conic constant." />
                         ) : (
@@ -1012,7 +1047,7 @@ export function LensDataEditor({
                         )}
                       </td>
 
-                      <td>
+                      <td data-column="asphere" className={cellClass(index, 'asphere')}>
                         {surface.type === 'EVEN_ASPHERE' ? (
                           <AsphericSummaryButton
                             coefficients={surface.asphericCoefficients}
@@ -1024,7 +1059,7 @@ export function LensDataEditor({
                         )}
                       </td>
 
-                      <td>
+                      <td data-column="focal" className={cellClass(index, 'focal')}>
                         {isParaxial ? (
                           <NumericCell
                             disabled={isFixed}
@@ -1042,7 +1077,7 @@ export function LensDataEditor({
                     </>
                   )}
 
-                  <td>
+                  <td data-column="thickness" className={cellClass(index, 'thickness')}>
                     <NumericCell
                       value={surface.thickness}
                       ariaLabel={`Thickness after surface ${label}`}
@@ -1052,7 +1087,7 @@ export function LensDataEditor({
                     />
                   </td>
 
-                  <td>
+                  <td data-column="material" className={cellClass(index, 'material')}>
                     {/* Zemax writes "-" here for a transform, because a transform cannot
                         be a boundary between two media: it carries whatever the
                         surface before it did, and the model refuses anything
@@ -1098,7 +1133,7 @@ export function LensDataEditor({
                     )}
                   </td>
 
-                  <td>
+                  <td data-column="semiDiameter" className={cellClass(index, 'semiDiameter')}>
                     {isTransform ? (
                       <EmptyCell reason="A coordinate transform meets no ray, so it has no clear aperture." />
                     ) : (

@@ -79,7 +79,12 @@ export interface ProposedEdit {
  * last does not act at all — it offers, and a person presses Apply.
  */
 export type HelpAction =
-  | { readonly kind: 'highlight_surface'; readonly surface: number }
+  | {
+      readonly kind: 'highlight_surface';
+      readonly surface: number;
+      /** One cell of that row, when the answer is about a single value. */
+      readonly column?: HighlightColumn;
+    }
   | { readonly kind: 'open_panel'; readonly panel: string }
   | {
       readonly kind: 'load_design';
@@ -100,6 +105,23 @@ export type HelpAction =
     }
   | { readonly kind: 'propose_edits'; readonly edits: readonly ProposedEdit[]; readonly why: string };
 
+/**
+ * The cells of the lens grid that can be pointed at.
+ *
+ * A closed list, and deliberately not "any CSS on any cell". What the assistant
+ * names is *which value it means* — a stable fact about the table — and the app
+ * decides what pointing at one looks like, in `theme.css`, following the theme.
+ * Handing over style itself would let an answer hide a row, break the layout or
+ * write a color frozen to one theme, and would tie the vocabulary to whatever
+ * the stylesheet happens to be this week.
+ */
+export const HIGHLIGHT_COLUMNS = [
+  'stop', 'type', 'label', 'aperture', 'radius', 'conic',
+  'asphere', 'focal', 'thickness', 'material', 'semiDiameter',
+] as const;
+
+export type HighlightColumn = (typeof HIGHLIGHT_COLUMNS)[number];
+
 const EDIT_PROPERTIES = new Set([
   'radius', 'conic', 'thickness', 'semiDiameter', 'material', 'label', 'stop', 'mirror',
 ]);
@@ -117,10 +139,15 @@ export function readAction(value: unknown): HelpAction | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const action = value as Record<string, unknown>;
   switch (action['kind']) {
-    case 'highlight_surface':
-      return typeof action['surface'] === 'number'
-        ? { kind: 'highlight_surface', surface: action['surface'] }
-        : undefined;
+    case 'highlight_surface': {
+      if (typeof action['surface'] !== 'number') return undefined;
+      const column = action['column'];
+      // A column the app cannot point at is dropped rather than passed on: the
+      // row still lights, which is most of the gesture, and a bad selector
+      // would simply mark nothing while claiming to have marked something.
+      const named = HIGHLIGHT_COLUMNS.find((known) => known === column);
+      return { kind: 'highlight_surface', surface: action['surface'], ...(named !== undefined && { column: named }) };
+    }
     case 'open_panel':
       return typeof action['panel'] === 'string'
         ? { kind: 'open_panel', panel: action['panel'] }
@@ -187,7 +214,9 @@ export function historyAnswer(exchange: Exchange): string {
   const did = ((): string | undefined => {
     switch (exchange.action?.kind) {
       case 'highlight_surface':
-        return `[I highlighted surface ${exchange.action.surface}.]`;
+        return exchange.action.column === undefined
+          ? `[I highlighted surface ${exchange.action.surface}.]`
+          : `[I highlighted the ${exchange.action.column} cell of surface ${exchange.action.surface}.]`;
       case 'open_panel':
         return `[I opened the ${exchange.action.panel} panel.]`;
       case 'load_design':

@@ -3024,3 +3024,31 @@ input.coefficient {
   margin: 0;
   line-height: 1.45;
 }
+
+/* The one cell the help assistant is pointing at.
+   
+   A ring rather than a fill: the row is already tinted amber by `row-highlight`,
+   and a second tint inside it would read as a different row rather than as a
+   cell within this one. It pulses twice and stops — a pointing finger that stays
+   out has become a mode, and the highlight it sits in fades on its own anyway. */
+tbody td.cell-pointed {
+  position: relative;
+  outline: 2px solid var(--surface-highlight);
+  outline-offset: -2px;
+  border-radius: 3px;
+  animation: cell-point 0.6s ease-in-out 2;
+}
+
+@keyframes cell-point {
+  50% {
+    outline-color: transparent;
+  }
+}
+
+/* The ring is the mark; the pulse is only what draws the eye to it. Someone who
+   has asked for less motion still needs to see which cell was meant. */
+@media (prefers-reduced-motion: reduce) {
+  tbody td.cell-pointed {
+    animation: none;
+  }
+}

@@ -10,11 +10,17 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { defaultSystem } from '../src/lib/default-system.ts';
 import { applyEdits, previewEdits } from '../src/lib/help-actions.ts';
-import { historyAnswer, readAction, type ProposedEdit } from '../src/lib/help.ts';
+import {
+  HIGHLIGHT_COLUMNS,
+  historyAnswer,
+  readAction,
+  type ProposedEdit,
+} from '../src/lib/help.ts';
 
 const system = defaultSystem();
 
@@ -152,4 +158,32 @@ test('history carries what the assistant did, not only what it said', () => {
   });
   assert.match(both, /The stop is surface 1\./);
   assert.match(both, /highlighted surface 1/);
+});
+
+test('a column the app cannot point at is dropped, and the row still lights', () => {
+  // The gesture degrades rather than failing: pointing at a row is most of it,
+  // and a selector the table has no cell for would mark nothing while claiming
+  // to have marked something.
+  const bad = readAction({ kind: 'highlight_surface', surface: 2, column: 'colour' });
+  assert.deepEqual(bad, { kind: 'highlight_surface', surface: 2 });
+
+  const good = readAction({ kind: 'highlight_surface', surface: 2, column: 'material' });
+  assert.deepEqual(good, { kind: 'highlight_surface', surface: 2, column: 'material' });
+});
+
+test('every column the assistant may name is one the table actually has', () => {
+  // The two lists are written in two places — the tool schema on the server and
+  // HIGHLIGHT_COLUMNS here — and a name in one that is missing from the other
+  // fails silently: the model asks for a cell, nothing is marked, and the answer
+  // claims otherwise. This pins the app's half against the markup.
+  const markup = readFileSync(
+    new URL('../src/components/LensDataEditor.tsx', import.meta.url),
+    'utf8',
+  );
+  for (const column of HIGHLIGHT_COLUMNS) {
+    assert.ok(
+      markup.includes(`data-column="${column}"`),
+      `no cell in the lens grid carries data-column="${column}"`,
+    );
+  }
 });

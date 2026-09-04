@@ -350,9 +350,22 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
             type: 'text',
             text: INSTRUCTIONS,
             // The manual is fixed and the question is not, so the whole system
-            // prompt is a cacheable prefix. Whether it actually caches depends
-            // on its size clearing the model's minimum — at today's short
-            // manual it may not, and this costs nothing when it does not.
+            // prompt is a cacheable prefix and the manual is paid for once.
+            //
+            // **Whether it caches at all depends on the model, and not the way
+            // you would guess.** A prefix below the model's minimum silently
+            // does not cache — no error, just `cache_read_input_tokens: 0` —
+            // and the minimum is not monotonic across generations: 512 tokens
+            // on Claude Opus 5, 1024 on Sonnet 5, 4096 on Haiku 4.5. The
+            // manual runs to roughly 3,000 tokens, so it caches on the two
+            // expensive models and *not* on the cheap one, which narrows the
+            // gap between them a great deal. Growing the manual past 4,096
+            // tokens would turn caching on for Haiku as a side effect.
+            //
+            // The default 5-minute TTL is the right one here: help arrives in
+            // bursts of a few questions, and a read refreshes the timer for
+            // free. The 1-hour TTL costs double to write and needs three reads
+            // to pay that back, which this traffic will not give it.
             cache_control: { type: 'ephemeral' },
           },
         ],

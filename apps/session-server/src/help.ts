@@ -356,11 +356,15 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
             // you would guess.** A prefix below the model's minimum silently
             // does not cache — no error, just `cache_read_input_tokens: 0` —
             // and the minimum is not monotonic across generations: 512 tokens
-            // on Claude Opus 5, 1024 on Sonnet 5, 4096 on Haiku 4.5. The
-            // manual runs to roughly 3,000 tokens, so it caches on the two
-            // expensive models and *not* on the cheap one, which narrows the
-            // gap between them a great deal. Growing the manual past 4,096
-            // tokens would turn caching on for Haiku as a side effect.
+            // on Claude Opus 5, 1024 on Sonnet 5, 4096 on Haiku 4.5.
+            //
+            // Measured, this prefix is **4,107 tokens**, so it caches
+            // everywhere — but it clears Haiku's minimum by *eleven tokens*.
+            // Trimming a couple of sentences from the manual would drop it
+            // under, and the only sign would be a bill that quietly stopped
+            // improving. Do not treat that margin as headroom: if the manual
+            // ever needs to be shorter, check the logged `written` on a fresh
+            // prefix before assuming caching survived.
             //
             // The default 5-minute TTL is the right one here: help arrives in
             // bursts of a few questions, and a read refreshes the timer for
@@ -397,6 +401,11 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
         ms: Date.now() - started,
         model: message.model,
         in: message.usage.input_tokens,
+        // Both halves of caching, because one without the other is unreadable.
+        // A first call reports the manual under `written` and leaves `in` at
+        // the size of the question alone — which looks alarming, and is in fact
+        // the proof that the prefix went to the cache rather than to full price.
+        written: message.usage.cache_creation_input_tokens ?? 0,
         cached: message.usage.cache_read_input_tokens ?? 0,
         out: message.usage.output_tokens,
         today: allowance.spentToday,

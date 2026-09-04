@@ -88,5 +88,10 @@ console.log('  ok   a departure was announced');
 
 grace.socket.close();
 clearTimeout(timer);
-console.log(`\nPASS  ${url}`);
+// The URL carries the shared token in `?t=`, and this line is read aloud in
+// deploy output, pasted into chats and scrolled past in terminals. Print where
+// it connected, never how it authenticated.
+const shown = new URL(url);
+if (shown.searchParams.has('t')) shown.searchParams.set('t', '<token>');
+console.log(`\nPASS  ${shown}`);
 process.exit(0);

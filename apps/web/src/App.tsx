@@ -78,7 +78,9 @@ import {
   type ScreenPlacement,
   type SecondaryWindowHandle,
 } from './lib/secondary-window.ts';
+import { describeSystem } from './lib/help.ts';
 import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
+import { HelpPanel } from './components/HelpPanel.tsx';
 import { FullScreenButton } from './components/FullScreenButton.tsx';
 import { LensDataEditor } from './components/LensDataEditor.tsx';
 import { Layout2DPanel } from './components/Layout2DPanel.tsx';
@@ -731,6 +733,24 @@ export function App() {
   const firstOrder = useMemo(() => computeFirstOrder(tracedSystem), [tracedSystem]);
   const pupilRadius = firstOrder.ok ? firstOrder.value.entrancePupilRadius : 10;
 
+  /**
+   * The design as the help assistant sees it.
+   *
+   * Built from `system` rather than `tracedSystem`, and the distinction
+   * matters: a switched-out element is absent from what is traced, so asking
+   * about it against the traced system would get "there is no such surface"
+   * for a row that is plainly on screen. The rows are all here, and the ones
+   * switched out say so.
+   *
+   * Derived here rather than in the panel because it is a fact about the app,
+   * not about one copy of a panel — and because two Help panels open at once
+   * must not each rebuild it.
+   */
+  const helpContext = useMemo(
+    () => describeSystem(system, firstOrder, { fileName, hiddenSurfaces }),
+    [system, firstOrder, fileName, hiddenSurfaces],
+  );
+
   // Padded rather than required to match: a system arriving from a file, an
   // undo, or the reset button brings its own field list, and anything the flags
   // do not cover is drawn. Removing a field keeps the flags in step at the row
@@ -1241,6 +1261,8 @@ export function App() {
         );
       case 'session':
         return <SessionPanel session={session} choice={choice} />;
+      case 'help':
+        return <HelpPanel context={helpContext} choice={choice} />;
     }
   };
 

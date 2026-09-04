@@ -12,6 +12,8 @@ Isaac is a web-based optical design system inspired by Zemax/OpticStudio. It is 
 
 Requires Node >= 22.6. The **engine packages have no build step** — TypeScript runs directly via Node's `--experimental-strip-types`, and `.ts` files import each other with explicit `.ts` extensions (`allowImportingTsExtensions`). Only `apps/web` is bundled, by Vite, because a browser cannot execute `.ts`.
 
+Stripping *removes* types and emits nothing, so **any syntax that would need code generated is out** of everything outside `apps/web` — no `enum`, no `namespace`, and no constructor parameter properties (`constructor(private readonly x: number)`, which has to become a field and an assignment). `tsc --noEmit` is happy with all three, so this surfaces only when the file is run.
+
 TypeScript is pinned at the root (`typescript@^7`). Before that pin the repo silently used whatever `tsc` was on the machine; TS 7 also needs `"types": ["node"]` in each engine package's tsconfig, without which `@types/node` is not picked up and every `node:*` import fails to resolve.
 
 - `npm test` — run all workspace tests (root).
@@ -28,6 +30,13 @@ TypeScript is pinned at the root (`typescript@^7`). Before that pin the repo sil
   arrives. Both scripts verify themselves against the public URL afterwards, so
   a deploy that reports success has been checked from outside. `npm run
   server:logs` and `server:follow` read the relay's journal.
+
+  Secrets and knobs come from the gitignored `infra/.env.deploy`, which
+  `deploy.sh` pipes into `/etc/isaac-session.env` — never echoed, and never
+  passed as an argument, which would be visible in `ps` to everyone on the box.
+  `ANTHROPIC_API_KEY` turns the help assistant on; `ISAAC_HELP_MODEL` and
+  `ISAAC_HELP_DAILY_LIMIT` set what an answer costs and how many are allowed in
+  a day.
 
 ## Architecture
 
@@ -1250,6 +1259,63 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   nothing else sizes its root, and a grid with nothing to fill would collapse to its content.
 
 - **Colors for WebGL are resolved from `theme.css` at runtime** (`lib/theme-colors.ts`), and re-read when the theme changes — the SVG views hand `var(--wave-blue)` to an attribute and let CSS do it, but a material needs a real value. Don't start a second palette in TypeScript.
+
+### The help assistant
+
+A **Help** panel (`components/HelpPanel.tsx`) that answers questions about Isaac, and about
+the design currently open. The model runs on Anthropic's servers; what runs in the browser is
+a chat box.
+
+**The whole shape follows from one fact: an API key in a browser bundle is a key anybody can
+read.** So the key lives on the relay machine and never leaves it — `apps/session-server/src/help.ts`
+holds it, and `lib/help.ts` in the app knows a URL. That is also why the endpoint is *on* the
+relay: it is the server Isaac already has, already behind TLS, already deployed by a script that
+verifies itself.
+
+**It is the deliberate opposite of the relay beside it.** The relay routes and does not
+understand — every payload it carries is `unknown`, which is what keeps it from growing opinions
+about optics. This endpoint exists precisely to understand, so it is a separate file with its own
+configuration and it never touches a room. Neighbors, not the same thing.
+
+Four decisions worth keeping:
+
+- **`src/manual.md` is the only thing the assistant knows about Isaac**, and it is written for
+  the person *using* Isaac. This file — the one you are reading — is written for whoever is
+  building it, and serving it would answer "why does my doublet look wrong" with a paragraph
+  about `elementColorsBySurface`. They are two documents with two audiences and they stay apart.
+  The manual is read **once at startup**, not per request: prompt caching is a prefix match, so
+  re-reading a file a deploy might have changed would silently turn every question back into a
+  full-price one.
+- **A refusal is a good answer, and the prompt says so.** A model asked about a program it cannot
+  see will invent a menu item, and an invented menu item is worse than no answer, because
+  somebody goes looking for it. This is the failure this project already has a name for —
+  *verify, don't guess* — arriving in user-facing form, so the manual ends with an explicit list
+  of what Isaac does not have and the instruction to treat the manual as complete.
+- **The design travels with the question** (`describeSystem` in `lib/help.ts`), and that is what
+  makes this worth building rather than a link to a docs page. Isaac holds the whole system as
+  plain data, so "why are my rays blocked?" can be answered about *this* lens. The summary is
+  built from `system` and not `tracedSystem` — a switched-out element is absent from the traced
+  one, and answering "there is no such surface" about a row plainly on screen would be worse than
+  useless. It is laid out like the lens grid, column for column, so an answer can be checked
+  against what is on screen; a button in the panel shows the user exactly what is being sent.
+- **The caps are the feature, not the paperwork.** A spending endpoint anyone can reach is one
+  somebody eventually will. There is a per-caller window, a hard daily total, a bounded body, a
+  bounded question and a bounded answer — and the tests are *all* refusals, because the refusals
+  are the half that runs before any money is spent. `ISAAC_HELP_MODEL` and
+  `ISAAC_HELP_DAILY_LIMIT` change the cost of an answer without a deploy; no `ANTHROPIC_API_KEY`
+  means the endpoint answers 503 and says why, which is the right default for a development
+  machine and for anyone else's checkout.
+
+Two smaller things. The token is spelled **two ways** and that is forced rather than sloppy: the
+socket carries it in the query string because the WebSocket API cannot set headers, while `/help`
+takes `x-isaac-token`, because an ordinary request can set one and a token in a URL lands in
+nginx's access log. And the conversation is **component state, not a pane setting** — a setting is
+something worth reopening with, and two Help panels should plainly hold different conversations
+rather than mirror one.
+
+`infra/smoke-help.mjs` asks a real question after every deploy. It costs a fraction of a penny and
+it is the only way to learn that a key was rotated, a model name went stale, or an origin rule now
+refuses the app — all three of which fail *only* on a real call.
 
 ### `three-optics`
 

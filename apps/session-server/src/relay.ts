@@ -14,6 +14,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { parseClientMessage, type ErrorCode, type Member } from '@isaac/session-protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
 
+import { createHelpEndpoint, type HelpConfig } from './help.ts';
 import { Rooms, send, type Sink } from './rooms.ts';
 
 /** A connection that has not said `join` is holding a slot for nothing. */
@@ -33,10 +34,14 @@ export interface Access {
    */
   readonly origins?: readonly string[];
   /**
-   * A shared secret in the query string. The WebSocket API cannot set headers,
-   * so there is nowhere else to put one. It is baked into the app at build
-   * time, and is only a secret because the app itself is behind a login — the
-   * two protections are one protection, and removing either removes both.
+   * A shared secret. It is baked into the app at build time, and is only a
+   * secret because the app itself is behind a login — the two protections are
+   * one protection, and removing either removes both.
+   *
+   * It is spelled two ways, and the difference is forced rather than chosen:
+   * the socket carries it in the query string because the WebSocket API cannot
+   * set headers, while `/help` takes it in `x-isaac-token`, because an ordinary
+   * request *can* set one and a token in a URL lands in nginx's access log.
    */
   readonly token?: string;
 }
@@ -64,9 +69,38 @@ interface Session {
   alive: boolean;
 }
 
-export function createRelay(log: Log = defaultLog, access: Access = {}): Relay {
+export function createRelay(
+  log: Log = defaultLog,
+  access: Access = {},
+  help: HelpConfig = {},
+): Relay {
   const rooms = new Rooms();
   const started = Date.now();
+  const answerHelp = createHelpEndpoint(help, log);
+
+  /**
+   * Whether an ordinary request may proceed, and which origin to echo back if
+   * it may. The same policy the socket's `verifyClient` applies, asked of an
+   * HTTP request instead — one door with one lock.
+   *
+   * The token is *not* demanded of an `OPTIONS`, because a browser's preflight
+   * carries no custom headers by definition. Refusing it there would refuse
+   * every real request that follows, without either end saying why.
+   */
+  const admitHttp = (
+    request: IncomingMessage,
+  ): { ok: true; origin?: string } | { ok: false; status: number; why: string } => {
+    const origin = request.headers.origin;
+    if (access.origins !== undefined && !access.origins.includes(origin ?? '')) {
+      return { ok: false, status: 403, why: 'origin' };
+    }
+    if (access.token !== undefined && request.method !== 'OPTIONS') {
+      if (request.headers['x-isaac-token'] !== access.token) {
+        return { ok: false, status: 401, why: 'token' };
+      }
+    }
+    return { ok: true, ...(origin !== undefined && { origin }) };
+  };
 
   const httpServer = createServer((request: IncomingMessage, response: ServerResponse) => {
     if (request.url === '/health') {
@@ -81,8 +115,19 @@ export function createRelay(log: Log = defaultLog, access: Access = {}): Relay {
       );
       return;
     }
-    response.writeHead(404, { 'content-type': 'text/plain' });
-    response.end('not found\n');
+    const admission = admitHttp(request);
+    if (!admission.ok) {
+      log('refused', { why: admission.why, path: (request.url ?? '/').split('?')[0] });
+      response.writeHead(admission.status, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ error: `${admission.why} not allowed` }));
+      return;
+    }
+
+    void answerHelp(request, response, admission.origin).then((handled) => {
+      if (handled) return;
+      response.writeHead(404, { 'content-type': 'text/plain' });
+      response.end('not found\n');
+    });
   });
 
   const wss = new WebSocketServer({

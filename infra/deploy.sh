@@ -62,12 +62,22 @@ remote_user="${HOST%%@*}"
 say "Access"
 # shellcheck disable=SC1091
 [ -f "$repo/infra/.env.deploy" ] && . "$repo/infra/.env.deploy"
-printf 'ISAAC_ORIGINS=%s\nISAAC_TOKEN=%s\n' "${ISAAC_ORIGINS:-}" "${VITE_SESSION_TOKEN:-}" \
+# The API key goes across in the same breath and by the same route. It is
+# piped, never echoed and never passed as an argument — an argument is visible
+# in `ps` to everyone on the box.
+printf 'ISAAC_ORIGINS=%s\nISAAC_TOKEN=%s\nANTHROPIC_API_KEY=%s\nISAAC_HELP_MODEL=%s\nISAAC_HELP_DAILY_LIMIT=%s\n' \
+    "${ISAAC_ORIGINS:-}" "${VITE_SESSION_TOKEN:-}" "${ANTHROPIC_API_KEY:-}" \
+    "${ISAAC_HELP_MODEL:-}" "${ISAAC_HELP_DAILY_LIMIT:-}" \
   | ssh "$HOST" "sudo tee /etc/isaac-session.env >/dev/null && sudo chmod 600 /etc/isaac-session.env"
 if [ -n "${VITE_SESSION_TOKEN:-}" ]; then
   echo "  a token is required, and origins are ${ISAAC_ORIGINS:-any}"
 else
   echo "  open to anyone (no infra/.env.deploy)"
+fi
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "  help answers with ${ISAAC_HELP_MODEL:-claude-opus-5}, up to ${ISAAC_HELP_DAILY_LIMIT:-300} questions a day"
+else
+  echo "  help is off (no ANTHROPIC_API_KEY in infra/.env.deploy)"
 fi
 
 say "Service"
@@ -110,4 +120,13 @@ smoke_url="wss://$DOMAIN/"
 if ! node "$repo/infra/smoke.mjs" "$smoke_url"; then
   echo "  (falling back to running it on the server)"
   ssh "$HOST" "bash -lc '. \$HOME/.nvm/nvm.sh && cd $REMOTE_DIR && node smoke.mjs \"$smoke_url\"'"
+fi
+
+# The help endpoint gets its own check, and it asks a real question — the only
+# way to know the key is right, the model name is real and the answer comes
+# back. It costs about a penny per deploy, which is the cheapest possible way
+# to find out that help has been broken since Tuesday.
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  ISAAC_TOKEN="${VITE_SESSION_TOKEN:-}" ISAAC_ORIGIN="https://isaacoptics.com" \
+    node "$repo/infra/smoke-help.mjs" "https://$DOMAIN/help" || exit 1
 fi

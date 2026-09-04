@@ -2779,3 +2779,125 @@ input.coefficient {
 .session-take {
   align-self: flex-start;
 }
+
+/* --------------------------------------------------------------------- help */
+
+/* The transcript takes the free height and the ask box stays put at the bottom,
+   so the thing being typed into never scrolls away from the pointer. */
+.help {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.help-transcript {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.help-opening {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-suggestions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.help-suggestions button {
+  text-align: left;
+  font-size: 0.95em;
+}
+
+.help-exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The question is set apart from its answer rather than merely labeled: a
+   transcript is read by skimming for the question you asked. */
+.help-question {
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.help-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Prose, so it gets prose leading — the rest of the app is tables. */
+  line-height: 1.5;
+}
+
+.help-answer p {
+  margin: 0;
+}
+
+.help-thinking {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.help-problem {
+  margin: 0;
+  color: var(--danger);
+}
+
+.help-ask {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.help-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.help-context {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* Bounded, because this is the whole prescription and a long one would push
+   the ask box off the panel. */
+.help-context pre {
+  margin: 0;
+  width: 100%;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  line-height: 1.35;
+  white-space: pre;
+}

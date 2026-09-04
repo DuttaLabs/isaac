@@ -29,6 +29,7 @@ export const PANELS = [
   'spot',
   'textEditor',
   'session',
+  'help',
 ] as const;
 
 export type PanelId = (typeof PANELS)[number];
@@ -43,4 +44,5 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   spot: 'Spot diagram',
   textEditor: 'Text editor',
   session: 'Session',
+  help: 'Help',
 };

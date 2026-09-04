@@ -13,7 +13,12 @@
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "deploy": "./infra/deploy.sh && ./infra/deploy-web.sh",
+    "deploy:relay": "./infra/deploy.sh",
+    "deploy:web": "./infra/deploy-web.sh",
+    "server:logs": "ssh subrata@172.234.157.52 'sudo journalctl -u isaac-session -n 60 --no-pager -o cat'",
+    "server:follow": "ssh subrata@172.234.157.52 'sudo journalctl -u isaac-session -f -o cat'"
   },
   "engines": {
     "node": ">=22.6"

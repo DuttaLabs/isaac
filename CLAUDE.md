@@ -21,6 +21,13 @@ TypeScript is pinned at the root (`typescript@^7`). Before that pin the repo sil
 - Run the UI: `npm run dev` from the root (Vite, http://localhost:5173) — `npm run dev --workspace @isaac/web -- --host`. The `--host` binds every interface rather than loopback, so the app is reachable from a phone or tablet on the same network at the LAN URL Vite prints. That also means **anyone on the network can reach the dev server**, which serves out of the project directory — fine at home, not on a shared or public network. Note that a LAN address is not a *secure context* the way `localhost` is, so `showSaveFilePicker` and the Window Management API are absent there: Save falls back to a plain download, which is exactly the fallback path in `lib/save-file.ts`, and the second window is unavailable. `npm run build --workspace @isaac/web` is the only bundling in the repo.
 - Tests use the built-in `node:test` runner + `node:assert` — no test framework is installed.
 - Cross-package imports (`@isaac/optical-core` from `zemax-io`) work through the workspace symlink; run `npm install` at the root after adding a package so the link exists.
+- **Deploying** (see `infra/`): `npm run deploy:relay` ships `apps/session-server` to
+  the Linode; `npm run deploy:web` builds `apps/web` and ships it to
+  `isaacoptics.com`; `npm run deploy` does both, relay first — if the protocol
+  changed, the server should understand the new client before the new client
+  arrives. Both scripts verify themselves against the public URL afterwards, so
+  a deploy that reports success has been checked from outside. `npm run
+  server:logs` and `server:follow` read the relay's journal.
 
 ## Architecture
 

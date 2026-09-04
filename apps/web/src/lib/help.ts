@@ -170,6 +170,52 @@ export function readAction(value: unknown): HelpAction | undefined {
  */
 export const HISTORY_SENT = 3;
 
+/**
+ * What an earlier turn should look like when it is sent back as history.
+ *
+ * Not simply `exchange.answer`, and the difference is a bug that took a log to
+ * find. A model calling a tool very often writes no prose at all, so an
+ * exchange that *did* something can carry an empty answer — and an empty
+ * assistant turn tells the next request that the assistant said nothing. Ask
+ * "yes, do that" after a proposal and it reaches a model with no record of
+ * having proposed anything.
+ *
+ * So the action is described in words and travels with the prose. The bracket
+ * marks it as a note about what happened rather than something that was said.
+ */
+export function historyAnswer(exchange: Exchange): string {
+  const did = ((): string | undefined => {
+    switch (exchange.action?.kind) {
+      case 'highlight_surface':
+        return `[I highlighted surface ${exchange.action.surface}.]`;
+      case 'open_panel':
+        return `[I opened the ${exchange.action.panel} panel.]`;
+      case 'load_design':
+        return `[I loaded a design I wrote, ${exchange.action.name}, aiming for EFL ${exchange.action.intendedEfl} at f/${exchange.action.intendedFNumber}. It replaced what was open.]`;
+      case 'propose_edits': {
+        const listed = exchange.action.edits
+          .map((edit) => `surface ${edit.surface} ${edit.property} to ${edit.value}`)
+          .join(', ');
+        const outcome =
+          exchange.settled === 'applied'
+            ? 'The user applied it.'
+            : exchange.settled === 'discarded'
+              ? 'The user discarded it.'
+              : 'It is still waiting for the user to apply or discard it.';
+        // Whether it was applied is the fact a follow-up turns on: "yes, do
+        // that" means something different depending on whether it is done.
+        return `[I proposed: ${listed}. ${outcome}]`;
+      }
+      default:
+        return undefined;
+    }
+  })();
+
+  const said = exchange.answer.trim();
+  if (did === undefined) return said;
+  return said === '' ? did : `${said}\n${did}`;
+}
+
 /** What an answer turned out to be, once the stream has finished. */
 export interface Answered {
   readonly answer: string;
@@ -211,7 +257,10 @@ export async function askIsaac(
         ...(history.length > 0 && {
           history: history
             .slice(-HISTORY_SENT)
-            .map((turn) => ({ question: turn.question, answer: turn.answer })),
+            .map((turn) => ({ question: turn.question, answer: historyAnswer(turn) }))
+            // An assistant turn with nothing in it is refused by the API, and
+            // is meaningless to the model in any case.
+            .filter((turn) => turn.answer !== ''),
         }),
       }),
     });

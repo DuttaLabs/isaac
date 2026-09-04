@@ -28,8 +28,20 @@ export const MAX_QUESTION_LENGTH = 2_000;
 export const MAX_CONTEXT_LENGTH = 20_000;
 /** Nothing legitimate reaches this; a body that does is not from Isaac. */
 export const MAX_BODY_BYTES = 64_000;
-/** How much answer to pay for. A help reply that runs longer has lost its way. */
-export const MAX_ANSWER_TOKENS = 1_024;
+/**
+ * How much answer to pay for.
+ *
+ * It was 1,024, chosen when the assistant could only write prose and a help
+ * reply that ran longer had lost its way. Then it learned to write `.zmx`, and
+ * a design is 500–900 tokens on its own: seven answers in the first afternoon
+ * stopped **exactly** here, mid-tool-call, leaving JSON that would not parse
+ * and no prose either — which reached the user as "I was not able to answer
+ * that one", blaming their question for the ceiling being too low.
+ *
+ * A ceiling is not a spend: nothing costs more until an answer actually gets
+ * longer, and the manual's "be brief" is what keeps ordinary ones short.
+ */
+export const MAX_ANSWER_TOKENS = 4_096;
 /**
  * How many earlier exchanges travel with a question.
  *
@@ -265,6 +277,37 @@ export interface HelpRequest {
 }
 
 type Log = (event: string, detail?: Record<string, unknown>) => void;
+
+/**
+ * Why an answer came back with nothing usable in it, or `undefined` if it did
+ * not.
+ *
+ * Three different faults used to share one message — "I was not able to answer
+ * that one. Try asking it a different way" — and only one of them was the
+ * user\'s question. Being told to rephrase when the real problem was a token
+ * ceiling sends somebody rewording a perfectly good question forever, which is
+ * exactly what happened. Say which it was.
+ */
+function whyEmpty(
+  message: Anthropic.Message,
+  answer: string,
+  action: unknown,
+): string | undefined {
+  if (message.stop_reason === 'refusal') {
+    return 'I was not able to answer that one. Try asking it a different way.';
+  }
+  if (message.stop_reason === 'max_tokens') {
+    // Truncation is not always fatal — prose that was cut off is still worth
+    // reading, and only a half-written tool call is unusable.
+    if (answer !== '' && action !== undefined) return undefined;
+    if (answer !== '') return undefined;
+    return 'That answer ran past the length I am allowed. Ask for one thing at a time and it will fit.';
+  }
+  if (answer === '' && action === undefined) {
+    return 'That came back empty, which is a fault at my end rather than anything about your question. Try again.';
+  }
+  return undefined;
+}
 
 /** A parsed body, or the reason it is not one. */
 function readHelpRequest(body: string): { ok: true; value: HelpRequest } | { ok: false; why: string } {
@@ -580,8 +623,9 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
         const message = await client.messages.create(ask);
         record(message);
         const { answer, action } = readMessage(message);
-        if (message.stop_reason === 'refusal' || (answer === '' && action === undefined)) {
-          reply(response, 200, { answer: 'I was not able to answer that one. Try asking it a different way.' });
+        const empty = whyEmpty(message, answer, action);
+        if (empty !== undefined) {
+          reply(response, 200, { answer: empty });
           return true;
         }
         reply(response, 200, { answer, ...(action !== undefined && { action }) });
@@ -606,9 +650,8 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
       record(message);
 
       const { answer, action } = readMessage(message);
-      if (message.stop_reason === 'refusal' || (answer === '' && action === undefined)) {
-        sendEvent({ kind: 'text', text: 'I was not able to answer that one. Try asking it a different way.' });
-      }
+      const empty = whyEmpty(message, answer, action);
+      if (empty !== undefined) sendEvent({ kind: 'text', text: empty });
       if (action !== undefined) sendEvent({ kind: 'action', action });
       sendEvent({ kind: 'done' });
       response.end();

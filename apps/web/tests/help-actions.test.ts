@@ -14,7 +14,7 @@ import test from 'node:test';
 
 import { defaultSystem } from '../src/lib/default-system.ts';
 import { applyEdits, previewEdits } from '../src/lib/help-actions.ts';
-import { readAction, type ProposedEdit } from '../src/lib/help.ts';
+import { historyAnswer, readAction, type ProposedEdit } from '../src/lib/help.ts';
 
 const system = defaultSystem();
 
@@ -116,4 +116,40 @@ test('a well-formed action reads back exactly', () => {
     edits: [{ surface: 3, property: 'radius', value: 'Infinity' }],
   });
   assert.equal(proposal?.kind, 'propose_edits');
+});
+
+test('history carries what the assistant did, not only what it said', () => {
+  // The bug this pins: a model calling a tool very often writes no prose, so an
+  // exchange that *did* something carried an empty answer — and an empty
+  // assistant turn tells the next request that nothing was said. "Yes, do that"
+  // then reached a model with no record of having proposed anything.
+  const silent = historyAnswer({
+    question: 'Make surface 3 a mirror.',
+    answer: '',
+    action: { kind: 'propose_edits', why: '', edits: [{ surface: 3, property: 'mirror', value: 'true' }] },
+  });
+  assert.notEqual(silent, '');
+  assert.match(silent, /surface 3 mirror to true/);
+  assert.match(silent, /waiting/, 'an unapplied proposal says so');
+
+  // Whether it was applied is the fact a follow-up turns on.
+  const applied = historyAnswer({
+    question: 'Make surface 3 a mirror.',
+    answer: '',
+    settled: 'applied',
+    action: { kind: 'propose_edits', why: '', edits: [{ surface: 3, property: 'mirror', value: 'true' }] },
+  });
+  assert.match(applied, /applied/i);
+
+  // Prose alone still travels as prose.
+  assert.equal(historyAnswer({ question: 'q', answer: 'The stop is surface 1.' }), 'The stop is surface 1.');
+
+  // And prose plus an action carries both.
+  const both = historyAnswer({
+    question: 'q',
+    answer: 'The stop is surface 1.',
+    action: { kind: 'highlight_surface', surface: 1 },
+  });
+  assert.match(both, /The stop is surface 1\./);
+  assert.match(both, /highlighted surface 1/);
 });

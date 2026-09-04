@@ -18,7 +18,15 @@ import type { OpticalSystem, Surface } from '@isaac/optical-core';
 import type { FirstOrder } from './analysis.ts';
 import type { Result } from './result.ts';
 
-const env = import.meta.env as Record<string, string | undefined>;
+/**
+ * Vite replaces `import.meta.env` at build time and Node leaves it undefined,
+ * so this module has to survive being imported outside a bundle — which it now
+ * is, by its own tests. Falling back to an empty record means the URL resolves
+ * to its default rather than throwing on the import, and a test that only wants
+ * `readAction` never has to care where the server is.
+ */
+const env =
+  (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 
 /**
  * Where to ask.
@@ -47,6 +55,113 @@ const TOKEN: string | undefined = env['VITE_SESSION_TOKEN'] || undefined;
 export interface Exchange {
   readonly question: string;
   readonly answer: string;
+  /** What the assistant asked the app to do, if it asked for anything. */
+  readonly action?: HelpAction;
+  /** Set once a proposal has been applied or thrown away, so it stops offering. */
+  readonly settled?: 'applied' | 'discarded' | 'refused';
+  /** Why an apply was refused, which is the engine's own words. */
+  readonly problem?: string;
+}
+
+/** One before-and-after in a proposal. */
+export interface ProposedEdit {
+  readonly surface: number;
+  readonly property:
+    | 'radius' | 'conic' | 'thickness' | 'semiDiameter' | 'material' | 'label' | 'stop' | 'mirror';
+  readonly value: string;
+}
+
+/**
+ * What the assistant can ask the app to do.
+ *
+ * Ordered by what it costs to be wrong, which is also the order they were
+ * built: the first two change nothing, the third is one undo away, and the
+ * last does not act at all — it offers, and a person presses Apply.
+ */
+export type HelpAction =
+  | { readonly kind: 'highlight_surface'; readonly surface: number }
+  | { readonly kind: 'open_panel'; readonly panel: string }
+  | {
+      readonly kind: 'load_design';
+      readonly zmx: string;
+      readonly name: string;
+      readonly note: string;
+      /**
+       * What the assistant says it was aiming for.
+       *
+       * Isaac traces what actually arrived and holds it against these. A
+       * prescription that reads correctly and is the wrong lens is the failure
+       * mode here — it imports, it traces, it draws, and it is f/55 when it was
+       * meant to be f/5 — and nothing in the file itself can catch that. A
+       * stated intent can.
+       */
+      readonly intendedEfl: number;
+      readonly intendedFNumber: number;
+    }
+  | { readonly kind: 'propose_edits'; readonly edits: readonly ProposedEdit[]; readonly why: string };
+
+const EDIT_PROPERTIES = new Set([
+  'radius', 'conic', 'thickness', 'semiDiameter', 'material', 'label', 'stop', 'mirror',
+]);
+
+/**
+ * An action, or nothing.
+ *
+ * Checked rather than cast, for the same reason the stored layout is: this
+ * arrived over a socket from a model, and a shape that merely type-checks in
+ * TypeScript would reach `edits.ts` as `undefined` and fail somewhere with no
+ * connection to where it went wrong. An action that does not read cleanly is
+ * dropped and the prose is kept — the answer is still worth having.
+ */
+export function readAction(value: unknown): HelpAction | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const action = value as Record<string, unknown>;
+  switch (action['kind']) {
+    case 'highlight_surface':
+      return typeof action['surface'] === 'number'
+        ? { kind: 'highlight_surface', surface: action['surface'] }
+        : undefined;
+    case 'open_panel':
+      return typeof action['panel'] === 'string'
+        ? { kind: 'open_panel', panel: action['panel'] }
+        : undefined;
+    case 'load_design':
+      return typeof action['zmx'] === 'string' &&
+        typeof action['name'] === 'string' &&
+        typeof action['note'] === 'string' &&
+        typeof action['intendedEfl'] === 'number' &&
+        typeof action['intendedFNumber'] === 'number'
+        ? {
+            kind: 'load_design',
+            zmx: action['zmx'],
+            name: action['name'],
+            note: action['note'],
+            intendedEfl: action['intendedEfl'],
+            intendedFNumber: action['intendedFNumber'],
+          }
+        : undefined;
+    case 'propose_edits': {
+      const raw = action['edits'];
+      if (!Array.isArray(raw) || raw.length === 0) return undefined;
+      const edits: ProposedEdit[] = [];
+      for (const item of raw) {
+        if (typeof item !== 'object' || item === null) return undefined;
+        const { surface, property, value: to } = item as Record<string, unknown>;
+        if (typeof surface !== 'number' || typeof property !== 'string' || typeof to !== 'string') {
+          return undefined;
+        }
+        if (!EDIT_PROPERTIES.has(property)) return undefined;
+        edits.push({ surface, property: property as ProposedEdit['property'], value: to });
+      }
+      return {
+        kind: 'propose_edits',
+        edits,
+        why: typeof action['why'] === 'string' ? action['why'] : '',
+      };
+    }
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -55,21 +170,35 @@ export interface Exchange {
  */
 export const HISTORY_SENT = 3;
 
+/** What an answer turned out to be, once the stream has finished. */
+export interface Answered {
+  readonly answer: string;
+  readonly action?: HelpAction;
+}
+
 /**
- * Ask, and get an answer or a reason there is none.
+ * Ask, streaming the prose back as it arrives.
  *
- * The token travels in a header here, where the session's travels in the query
+ * Streaming is not a performance trick here — the total time is the same. It is
+ * that four seconds of a blank box reads as broken, and four seconds of prose
+ * appearing reads as thinking. The action, if there is one, arrives last:
+ * a tool call is only complete when the model has finished writing its
+ * arguments, so there is nothing honest to hand over sooner.
+ *
+ * The token travels in a header, where the session's travels in the query
  * string. That is not an inconsistency to tidy up: a WebSocket cannot set a
  * header and an ordinary request can, and a secret in a URL is a secret in
- * nginx's access log.
+ * nginx\'s access log.
  */
 export async function askIsaac(
   question: string,
-  context?: string,
-  history: readonly Exchange[] = [],
-): Promise<Result<string>> {
+  context: string | undefined,
+  history: readonly Exchange[],
+  onText: (soFar: string) => void,
+): Promise<Result<Answered>> {
+  let response: Response;
   try {
-    const response = await fetch(HELP_URL, {
+    response = await fetch(HELP_URL, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -77,28 +206,73 @@ export async function askIsaac(
       },
       body: JSON.stringify({
         question,
+        stream: true,
         ...(context !== undefined && { context }),
-        ...(history.length > 0 && { history: history.slice(-HISTORY_SENT) }),
+        ...(history.length > 0 && {
+          history: history
+            .slice(-HISTORY_SENT)
+            .map((turn) => ({ question: turn.question, answer: turn.answer })),
+        }),
       }),
     });
-    // Never trust the parse. A body that is not what this expects becomes a
-    // stated failure rather than `undefined` rendered as an answer.
-    const body = (await response.json().catch(() => undefined)) as
-      | { answer?: unknown; error?: unknown }
-      | undefined;
-    if (!response.ok) {
-      const stated = typeof body?.error === 'string' ? body.error : undefined;
-      return { ok: false, error: stated ?? `The help assistant answered ${response.status}.` };
-    }
-    if (typeof body?.answer !== 'string') {
-      return { ok: false, error: 'The help assistant sent something unreadable.' };
-    }
-    return { ok: true, value: body.answer };
   } catch {
     // A network failure and a refused request are different things and read
     // differently: this one is "could not reach", not "would not answer".
     return { ok: false, error: 'Could not reach the help assistant. Are you online?' };
   }
+
+  if (!response.ok || response.body === null) {
+    const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
+    const stated = typeof body?.error === 'string' ? body.error : undefined;
+    return { ok: false, error: stated ?? `The help assistant answered ${response.status}.` };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+  let answer = '';
+  let action: HelpAction | undefined;
+  let failure: string | undefined;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+
+    // Server-sent events are separated by a blank line, and a chunk boundary
+    // can fall anywhere — including inside one. Whatever trails the last
+    // separator is an event still arriving, so it stays in the buffer.
+    const events = pending.split('\n\n');
+    pending = events.pop() ?? '';
+
+    for (const event of events) {
+      const line = event.split('\n').find((part) => part.startsWith('data:'));
+      if (line === undefined) continue;
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (payload['kind'] === 'text' && typeof payload['text'] === 'string') {
+        answer += payload['text'];
+        onText(answer);
+      } else if (payload['kind'] === 'action') {
+        action = readAction(payload['action']);
+      } else if (payload['kind'] === 'error' && typeof payload['error'] === 'string') {
+        failure = payload['error'];
+      }
+    }
+  }
+
+  // A stream that failed part way still carries whatever prose arrived before
+  // it did, and that is usually worth keeping — so the failure is only fatal
+  // when there is nothing else to show.
+  if (failure !== undefined && answer === '') return { ok: false, error: failure };
+  if (answer === '' && action === undefined) {
+    return { ok: false, error: 'The help assistant sent nothing back.' };
+  }
+  return { ok: true, value: { answer, ...(action !== undefined && { action }) } };
 }
 
 /** Rounded for reading, and without a trailing `.0` on a whole number. */

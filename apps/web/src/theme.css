@@ -2858,6 +2858,121 @@ input.coefficient {
   font-style: italic;
 }
 
+/* A block that blinks at the end of the prose while it is still arriving. A
+   pause mid-sentence then reads as thinking rather than as having finished —
+   which is the whole reason streaming is worth having, since the total time is
+   unchanged. */
+.help-cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: help-blink 1s steps(2, start) infinite;
+}
+
+@keyframes help-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Someone reading an answer while it lands should not be fighting the page.
+   The scroll follows the text; this only stops the caret drawing attention
+   away from the words. */
+@media (prefers-reduced-motion: reduce) {
+  .help-cursor {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------- a proposed change --- */
+
+/* Set apart from the prose, because it is not prose: it is a thing that will
+   happen to the design if a button is pressed. The border is the accent so it
+   reads as the app speaking rather than the assistant. */
+.help-proposal {
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+/* Once applied or discarded it is history, so it stops competing with whatever
+   came after it. */
+.help-proposal.is-settled {
+  border-left-color: var(--border);
+  opacity: 0.7;
+}
+
+.help-proposal table {
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.help-proposal td {
+  padding: 2px 8px 2px 0;
+  white-space: nowrap;
+}
+
+.help-proposal-where {
+  color: var(--text-muted);
+}
+
+.help-proposal-what {
+  margin-left: 6px;
+  color: var(--text);
+}
+
+/* The old value struck through and the new one in the accent: the two are read
+   as a pair, and a reader has to be able to tell which is which without the
+   arrow. */
+.help-proposal-before {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.help-proposal-arrow {
+  color: var(--text-muted);
+}
+
+.help-proposal-after {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.help-proposal-note {
+  white-space: normal;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+
+.help-proposal-problem {
+  white-space: normal;
+  color: var(--danger);
+  font-family: inherit;
+}
+
+/* A row that cannot be applied is shown, not dropped — a list with a line
+   silently missing cannot be checked against what the assistant said. */
+.help-proposal tr.is-impossible .help-proposal-after {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.help-proposal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .help-problem {
   margin: 0;
   color: var(--danger);
@@ -2900,4 +3015,12 @@ input.coefficient {
   font-size: 0.85em;
   line-height: 1.35;
   white-space: pre;
+}
+
+/* The assistant's sentence about a proposal. Prose, not table — it sits above
+   the rows because a reader wants to know what a change is for before reading
+   which numbers move. */
+.help-proposal-why {
+  margin: 0;
+  line-height: 1.45;
 }

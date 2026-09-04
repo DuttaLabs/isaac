@@ -1321,6 +1321,54 @@ rather than mirror one.
 it is the only way to learn that a key was rotated, a model name went stale, or an origin rule now
 refuses the app — all three of which fail *only* on a real call.
 
+**The assistant can act, not only answer**, and the actions are ordered by what it costs to be
+wrong. They are declared as *tools* but used as **structured output**: the model emits at most one,
+the browser performs it, and nothing is sent back for the model to read. That is one API call rather
+than three. A genuine tool loop is what you need when the model must see a result before answering,
+and none of these are that.
+
+| Action | Does | Undone by |
+|---|---|---|
+| `highlight_surface` | Flashes a row in the grid, then fades | looking away |
+| `open_panel` | Splits the Help pane and puts a panel in the new half | closing it |
+| `load_design` | Replaces the design with one it wrote | Undo |
+| `propose_edits` | **Nothing** — draws a before-and-after and waits | not applying it |
+
+Five things hold this together:
+
+- **Every action is something the app can already do.** `setHighlightedSurface`, `setPanePanel`,
+  `importZmx`, `edits.ts` — nothing here is a capability that exists only for the assistant, which
+  is the property worth keeping: a route only it can take is a route only it is tested on.
+- **A written design goes in through the file reader.** Same validation, same refusals, same
+  warnings a real `.zmx` produces — so an impossible prescription is refused rather than traced.
+- **But reading correctly is not being the right lens, and that is the real failure here.** The
+  first Cooke triplet written by the assistant parsed perfectly, carried the right glasses in the
+  right order, and came out at **f/55 because every curvature was an order of magnitude too weak**.
+  It imported, it traced, it drew, and nothing said a word. So `load_design` *requires* the model to
+  state the focal length and F/# it is aiming for, `App` traces what actually arrived, and a
+  disagreement past 20% is reported in the notice. That is the same discipline as `glass-catalog`
+  refusing to write a fit it cannot reproduce — and being made to state an intent visibly improved
+  the prescriptions, which was not the reason for doing it.
+- **`propose_edits` never acts.** `lib/help-actions.ts` has two halves and the order is the point:
+  `previewEdits` builds the before-and-after that is shown, and nothing calls `applyEdits` until a
+  button is pressed. Application is **all-or-nothing** — a half-applied proposal leaves the design in
+  a state nobody described, with one undo entry that puts back only part of it — and each step goes
+  through `edits.ts`, so a refusal comes back in the engine's own words. A row that cannot be made is
+  *shown with its reason* rather than dropped, because a list with a line silently missing cannot be
+  checked against what the assistant said it would do.
+- **A model calling a tool usually writes no prose at all** — the call *is* the answer, as far as it
+  is concerned — and a blank space above a proposal reads as a fault. So the tools needing an
+  explanation carry one as a *required field* (`note`, `why`) rather than relying on a prompt
+  instruction to produce one, and `proseOf` falls back to it.
+
+Streaming is server-sent events, opted into with `stream: true` on the request. The total time is
+unchanged; what changes is that four seconds of a blank box reads as broken and four seconds of
+prose appearing reads as thinking. Two things it needs: `x-accel-buffering: no`, without which nginx
+holds the whole answer to the end — the exact pause streaming exists to remove, and it would look
+like a browser bug rather than a proxy one — and a **failure delivered as an event**, since by then
+the status line is long gone and a stream that simply stops is indistinguishable from one that
+finished.
+
 ### `three-optics`
 
 Three.js geometry for an `OpticalSystem` and nothing else: **no React, no renderer, no browser APIs** — it builds geometry in Node, which is how it is unit-tested. `apps/web` owns the R3F mount and the controls.

@@ -37,7 +37,7 @@ import { TextCell } from './components/TextCell.tsx';
 import { attempt, describeError } from './lib/result.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { BlankPanel, ErrorNote, type PanelChoice } from './components/Panel.tsx';
-import { PANEL_TITLES } from './lib/panels.ts';
+import { PANELS, PANEL_TITLES, type PanelId } from './lib/panels.ts';
 import {
   loadLibrary,
   saveLibrary,
@@ -61,6 +61,7 @@ import {
   DEFAULT_SECONDARY_WORKSPACE,
   DEFAULT_WORKSPACE,
   closePane,
+  panelsOnScreen,
   resizeSplit,
   setPanePanel,
   setPaneSettings,
@@ -78,9 +79,10 @@ import {
   type ScreenPlacement,
   type SecondaryWindowHandle,
 } from './lib/secondary-window.ts';
-import { describeSystem } from './lib/help.ts';
+import { describeSystem, type HelpAction, type ProposedEdit } from './lib/help.ts';
+import { applyEdits, previewEdits } from './lib/help-actions.ts';
 import { FirstOrderPanel } from './components/FirstOrderPanel.tsx';
-import { HelpPanel } from './components/HelpPanel.tsx';
+import { HelpPanel, type ActionOutcome } from './components/HelpPanel.tsx';
 import { FullScreenButton } from './components/FullScreenButton.tsx';
 import { LensDataEditor } from './components/LensDataEditor.tsx';
 import { Layout2DPanel } from './components/Layout2DPanel.tsx';
@@ -751,6 +753,117 @@ export function App() {
     [system, firstOrder, fileName, hiddenSurfaces],
   );
 
+  /**
+   * Carrying out what the assistant asked for.
+   *
+   * Every one of these is something the app can already do — highlight a
+   * surface, turn a pane over to a panel, read a `.zmx`. Nothing here is a
+   * capability that exists only for the assistant, which is the property worth
+   * keeping: a route only it can take is a route only it is tested on.
+   *
+   * `openPanel` needs the pane the question was asked in, so it is built per
+   * pane down in `renderPanel`; everything else is the same wherever it is
+   * asked from.
+   */
+  const performHelpAction = useCallback(
+    (action: HelpAction, openPanel: (panel: PanelId) => void): ActionOutcome => {
+      switch (action.kind) {
+        case 'highlight_surface': {
+          if (action.surface < 0 || action.surface >= system.surfaces.length) {
+            return { ok: false, error: `There is no surface ${action.surface} in this design.` };
+          }
+          setHighlightedSurface(action.surface);
+          // A highlight is a pointing gesture, not a mode. It fades on its own
+          // so the grid does not sit lit up for the rest of the session.
+          window.setTimeout(() => {
+            setHighlightedSurface((current) => (current === action.surface ? undefined : current));
+          }, 6_000);
+          return { ok: true };
+        }
+        case 'open_panel': {
+          if (!PANELS.includes(action.panel as PanelId)) {
+            return { ok: false, error: `Isaac has no ${action.panel} panel.` };
+          }
+          openPanel(action.panel as PanelId);
+          return { ok: true };
+        }
+        case 'load_design': {
+          // Through the reader, exactly as a file is. That is what makes a
+          // written-out prescription safe: the same validation, the same
+          // refusals, and the same warnings a real file would produce.
+          const read = attempt(() =>
+            importZmx(action.zmx, { resolveMaterial: GLASS_CATALOG.resolver() }),
+          );
+          if (!read.ok) return { ok: false, error: read.error };
+          const { system: loaded, warnings } = read.value;
+
+          /**
+           * Traced, and held against what the assistant said it was aiming for.
+           *
+           * This is the check the file itself cannot provide. A written-out
+           * prescription that parses is not thereby the lens somebody asked
+           * for: the first Cooke triplet written here read perfectly, carried
+           * the right glasses in the right order, and came out at f/55 because
+           * every curvature was an order of magnitude too weak. It imported, it
+           * traced, and it drew — and nothing said a word. So the assistant is
+           * made to state its intent, and the app checks it, in the same spirit
+           * as `glass-catalog` refusing to write a fit it cannot reproduce.
+           */
+          const checked = computeFirstOrder(loaded);
+          const disagreements: string[] = [];
+          if (checked.ok) {
+            const efl = checked.value.properties.effectiveFocalLength;
+            const fNumber = checked.value.fNumber;
+            const off = (got: number, wanted: number): boolean =>
+              Number.isFinite(got) && wanted !== 0 && Math.abs(got - wanted) / Math.abs(wanted) > 0.2;
+            if (off(efl, action.intendedEfl)) {
+              disagreements.push(
+                `It aimed for a focal length of ${action.intendedEfl} and this traces at ${efl.toFixed(1)}.`,
+              );
+            }
+            if (fNumber !== undefined && off(fNumber, action.intendedFNumber)) {
+              disagreements.push(
+                `It aimed for f/${action.intendedFNumber} and this traces at f/${fNumber.toFixed(1)}.`,
+              );
+            }
+          }
+
+          setElementStyles({});
+          setFieldVisibility([]);
+          setFileName(action.name);
+          setFileText(action.zmx);
+          setDesignSignal((count) => count + 1);
+          pushSystem(loaded);
+          setNotice({
+            kind: disagreements.length > 0 ? 'error' : 'info',
+            text:
+              disagreements.length > 0
+                ? `Loaded ${action.name}, but it is not the lens it was meant to be. Undo puts your design back.`
+                : `Loaded ${action.name}, written by the help assistant. Undo puts your design back.`,
+            ...((warnings.length > 0 || disagreements.length > 0) && {
+              warnings: [...disagreements, ...warnings],
+            }),
+          });
+          return { ok: true };
+        }
+        case 'propose_edits':
+          // Never performed here — a proposal is drawn and waits for a person.
+          return { ok: false, error: 'A proposal is applied from its own button.' };
+      }
+    },
+    [system, pushSystem],
+  );
+
+  const applyProposal = useCallback(
+    (edits: readonly ProposedEdit[]): ActionOutcome => {
+      const next = applyEdits(system, edits);
+      if (!next.ok) return { ok: false, error: next.error };
+      pushSystem(next.value);
+      return { ok: true };
+    },
+    [system, pushSystem],
+  );
+
   // Padded rather than required to match: a system arriving from a file, an
   // undo, or the reset button brings its own field list, and anything the flags
   // do not cover is drawn. Removing a field keeps the flags in step at the row
@@ -1262,7 +1375,27 @@ export function App() {
       case 'session':
         return <SessionPanel session={session} choice={choice} />;
       case 'help':
-        return <HelpPanel context={helpContext} choice={choice} />;
+        return (
+          <HelpPanel
+            context={helpContext}
+            perform={(action) =>
+              performHelpAction(action, (panel) => {
+                // Split this pane and put the panel in the new half. The new
+                // pane's key is the workspace's `nextKey` at the moment of the
+                // split, which is what lets both steps happen in one update
+                // rather than in two renders with a lookup in between.
+                update((current) => {
+                  if (panelsOnScreen(current).has(panel)) return current;
+                  const born = `pane-${current.nextKey}`;
+                  return setPanePanel(splitPane(current, found.key, 'column'), born, panel);
+                });
+              })
+            }
+            preview={(edits) => previewEdits(system, edits)}
+            applyEdits={applyProposal}
+            choice={choice}
+          />
+        );
     }
   };
 

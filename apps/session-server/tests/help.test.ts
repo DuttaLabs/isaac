@@ -153,3 +153,49 @@ test('an unknown path is still a 404, with help routed ahead of it', async () =>
     await relay.close();
   }
 });
+
+test('streaming asks for server-sent events, and says so in the headers', async () => {
+  const { relay, url } = await serverWith({}, { apiKey: 'sk-test' });
+  try {
+    const response = await ask(url, { question: 'hello', stream: true });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
+    // nginx buffers a proxied response by default, which would hold the whole
+    // answer back until the end — the exact pause streaming exists to remove,
+    // and it would look like a bug in the browser rather than in the proxy.
+    assert.equal(response.headers.get('x-accel-buffering'), 'no');
+    await response.text();
+  } finally {
+    await relay.close();
+  }
+});
+
+test('a failure mid-stream arrives as an event, not as a dead connection', async () => {
+  // The status line is long gone by the time the API refuses a bad key, so the
+  // only way left to say what happened is an event the client is watching for.
+  // Without this the browser sees a stream that simply stops, which is
+  // indistinguishable from an answer that finished.
+  const { relay, url } = await serverWith({}, { apiKey: 'sk-not-a-real-key' });
+  try {
+    const response = await ask(url, { question: 'hello', stream: true });
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    const events = body
+      .split('\n\n')
+      .filter((chunk) => chunk.startsWith('data:'))
+      .map((chunk) => JSON.parse(chunk.slice(5).trim()) as { kind: string });
+    assert.ok(events.some((event) => event.kind === 'error'), `no error event in ${body}`);
+  } finally {
+    await relay.close();
+  }
+});
+
+test('history that is not a list of exchanges is refused', async () => {
+  const { relay, url } = await serverWith({}, { apiKey: 'sk-test' });
+  try {
+    assert.equal((await ask(url, { question: 'hi', history: 'yesterday' })).status, 400);
+    assert.equal((await ask(url, { question: 'hi', history: [{ question: 'a' }] })).status, 400);
+  } finally {
+    await relay.close();
+  }
+});

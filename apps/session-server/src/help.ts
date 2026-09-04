@@ -89,6 +89,17 @@ You know optics generally, and may answer optical questions on their merits —
 what a conic constant does, why a doublet corrects color. Keep the two apart:
 optics is what you know, Isaac is what the manual says.
 
+You can also *act*, through the tools you are given, and you should when one
+fits. Prefer showing to describing: highlight the surface rather than saying
+"look at row 3", propose the edits rather than reciting them. Use at most one
+tool per answer, and never announce a tool by name.
+
+**Always write prose, including when you call a tool.** A tool call on its own
+reaches the user as a silent change with no explanation. Say what you did in the
+same breath — "the stop is on surface 1; I've highlighted it", "here is a rough
+Cooke triplet to start from". When no tool fits, answer in words alone; a wrong
+action is worse than none.
+
 Be brief. Two or three short paragraphs at most, and often one sentence. Plain
 prose; a short list where a list genuinely helps. No headings, no preamble, no
 closing offer of further help.
@@ -96,6 +107,141 @@ closing offer of further help.
 --- ISAAC MANUAL ---
 
 ${MANUAL}`;
+
+/**
+ * What the assistant may ask the app to do.
+ *
+ * Declared as *tools*, but used as structured output rather than as a
+ * conversation: the model emits at most one, the browser performs it, and
+ * nothing is sent back for the model to look at. That is the whole loop, and it
+ * is one API call rather than three. A genuine tool loop is what you need when
+ * the model must *read* a result before answering — none of these are that.
+ *
+ * The vocabulary is small on purpose, and ordered by how much it can cost you:
+ * the first two change nothing, the third is one undo away, and the last does
+ * not act at all — it proposes, and a person presses Apply.
+ */
+const TOOLS = [
+  {
+    name: 'highlight_surface',
+    description:
+      "Draw the user's eye to one surface in the lens grid — it flashes and scrolls into view. " +
+      'Use this whenever an answer names a surface the user has to go and find. ' +
+      'It changes nothing about the design.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        surface: { type: 'integer', description: 'Surface number, as shown in the Surface column.' },
+      },
+      required: ['surface'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: 'open_panel',
+    description:
+      'Open a panel the user does not currently have on screen, beside the Help panel. ' +
+      'Only use it when the answer genuinely needs a panel that is not open — never to ' +
+      'rearrange a workspace somebody has set up.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        panel: {
+          type: 'string',
+          enum: ['source', 'system', 'firstOrder', 'layout2d', 'layout3d', 'rayFan', 'spot', 'textEditor'],
+        },
+      },
+      required: ['panel'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: 'load_design',
+    description:
+      'Replace the design on screen with one you have written, as .zmx text. Use it when the ' +
+      'user asks for a starting design — "give me a Cooke triplet", "show me a Newtonian". ' +
+      'Isaac reads it with the same verified reader it reads a file with, so a malformed or ' +
+      'impossible prescription is refused rather than traced, and it lands on the undo stack. ' +
+      'Say in your answer that it is a rough starting point: Isaac has no optimizer, so nothing ' +
+      'will refine it. Never use this to modify the design already open — propose_edits is for that. ' +
+      'You MUST state the focal length and F/# you are aiming for. Isaac traces what you wrote and ' +
+      'checks it against them, and tells the user when they disagree — so state what you intended, ' +
+      'not what you hope came out. A prescription that reads correctly and is the wrong lens is ' +
+      'the failure mode here, and that check is what catches it.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        zmx: {
+          type: 'string',
+          description:
+            'A complete .zmx file. Minimum useful form: NAME, UNIT MM, MODE SEQ, ENPD or FNUM ' +
+            'for the aperture, WAVM lines in micrometers, XFLN/YFLN fields, and a SURF block per ' +
+            'surface with CURV, DISZ, DIAM, GLAS and STOP as needed. Always give three ' +
+            'wavelengths (F, d and C — 0.4861, 0.5876, 0.6563) and at least three fields ' +
+            'including an off-axis one, unless the user asked for something else: a design with ' +
+            'one on-axis field draws a single ray bundle and shows nothing about how it performs ' +
+            'across the field, which is most of what a starting design is looked at for.',
+        },
+        name: { type: 'string', description: 'A short filename, ending .zmx.' },
+        note: {
+          type: 'string',
+          description: 'One or two sentences for the user about what this design is.',
+        },
+        intendedEfl: {
+          type: 'number',
+          description: 'The effective focal length you intend, in the design\'s own units.',
+        },
+        intendedFNumber: { type: 'number', description: 'The F/# you intend.' },
+      },
+      required: ['zmx', 'name', 'note', 'intendedEfl', 'intendedFNumber'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    name: 'propose_edits',
+    description:
+      'Propose changes to the design currently open. This does NOT apply them: the user sees ' +
+      'them as a before-and-after list and presses Apply or Discard. Prefer it over describing ' +
+      'an edit in prose, and keep the list short — a few related changes, not a redesign. ' +
+      'Propose only what the user actually asked to change: setting `mirror` already flips the ' +
+      'thickness after that surface, and setting `stop` already clears the old stop, so never ' +
+      'list those consequences as edits of their own — doing so applies them twice.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        edits: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              surface: { type: 'integer' },
+              property: {
+                type: 'string',
+                enum: ['radius', 'conic', 'thickness', 'semiDiameter', 'material', 'label', 'stop', 'mirror'],
+              },
+              value: {
+                type: 'string',
+                description:
+                  'The new value as text. A number for the numeric properties ("Infinity" is ' +
+                  'allowed for a radius); a glass name for material; "true"/"false" for stop ' +
+                  'and mirror.',
+              },
+            },
+            required: ['surface', 'property', 'value'],
+            additionalProperties: false,
+          },
+        },
+        why: { type: 'string', description: 'One short sentence on what these changes do.' },
+      },
+      required: ['edits', 'why'],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
 
 export interface HelpConfig {
   /** Absent means the endpoint answers 503 and says why. */
@@ -114,6 +260,8 @@ export interface HelpRequest {
   readonly question: string;
   readonly context?: string;
   readonly history?: readonly HelpExchange[];
+  /** Server-sent events rather than one JSON body. The browser wants this. */
+  readonly stream?: boolean;
 }
 
 type Log = (event: string, detail?: Record<string, unknown>) => void;
@@ -164,6 +312,7 @@ function readHelpRequest(body: string): { ok: true; value: HelpRequest } | { ok:
       question: question.trim(),
       ...(context !== undefined && { context }),
       ...(history.length > 0 && { history }),
+      ...((parsed as Record<string, unknown>)['stream'] === true && { stream: true }),
     },
   };
 }
@@ -335,68 +484,68 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
       return true;
     }
 
-    const { question, context, history = [] } = parsed.value;
+    const { question, context, history = [], stream: wantsStream = false } = parsed.value;
     const started = Date.now();
-    try {
-      const message = await client.messages.create({
-        model,
-        max_tokens: MAX_ANSWER_TOKENS,
-        // A help answer is a lookup, not a proof. `low` is what this kind of
-        // route wants — the depth that pays for itself on hard reasoning is
-        // spent latency and money here.
-        output_config: { effort: 'low' },
-        system: [
-          {
-            type: 'text',
-            text: INSTRUCTIONS,
-            // The manual is fixed and the question is not, so the whole system
-            // prompt is a cacheable prefix and the manual is paid for once.
-            //
-            // **Whether it caches at all depends on the model, and not the way
-            // you would guess.** A prefix below the model's minimum silently
-            // does not cache — no error, just `cache_read_input_tokens: 0` —
-            // and the minimum is not monotonic across generations: 512 tokens
-            // on Claude Opus 5, 1024 on Sonnet 5, 4096 on Haiku 4.5.
-            //
-            // Measured, this prefix is **4,107 tokens**, so it caches
-            // everywhere — but it clears Haiku's minimum by *eleven tokens*.
-            // Trimming a couple of sentences from the manual would drop it
-            // under, and the only sign would be a bill that quietly stopped
-            // improving. Do not treat that margin as headroom: if the manual
-            // ever needs to be shorter, check the logged `written` on a fresh
-            // prefix before assuming caching survived.
-            //
-            // The default 5-minute TTL is the right one here: help arrives in
-            // bursts of a few questions, and a read refreshes the timer for
-            // free. The 1-hour TTL costs double to write and needs three reads
-            // to pay that back, which this traffic will not give it.
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        messages: [
-          // Earlier turns first, then the question — with the design attached to
-          // the *current* one, so a follow-up is answered against the design as
-          // it is now rather than as it was three edits ago.
-          ...history.flatMap((turn) => [
-            { role: 'user' as const, content: turn.question },
-            { role: 'assistant' as const, content: turn.answer },
-          ]),
-          {
-            role: 'user',
-            content:
-              context === undefined
-                ? question
-                : `Here is the design currently open, as data:\n\n${context}\n\n---\n\n${question}`,
-          },
-        ],
-      });
 
-      const answer = message.content
-        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-        .map((block) => block.text)
-        .join('\n')
-        .trim();
+    const messages = [
+      // Earlier turns first, then the question — with the design attached to
+      // the *current* one, so a follow-up is answered against the design as it
+      // is now rather than as it was three edits ago.
+      ...history.flatMap((turn) => [
+        { role: 'user' as const, content: turn.question },
+        { role: 'assistant' as const, content: turn.answer },
+      ]),
+      {
+        role: 'user' as const,
+        content:
+          context === undefined
+            ? question
+            : `Here is the design currently open, as data:\n\n${context}\n\n---\n\n${question}`,
+      },
+    ];
 
+    const ask = {
+      model,
+      max_tokens: MAX_ANSWER_TOKENS,
+      // A help answer is a lookup, not a proof. `low` is what this kind of
+      // route wants — the depth that pays for itself on hard reasoning is
+      // spent latency and money here.
+      output_config: { effort: 'low' as const },
+      tools: TOOLS,
+      system: [
+        {
+          type: 'text' as const,
+          text: INSTRUCTIONS,
+          // The manual is fixed and the question is not, so the whole system
+          // prompt is a cacheable prefix and the manual is paid for once.
+          //
+          // **Whether it caches at all depends on the model, and not the way
+          // you would guess.** A prefix below the model\'s minimum silently
+          // does not cache — no error, just `cache_read_input_tokens: 0` — and
+          // the minimum is not monotonic across generations: 512 tokens on
+          // Claude Opus 5, 1024 on Sonnet 5, 4096 on Haiku 4.5.
+          //
+          // Measured, this prefix is around 4,100 tokens, so it caches
+          // everywhere — but it clears Haiku\'s minimum by a few dozen tokens.
+          // Trimming the manual could drop it under, and the only sign would be
+          // a bill that quietly stopped improving. The tool definitions sit
+          // *before* the system prompt in cache order, so editing one of those
+          // invalidates the manual behind it too.
+          //
+          // The default 5-minute TTL is the right one here: help arrives in
+          // bursts of a few questions, and a read refreshes the timer for free.
+          cache_control: { type: 'ephemeral' as const },
+        },
+      ],
+      messages,
+    };
+
+    /** What the browser is told, one JSON object per server-sent event. */
+    const sendEvent = (payload: Record<string, unknown>): void => {
+      response.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const record = (message: Anthropic.Message): void => {
       log('help', {
         ms: Date.now() - started,
         model: message.model,
@@ -408,23 +557,75 @@ export function createHelpEndpoint(config: HelpConfig, log: Log) {
         written: message.usage.cache_creation_input_tokens ?? 0,
         cached: message.usage.cache_read_input_tokens ?? 0,
         out: message.usage.output_tokens,
+        tool: message.content.find((block) => block.type === 'tool_use')?.name ?? null,
         today: allowance.spentToday,
       });
+    };
 
-      if (message.stop_reason === 'refusal' || answer === '') {
-        reply(response, 200, {
-          answer: 'I was not able to answer that one. Try asking it a different way.',
-        });
+    /** The prose, and the one action if the model asked for one. */
+    const readMessage = (message: Anthropic.Message): { answer: string; action?: unknown } => {
+      const answer = message.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n')
+        .trim();
+      const call = message.content.find(
+        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+      );
+      return { answer, ...(call !== undefined && { action: { kind: call.name, ...(call.input as object) } }) };
+    };
+
+    try {
+      if (!wantsStream) {
+        const message = await client.messages.create(ask);
+        record(message);
+        const { answer, action } = readMessage(message);
+        if (message.stop_reason === 'refusal' || (answer === '' && action === undefined)) {
+          reply(response, 200, { answer: 'I was not able to answer that one. Try asking it a different way.' });
+          return true;
+        }
+        reply(response, 200, { answer, ...(action !== undefined && { action }) });
         return true;
       }
-      reply(response, 200, { answer });
+
+      // Server-sent events. `x-accel-buffering` is the header nginx reads to
+      // stop buffering a response — without it the whole answer arrives at once
+      // at the end, which is exactly the pause streaming exists to remove, and
+      // it would look like a bug in the browser rather than in the proxy.
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no',
+        ...(allowedOrigin !== undefined && { 'access-control-allow-origin': allowedOrigin, vary: 'origin' }),
+      });
+
+      const live = client.messages.stream(ask);
+      live.on('text', (delta) => sendEvent({ kind: 'text', text: delta }));
+      const message = await live.finalMessage();
+      record(message);
+
+      const { answer, action } = readMessage(message);
+      if (message.stop_reason === 'refusal' || (answer === '' && action === undefined)) {
+        sendEvent({ kind: 'text', text: 'I was not able to answer that one. Try asking it a different way.' });
+      }
+      if (action !== undefined) sendEvent({ kind: 'action', action });
+      sendEvent({ kind: 'done' });
+      response.end();
       return true;
     } catch (error) {
       // Say that it failed and log why. A help box that silently returns
       // nothing is indistinguishable from one that is broken.
       const detail = error instanceof Error ? error.message : String(error);
       log('help-failed', { detail });
-      reply(response, 502, { error: 'The help assistant could not be reached just now.' });
+      if (response.headersSent) {
+        // Mid-stream: the status line is long gone, so the failure has to
+        // travel as an event and the client has to be watching for one.
+        sendEvent({ kind: 'error', error: 'The help assistant stopped part way through.' });
+        response.end();
+      } else {
+        reply(response, 502, { error: 'The help assistant could not be reached just now.' });
+      }
       return true;
     }
   };

@@ -34,17 +34,29 @@ printf '  %s\n' "$(du -sh "$dist" | cut -f1) in $(find "$dist" -type f | wc -l |
 # the certificate has to come first — and certbot needs a server answering on
 # port 80 to prove the domain. Hence the plain HTTP config, once.
 say "Certificate"
+# Let's Encrypt proves every name on the certificate, so asking for one that
+# does not resolve fails the *whole* request — including the name that does.
+# `www` is therefore included only if it exists.
+CERT_DOMAINS="-d $DOMAIN"
+if host "www.$DOMAIN" >/dev/null 2>&1; then
+  CERT_DOMAINS="$CERT_DOMAINS -d www.$DOMAIN"
+  echo "  covering $DOMAIN and www.$DOMAIN"
+else
+  echo "  covering $DOMAIN only — no DNS record for www.$DOMAIN"
+fi
+export CERT_DOMAINS
+
 if ! ssh "$HOST" "sudo test -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem"; then
   echo "  none yet — obtaining one"
   ssh "$HOST" "sudo install -d -o \$USER -g \$USER '$REMOTE_DIR' /var/www/html"
-  ssh "$HOST" bash -s <<REMOTE
+  ssh "$HOST" "CERT_DOMAINS='$CERT_DOMAINS' bash -s" <<REMOTE
 set -euo pipefail
 printf 'server {\n listen 80;\n listen [::]:80;\n server_name $DOMAIN www.$DOMAIN;\n root /var/www/html;\n}\n' \
   | sudo tee /etc/nginx/sites-available/$DOMAIN.bootstrap.conf >/dev/null
 sudo ln -sf /etc/nginx/sites-available/$DOMAIN.bootstrap.conf /etc/nginx/sites-enabled/$DOMAIN.bootstrap.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot certonly --webroot -w /var/www/html \
-  -d $DOMAIN -d www.$DOMAIN \
+  $CERT_DOMAINS \
   --non-interactive --agree-tos -m "${CERTBOT_EMAIL:-subratinho@gmail.com}"
 sudo rm -f /etc/nginx/sites-enabled/$DOMAIN.bootstrap.conf
 REMOTE

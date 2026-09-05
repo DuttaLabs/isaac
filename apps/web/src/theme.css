@@ -80,6 +80,17 @@
    * own white ground.
    */
   --obscuration: #000000;
+  /*
+   * The aperture stop, which the lens table draws as a stop sign.
+   *
+   * **It does not change with the theme either**, and for the same reason as
+   * the obscuration above: the mark is quoting something from outside the app.
+   * A stop sign is this red wherever there are roads, and one that went pink at
+   * night would stop being the thing it is quoting — the joke only works at full
+   * strength. Everything else about the control follows the theme; its color is
+   * the one part that cannot.
+   */
+  --stop-sign: #ff0000;
   --syntax-structure: #6d28d9;
   --syntax-prescription: #0f766e;
   --syntax-system: #1d4ed8;
@@ -1518,6 +1529,101 @@ td select {
 
 .stop-cell {
   text-align: center;
+}
+
+/*
+ * A stop sign, standing in for the radio button that says which surface is the
+ * aperture stop.
+ *
+ * Sized against the platform's own radio, which is 13px across in every engine
+ * that ships one, and drawn 10% larger so that a sign reads as a sign: at the
+ * scale of a table cell an octagon needs a little more room than a circle
+ * before its corners are corners rather than a slightly lumpy edge.
+ */
+.stop-sign {
+  --stop-sign-size: 14.3px;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--stop-sign-size);
+  height: var(--stop-sign-size);
+  vertical-align: middle;
+}
+
+/*
+ * The real control, laid over the drawing rather than replaced by it: it keeps
+ * the pointer, the keyboard, the radio group and the checked state that every
+ * rule below reads. Zero opacity and not `display: none`, which would take all
+ * four away.
+ */
+.stop-sign input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.stop-sign input:disabled {
+  cursor: default;
+}
+
+.stop-sign svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The input above is the whole target; the drawing must not intercept it. */
+  pointer-events: none;
+}
+
+.stop-sign-ring {
+  fill: none;
+  stroke: var(--stop-sign);
+  stroke-linejoin: round;
+  /*
+   * Unstopped rows still carry the sign, faintly — the column is a row of
+   * places the stop could go, and drawing them in grey would say the choice
+   * lives somewhere else. Faint red says "not this one, yet".
+   */
+  opacity: 0.4;
+}
+
+.stop-sign-face {
+  fill: var(--stop-sign);
+  opacity: 0;
+}
+
+.stop-sign input:checked + svg .stop-sign-ring,
+.stop-sign input:checked + svg .stop-sign-face {
+  opacity: 1;
+}
+
+.stop-sign input:hover:not(:disabled):not(:checked) + svg .stop-sign-ring {
+  opacity: 0.75;
+}
+
+/*
+ * The two ends of the system, and any surface type that cannot hold a stop.
+ * Dim rather than absent: an empty cell in a column of signs reads as a missing
+ * sign, which is the same reasoning the aperture icon's faint outline follows.
+ */
+.stop-sign input:disabled + svg {
+  opacity: 0.15;
+}
+
+/*
+ * The global `input:focus` outline would be drawn on an element at zero
+ * opacity, which is no outline at all, so it moves to the drawing beside it.
+ */
+.stop-sign input:focus-visible {
+  outline: none;
+}
+
+.stop-sign input:focus-visible + svg {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ---------- Readouts ---------- */

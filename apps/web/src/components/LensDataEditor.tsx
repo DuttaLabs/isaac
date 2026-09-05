@@ -900,12 +900,10 @@ export function LensDataEditor({
                       was the one such fact stranded at the far end of a table
                       that has to be scrolled. */}
                   <td data-column="stop" className={cellClass(index, 'stop', 'stop-cell')}>
-                    <input
-                      type="radio"
-                      name="stop-surface"
+                    <StopSign
                       checked={surface.isStop}
                       disabled={isFixed}
-                      aria-label={`Make surface ${label} the aperture stop`}
+                      ariaLabel={`Make surface ${label} the aperture stop`}
                       onChange={() => apply(setStop(system, index))}
                     />
                   </td>
@@ -1471,5 +1469,87 @@ function ModelGlassCell({
         }
       }}
     />
+  );
+}
+
+/**
+ * The corners of a regular octagon inscribed in a circle of `radius`, centered
+ * in the 100-unit box the sign is drawn in.
+ *
+ * The first corner sits at 22.5° rather than at 0, which is what puts a *flat
+ * side* at the top and makes it a road sign rather than a lozenge on its point.
+ * Computed rather than typed out: eight coordinate pairs written by hand are
+ * eight chances to be slightly wrong in a way that still draws an octagon.
+ */
+function octagonPoints(radius: number): string {
+  return Array.from({ length: 8 }, (_, corner) => {
+    const angle = (Math.PI / 8) * (2 * corner + 1);
+    const x = 50 + radius * Math.cos(angle);
+    const y = 50 + radius * Math.sin(angle);
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  }).join(' ');
+}
+
+/**
+ * The ring is stroked *on* its radius, so half the width lies outside it: 45.5
+ * plus half of 9 reaches exactly the edge of the box, which is what makes the
+ * sign as large as the space it is given. The face is a second octagon rather
+ * than a scaled copy of the first, so the gap between them is a real distance
+ * and not a stroke that happens to look like one.
+ */
+const STOP_RING_RADIUS = 45.5;
+const STOP_RING_WIDTH = 9;
+const STOP_FACE_RADIUS = 27;
+
+/**
+ * Which surface is the aperture stop, drawn as a stop sign.
+ *
+ * It is still a radio button in every way that matters — one across the whole
+ * system, `name` groups them, the arrow keys move it, the accessible name is
+ * unchanged — and the input really is a radio. What changed is only what it
+ * looks like: the platform's dot inside a circle, drawn as an octagonal face
+ * inside an octagonal ring.
+ *
+ * `--stop-sign` is fixed at `#ff0000` and **does not change with the theme**,
+ * for the same reason `--obscuration` does not. A stop sign is red wherever
+ * there are roads; a sign that turned pink at night would stop being the thing
+ * it is quoting.
+ *
+ * The input is laid over the drawing at zero opacity rather than hidden, so it
+ * keeps the pointer, the keyboard and the checked state that the CSS reads. The
+ * one thing that has to move with it is the focus ring: an outline on an
+ * invisible element is an invisible outline, so it is drawn on the sibling
+ * instead.
+ */
+function StopSign({
+  checked,
+  disabled,
+  ariaLabel,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  ariaLabel: string;
+  onChange: () => void;
+}) {
+  return (
+    <span className="stop-sign">
+      <input
+        type="radio"
+        name="stop-surface"
+        checked={checked}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onChange={onChange}
+      />
+      <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+        <polygon
+          className="stop-sign-ring"
+          points={octagonPoints(STOP_RING_RADIUS)}
+          strokeWidth={STOP_RING_WIDTH}
+        />
+        <polygon className="stop-sign-face" points={octagonPoints(STOP_FACE_RADIUS)} />
+      </svg>
+    </span>
   );
 }

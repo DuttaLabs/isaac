@@ -39,6 +39,7 @@
 
 import {
   SPECTRAL_LINES,
+  surfacePower,
   entrancePupil,
   entrancePupilPlaneZ,
   entrancePupilRadius,
@@ -342,6 +343,15 @@ function abbeNumberOf(material: Material): number {
   return spread === 0 ? Infinity : (d - 1) / spread;
 }
 
+/** The last surface that actually bends light, which is not always the last one. */
+function lastPoweredSurfaceIndex(system: OpticalSystem, wavelengthNm: number): number | undefined {
+  const media = signedMediaIndices(system, wavelengthNm);
+  for (let index = lastRefractingSurfaceIndex(system); index >= 1; index -= 1) {
+    if (surfacePower(system.surfaceAt(index), media[index - 1]!, media[index]!) !== 0) return index;
+  }
+  return undefined;
+}
+
 /** Isaac's surface types under the names OpticStudio prints in the Type column. */
 const ZMX_SURFACE_TYPES: Readonly<Record<string, string>> = {
   OBJECT: 'STANDARD',
@@ -576,6 +586,22 @@ function compareCardinalPoints(
     );
   }
 
+  // **After an odd number of reflections the object-space column is in a frame
+  // this comparison cannot pin.** On the 5-mirror Offner compensator OpticStudio
+  // puts the front focal plane at +6.662 where Isaac has -6.662833 — the same
+  // magnitude, mirrored — and the front principal plane at 9.310 where Isaac has
+  // -4.015465, which is not the mirror of anything. Isaac's is the one that
+  // satisfies the definition: place the object there and the magnification is
+  // exactly +1, while at OpticStudio's it is 0.166. So the object-space rows
+  // below are reported for information on such a system, not as a verdict.
+  if (travel < 0) {
+    warnings.push(
+      'The system has an odd number of reflections, and OpticStudio\u2019s object-space column ' +
+        'is then in a frame this comparison could not pin. Isaac\u2019s front principal plane is ' +
+        'verified against the definition instead \u2014 the magnification there is +1.',
+    );
+  }
+
   const focalLength = block.rows.get('Focal Length');
   checks.value(
     section,
@@ -674,9 +700,16 @@ function compareGeneralData(
   // sc_endo1 it is the last vertex. Both are checked, and which one matched is
   // recorded — the cardinal block is where the quantity is pinned properly.
   const rearFocusZ = system.vertexZAt(last) + paraxial.backFocalDistance;
+  const lastPowered = lastPoweredSurfaceIndex(system, wavelengthNm);
   checks.oneOf(section, 'back focal length', generalValue(prescription, 'Back Focal Length'), [
     ['from the image surface', inImageSpace(rearFocusZ)],
     ['from the last vertex', paraxial.backFocalDistance / frame.divisor],
+    [
+      'from the last powered surface',
+      lastPowered === undefined
+        ? undefined
+        : (rearFocusZ - system.vertexZAt(lastPowered)) / frame.divisor,
+    ],
   ]);
   // Total track is the axial *extent*, not the distance from the first surface
   // to the last: a mirror sends the later surfaces back the way they came, so
@@ -927,8 +960,15 @@ function compareSources(
   prescription.wavelengths.forEach((wavelength, index) => {
     const own = system.wavelengthsNm[index];
     if (own === undefined) return;
-    // The report is in micrometres and the model in nanometres.
-    checks.value(section, `wavelength ${index + 1}`, exactly(wavelength.um), own / 1000);
+    // The report is in micrometres and the model in nanometres — and it *rounds*:
+    // `0.587562` is the d line at 0.5875618, not a different wavelength. Compared
+    // as an exact number it disagreed with a value printed identically.
+    checks.value(
+      section,
+      `wavelength ${index + 1}`,
+      parsePrescriptionValue(wavelength.umText, prescription.precision) ?? exactly(wavelength.um),
+      own / 1000,
+    );
   });
 }
 

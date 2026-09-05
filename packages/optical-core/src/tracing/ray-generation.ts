@@ -71,8 +71,7 @@ export function entrancePupilRadius(system: OpticalSystem): number {
       return value / 2;
 
     case 'OBJECT_SPACE_NA': {
-      const distance = objectDistance(system);
-      if (!Number.isFinite(distance)) {
+      if (!Number.isFinite(objectDistance(system))) {
         throw new RangeError('OBJECT_SPACE_NA requires an object at a finite distance.');
       }
       const indexBefore = system.objectSurface.material.indexAt(system.primaryWavelengthNm);
@@ -80,7 +79,17 @@ export function entrancePupilRadius(system: OpticalSystem): number {
       if (sine >= 1) {
         throw new RangeError(`Object-space NA ${value} is not physical in index ${indexBefore}.`);
       }
-      return distance * Math.tan(Math.asin(sine));
+      // **The cone is measured to the entrance pupil, not to the first surface.**
+      // The numerical aperture is the sine of the marginal ray angle *at the
+      // object*, and that ray ends on the rim of the entrance pupil — which is
+      // where every other aperture type here is measured, and where
+      // `generateRay` aims. The two coincide only when the pupil happens to lie
+      // at surface 1, which is why measuring to surface 1 survived: it is right
+      // in the simple case and wrong by the distance between them otherwise. On
+      // `Liang2006c.zmx` the pupil sits 59.3 mm past a surface 0.15 mm from the
+      // object, so the pupil came out **396 times too small** and every traced
+      // ray was near-axial.
+      return pupilDistanceFromObject(system) * Math.tan(Math.asin(sine));
     }
 
     case 'IMAGE_SPACE_FNUM': {
@@ -131,6 +140,19 @@ export function imageSpaceFNumber(
 /** Axial distance from the object surface to the first surface (Infinity for an object at infinity). */
 export function objectDistance(system: OpticalSystem): number {
   return system.objectSurface.thickness;
+}
+
+/**
+ * Object plane to entrance-pupil plane, which is the lever arm an object-space
+ * angle turns into a pupil height. Falls back to the first surface when there is
+ * no stop to image, since then there is no pupil to solve for and surface 1 is
+ * the only plane on offer.
+ */
+function pupilDistanceFromObject(system: OpticalSystem): number {
+  if (system.stopIndex === undefined) return objectDistance(system);
+  const pupilZ = entrancePupilPlaneZ(system);
+  if (!Number.isFinite(pupilZ)) return objectDistance(system);
+  return pupilZ - system.vertexZAt(0);
 }
 
 /** True when the object sits at infinity, so fields are angles rather than heights. */

@@ -154,12 +154,17 @@ export interface PrescriptionField {
   readonly x: number;
   readonly y: number;
   readonly weight: number;
+  /** As printed, so a comparison can use the precision the report actually gave. */
+  readonly xText: string;
+  readonly yText: string;
 }
 
 /** One wavelength, in micrometres as the report gives them. */
 export interface PrescriptionWavelength {
   readonly um: number;
   readonly weight: number;
+  /** As printed. `0.587562` is a rounding of 0.5875618, not a different number. */
+  readonly umText: string;
 }
 
 /** A row of the cardinal points table, which states each quantity in both spaces. */
@@ -389,6 +394,8 @@ function parseFields(lines: readonly string[]): PrescriptionField[] {
     x: Number(cells[1]),
     y: Number(cells[2]),
     weight: Number(cells[3]),
+    xText: cells[1] ?? '',
+    yText: cells[2] ?? '',
   }));
 }
 
@@ -396,6 +403,7 @@ function parseWavelengths(lines: readonly string[]): PrescriptionWavelength[] {
   return parseNumberedRows(lines, /^\s*#\s*\tValue/).map((cells) => ({
     um: Number(cells[1]),
     weight: Number(cells[2]),
+    umText: cells[1] ?? '',
   }));
 }
 

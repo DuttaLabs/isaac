@@ -232,3 +232,72 @@ test('rays outside the clear aperture are reported as blocked', () => {
     ['BLOCKED', 'TERMINATED', 'BLOCKED'],
   );
 });
+
+/**
+ * **An object-space NA is an angle at the object, and the ray it names ends on
+ * the rim of the entrance pupil.** Measuring that cone to *surface 1* instead is
+ * right whenever the pupil happens to sit there and wrong by the distance
+ * between them otherwise — which is why it survived every test here: the singlet
+ * above has its stop on the first surface.
+ *
+ * Found by cross-checking `Liang2006c.zmx` against OpticStudio, where the stop
+ * images to a pupil 59.3 mm past a first surface 0.15 mm from the object. The
+ * pupil came out **396 times too small**, so every ray traced was near-axial and
+ * the design looked diffraction-limited.
+ *
+ * The assertion is the definition rather than a number: generate the marginal
+ * ray, and the sine of its angle at the object must be the NA.
+ */
+function objectSpaceNaSystem(stopSetback: number): OpticalSystem {
+  return new OpticalSystem({
+    name: 'NA-defined system',
+    wavelengthsNm: [WAVELENGTH_NM],
+    aperture: { type: 'OBJECT_SPACE_NA', value: 0.25 },
+    fields: [{ objectHeight: 0 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: 20, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: stopSetback,
+        semiDiameter: 40,
+        material: AIR,
+      }),
+      new Surface({
+        id: 'stop',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 30,
+        semiDiameter: 40,
+        material: AIR,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 40 }),
+    ],
+  });
+}
+
+test('an object-space NA is the angle of the ray that reaches the pupil rim', () => {
+  for (const setback of [0, 15, 40]) {
+    const system = objectSpaceNaSystem(setback);
+    const marginal = generateRay(system, { px: 0, py: 1 }, { field: 0, wavelengthNm: WAVELENGTH_NM });
+    const direction = marginal.direction;
+    const sine = Math.abs(direction.y) / Math.hypot(direction.y, direction.z);
+    assert.ok(
+      Math.abs(sine - 0.25) < 1e-9,
+      `stop ${setback} past the first surface: marginal ray leaves at sin ${sine}, not the stated NA 0.25`,
+    );
+  }
+});
+
+test('the NA cone is measured to the pupil, not to the first surface', () => {
+  // With the stop 40 past surface 1 the two references differ by a factor of 3,
+  // and the pupil is the plane in a system of plane surfaces.
+  const system = objectSpaceNaSystem(40);
+  const expected = 60 * Math.tan(Math.asin(0.25));
+  assert.ok(
+    Math.abs(entrancePupilRadius(system) - expected) < 1e-9,
+    `pupil radius ${entrancePupilRadius(system)}, expected ${expected}`,
+  );
+});

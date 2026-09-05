@@ -304,7 +304,13 @@ read 393 surfaces from a 65-surface lens. `OBJ`, `STO` and `IMA` are **positions
 names** — `'STO'.replace('STO','')` is `''` and `Number('')` is 0, so a stop read by
 stripping its label lands on the object plane.
 
-Verified against six real exports — 1454 checks agree and 14 disagree, and every
+Verified against fourteen real exports — 2050 checks agree and 22 disagree, with
+**eight designs clean**: both lithography objectives, Hubble, a Mangin mirror, an
+endoscope looking into water, a 4-aspheric-coefficient design, the Unobscured
+Gregorian, and a schematic-eye relay. What it has found so far: the effective
+focal length in air, the front principal plane after an odd number of mirrors,
+and the object-space NA pupil. The rest of this paragraph was written when there
+were six exports and 1454 checks agreed and 14 disagreed, and every
 one of those 14 is named: the schematic eye's curved retina (12), Yu2024's field
 type 2, which the reader refuses, and the Dyson's exit pupil, 8.8e-7 out against
 a report that says it traces rays where Isaac's pupil is paraxial. A 65-surface immersion lithography
@@ -1556,6 +1562,16 @@ Three.js geometry for an `OpticalSystem` and nothing else: **no React, no render
 
   **`BFD` is not OpticStudio's "Back Focal Length"**, and the difference is definitional rather than a fault on either side. Isaac's is the geometric distance from the last surface's vertex to the rear focus — verified against a real ray on that same file to 0.003 mm in 1301. OpticStudio measures image-space distances **from the image surface** and **divides the index out**, which its own Cardinal Points block states in as many words; on that file its 974.011 is Isaac's 1301.438 with the 1.7936 mm of water subtracted and the rest divided by 1.334321. Every cardinal point agrees once both conventions are applied.
 - **Pupils:** `entrancePupil`/`exitPupil` image the stop through the surfaces before/after it by tracing two rays from the stop (center → location, rim → size). The entrance-pupil solve runs *backwards*, in a reversed frame ζ = −(z − z₁) where curvatures flip sign and the media swap. A pupil may be virtual (behind the stop, or in front of surface 1); a zero exit slope means telecentric and throws.
+- **An object-space NA is measured to the entrance pupil, not to surface 1.** The
+  NA is the sine of the marginal ray angle *at the object*, and that ray ends on
+  the pupil rim — the plane every other aperture type is measured at and the one
+  `generateRay` aims for. The two coincide only when the pupil happens to sit at
+  the first surface, which is why measuring to surface 1 survived every test: it
+  is right in the simple case. On `Liang2006c.zmx` the stop images to a pupil
+  59.3 mm past a surface 0.15 mm from the object, so the pupil came out **396
+  times too small** and every ray traced was near-axial. `ray-generation.test.ts`
+  pins it by the definition — generate the marginal ray, and the sine of its angle
+  at the object must be the stated NA — so the test needs no second program.
 - **Ray generation:** normalized pupil coordinates `(px, py)` span the entrance pupil (unit circle = rim). Rays are aimed at the solved entrance-pupil plane when the system has a stop, and at surface 1's vertex plane otherwise. All four aperture types work: `ENTRANCE_PUPIL_DIAMETER`, `OBJECT_SPACE_NA`, `IMAGE_SPACE_FNUM` (from the paraxial EFL, infinite conjugate only), and `FLOAT_BY_STOP` (from the stop's semi-diameter). Objects at infinity take `angleDeg` fields and launch from a plane in front of surface 1; finite objects take `objectHeight` fields and launch from the object plane.
 - **A ray may step backwards, but only where the prescription does.** `MISSED` means the ray never meets the surface, not that it meets it behind itself: a **negative thickness puts the next surface behind the one before it**, which is how a *remote stop* is written — the aperture stop of a telecentric system sits far downstream and the file steps back to where the glass is. `stepsBackward` in `trace.ts` measures the axial step **against the direction of travel**, so it reads the same in a reflecting arm, where thicknesses and travel are both negative and their product is ordinary forward propagation. A backward hit where the prescription steps forward is still `MISSED`, and that half matters too: an image plane buried inside the last lens is nominally ahead, and reporting a hit there hands `quickFocus` a fake perfect score — one axial ray, scoring zero.
 - **Aiming is paraxial (first order).** A ray aimed at the pupil rim can miss the stop edge by the residual aberration and come back `BLOCKED` — see the test that pins this. Closing that gap needs iterative *real* ray aiming, which is deliberately not implemented.

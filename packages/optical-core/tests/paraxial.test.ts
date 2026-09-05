@@ -420,3 +420,81 @@ test('dividing out the image index leaves a mirror in air alone', () => {
     `EFL ${properties.effectiveFocalLength}, expected -100`,
   );
 });
+
+/**
+ * A **principal plane is where the magnification is +1** — that is the
+ * definition, and it is testable without appealing to any other program. The
+ * plane where it is *−1* is the anti-principal plane, a real thing and the wrong
+ * one, and it is what the front principal plane of a one-mirror system used to
+ * come out as: the sign that image space carries after an odd number of
+ * reflections was inherited by an object-space quantity that never reflects.
+ *
+ * Found on `Dyson1959.zmx`, whose object and image both sit inside a block of
+ * fused silica with a mirror between them, and where OpticStudio puts both
+ * principal planes at the same point 989.720 mm past the first vertex. Isaac put
+ * the front one at −35.910 — which is exactly where OpticStudio's *anti*-
+ * principal plane is, and exactly where the object sits at magnification −1.
+ */
+function magnificationWithObjectAt(system: OpticalSystem, objectZ: number): number {
+  const object = system.surfaceAt(0).with({ thickness: system.axialPositionAt(1) - objectZ });
+  const placed = withImageAtParaxialFocus(system.withSurfaceAt(0, object));
+  return paraxialProperties(placed).magnification;
+}
+
+/** Object and image both immersed, with one reflection between them. */
+function immersedCatadioptric(): OpticalSystem {
+  const liquid = new ConstantMaterial('DEMO-LIQUID', 1.5);
+  return new OpticalSystem({
+    name: 'immersed catadioptric',
+    wavelengthsNm: [587.5618],
+    fields: [{ objectHeight: 1 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: 100, material: liquid }),
+      new Surface({ id: 's1', type: 'STANDARD', thickness: 50, semiDiameter: 40, material: AIR }),
+      new Surface({
+        id: 'm',
+        type: 'STANDARD',
+        radius: -200,
+        thickness: -50,
+        semiDiameter: 40,
+        material: AIR,
+        reflective: true,
+        isStop: true,
+      }),
+      new Surface({
+        id: 's3',
+        type: 'STANDARD',
+        thickness: -100,
+        semiDiameter: 40,
+        material: liquid,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+}
+
+test('a principal plane is where the magnification is +1, mirror or not', () => {
+  for (const [name, system] of [
+    ['a doublet in air', planoConvexSinglet()],
+    ['object and image immersed, one mirror', immersedCatadioptric()],
+  ] as const) {
+    const { frontPrincipalPlaneZ } = paraxialProperties(system);
+    const magnification = magnificationWithObjectAt(system, frontPrincipalPlaneZ);
+    assert.ok(
+      Math.abs(magnification - 1) < 1e-6,
+      `${name}: the front principal plane at ${frontPrincipalPlaneZ} images at ${magnification}, not +1`,
+    );
+  }
+});
+
+test('both principal planes of a one-mirror system land together', () => {
+  // They need not coincide in general; on this system they do, and the point is
+  // that the front one is no longer a whole object-space focal length away from
+  // where it belongs.
+  const properties = paraxialProperties(immersedCatadioptric());
+  assert.ok(
+    Math.abs(properties.frontPrincipalPlaneZ - properties.rearPrincipalPlaneZ) < 1e-6,
+    `P ${properties.frontPrincipalPlaneZ} vs P' ${properties.rearPrincipalPlaneZ}`,
+  );
+});

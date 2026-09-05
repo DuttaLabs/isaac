@@ -242,7 +242,21 @@ export function paraxialProperties(
   const effectiveFocalLength = afocal
     ? Infinity
     : imageSpaceFocalLength / Math.abs(exit.indexAfter);
-  const objectSpaceFocalLength = afocal ? Infinity : effectiveFocalLength * Math.abs(objectIndex);
+  //
+  // **Object space never runs backwards.** The sign the EFL carries after an odd
+  // number of reflections belongs to image space — that is the whole content of
+  // the negative index — and the object side, which the light crossed before it
+  // ever met a mirror, must not inherit it. So the object-space focal length
+  // takes the magnitude of the EFL back with the travel sign, while its own
+  // index is a magnitude for the same reason as above. Without this the front
+  // principal plane of a system with one mirror comes out at the plane where the
+  // magnification is **−1** rather than +1 — an *anti*-principal plane, which is
+  // a real thing and the wrong one. Invisible in air only because a reflecting
+  // system in air is usually reported at its image side.
+  const travelSign = afocal ? 1 : Math.sign(exit.indexAfter);
+  const objectSpaceFocalLength = afocal
+    ? Infinity
+    : effectiveFocalLength * Math.abs(objectIndex) * travelSign;
   const backFocalDistance = afocal ? Infinity : -exit.height / exit.angleAfter;
 
   // Collimated ray in from the right (reversed system): gives the front focal distance.

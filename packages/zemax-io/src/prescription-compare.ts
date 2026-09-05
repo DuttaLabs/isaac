@@ -231,6 +231,16 @@ class Checks {
   }
 }
 
+/**
+ * `-1` after an odd number of reflections, `+1` otherwise — the sign image space
+ * carries because it genuinely runs backwards, read off the last medium's index.
+ * Object-space quantities have to take it back out; they never reflected.
+ */
+function travelSign(system: OpticalSystem, wavelengthNm: number): number {
+  const media = signedMediaIndices(system, wavelengthNm);
+  return Math.sign(media[lastRefractingSurfaceIndex(system)]!) || 1;
+}
+
 /** The Abbe number of any material, from the three lines it is defined by. */
 function abbeNumberOf(material: Material): number {
   const d = material.indexAt(SPECTRAL_LINES.d);
@@ -312,7 +322,7 @@ function compareSurfaces(
       );
     }
 
-    compareGlass(checks, section, name, row, surface.material, prescription, wavelengthNm);
+    compareGlass(checks, section, name, row, surface, prescription, wavelengthNm);
   }
 }
 
@@ -325,11 +335,27 @@ function compareGlass(
   section: string,
   name: string,
   row: PrescriptionSurface,
-  material: Material,
+  surface: { material: Material; reflective: boolean },
   prescription: ZmxPrescription,
   wavelengthNm: number,
 ): void {
   const cell = row.glass.trim();
+  const material = surface.material;
+
+  // `MIRROR` is not a medium. OpticStudio writes it where the glass goes, as the
+  // file does, and Isaac carries it as a flag with the medium left alone — so
+  // reading the column as a material name would compare it against whatever the
+  // mirror happens to sit in.
+  if (cell.toUpperCase() === 'MIRROR') {
+    checks.text(
+      section,
+      `${name} glass`,
+      'MIRROR',
+      surface.reflective ? 'MIRROR' : `not reflective (${material.name})`,
+    );
+    return;
+  }
+
   const isAir = Math.abs(material.indexAt(wavelengthNm) - 1) < 1e-9;
 
   if (cell === '') {
@@ -406,17 +432,27 @@ function compareCardinalPoints(
   const media = signedMediaIndices(system, wavelengthNm);
   const objectIndex = Math.abs(media[0]!);
   const imageIndex = Math.abs(media[lastRefractingSurfaceIndex(system)]!);
+  const travel = travelSign(system, wavelengthNm);
   const firstVertexZ = system.axialPositionAt(1);
-  const imageSurfaceZ = paraxial.imageSurfaceZ;
 
-  /** An image-space position as the report measures it. */
-  const inImageSpace = (z: number): number => (z - imageSurfaceZ) / imageIndex;
-  /** An object-space position as the report measures it. */
-  const inObjectSpace = (z: number): number => (z - firstVertexZ) / objectIndex;
+  // **The two columns are not measured the same way**, which two exports agree
+  // on and only an immersed *object* space could show. Image space is referred
+  // to air: positions divided by n′ and the focal length coming out as the EFL.
+  // Object space is geometric: positions left in the medium's own units and the
+  // focal length carrying its index. On every lens in the corpus but two the
+  // object sits in air, where the difference is a factor of one.
+  const inImageSpace = (z: number): number => (z - paraxial.imageSurfaceZ) / imageIndex;
+  const inObjectSpace = (z: number): number => z - firstVertexZ;
 
   const efl = paraxial.effectiveFocalLength;
   const focalLength = block.rows.get('Focal Length');
-  checks.value(section, 'focal length (object space)', focalLength?.objectSpace, -efl);
+  checks.value(
+    section,
+    'focal length (object space)',
+    focalLength?.objectSpace,
+    -efl * objectIndex * travel,
+    'n\u2080/\u03c6, with the sign image space\u2019s reversal gives it taken back out',
+  );
   checks.value(section, 'focal length (image space)', focalLength?.imageSpace, efl);
 
   const focalPlanes = block.rows.get('Focal Planes');
@@ -424,15 +460,15 @@ function compareCardinalPoints(
     section,
     'front focal plane',
     focalPlanes?.objectSpace,
-    paraxial.frontFocalDistance / objectIndex,
-    'first vertex → front focus, index divided out',
+    paraxial.frontFocalDistance,
+    'first vertex \u2192 front focus, in object space\u2019s own units',
   );
   checks.value(
     section,
     'rear focal plane',
     focalPlanes?.imageSpace,
     inImageSpace(system.vertexZAt(lastRefractingSurfaceIndex(system)) + paraxial.backFocalDistance),
-    'image surface → rear focus, index divided out',
+    'image surface \u2192 rear focus, index divided out',
   );
 
   const principal = block.rows.get('Principal Planes');
@@ -476,11 +512,22 @@ function compareGeneralData(
   /** An image-space position as the report measures it: from the image surface, index out. */
   const inImageSpace = (z: number): number => (z - paraxial.imageSurfaceZ) / imageIndex;
 
+  // **The general block and the cardinal block disagree about the EFL's sign**,
+  // and both are self-consistent. The cardinal block's image-space focal length
+  // carries the reversal an odd number of reflections gives image space, and
+  // Isaac's EFL matches it; the general block states the same length referred to
+  // object space, which never reflected, so the sign comes back out. Fits all
+  // three known exports: 7301707 (no mirrors, +3895.847), Dyson1959 (one mirror,
+  // +340.548 here against -340.548 there), and the Unobscured Gregorian (two
+  // mirrors, -1237.63 in both). Read a disagreement here as a convention to
+  // check rather than as a wrong focal length — the cardinal block is where the
+  // signed value is tested.
   checks.value(
     section,
     'effective focal length',
     generalValue(prescription, 'Effective Focal Length', 'in air'),
-    paraxial.effectiveFocalLength,
+    paraxial.effectiveFocalLength * travelSign(system, wavelengthNm),
+    'referred to object space, so an odd number of mirrors does not turn it over',
   );
   checks.value(
     section,
@@ -489,11 +536,18 @@ function compareGeneralData(
     inImageSpace(system.vertexZAt(last) + paraxial.backFocalDistance),
     'image surface \u2192 rear focus, index divided out \u2014 not Isaac\u2019s BFD',
   );
+  // Total track is the axial *extent*, not the distance from the first surface
+  // to the last: a mirror sends the later surfaces back the way they came, so
+  // the last one is behind the first and the difference is negative.
+  const axial = system.surfaces
+    .map((_, index) => system.axialPositionAt(index))
+    .slice(1)
+    .filter((position) => Number.isFinite(position));
   checks.value(
     section,
     'total track',
     generalValue(prescription, 'Total Track'),
-    system.axialPositionAt(system.surfaces.length - 1) - system.axialPositionAt(1),
+    axial.length === 0 ? undefined : Math.max(...axial) - Math.min(...axial),
   );
   checks.value(
     section,
@@ -607,7 +661,8 @@ function comparePupils(
       'exit pupil position',
       generalValue(prescription, 'Exit Pupil Position'),
       inImageSpace(pupil.z),
-      'image surface \u2192 exit pupil, index divided out',
+      'image surface \u2192 exit pupil, index divided out; Isaac\u2019s pupils are paraxial, ' +
+        'so expect a difference where the report was computed by tracing rays',
     );
     checks.value(
       section,
@@ -681,6 +736,26 @@ function compareSources(
 }
 
 /**
+ * The wavelength to compare at.
+ *
+ * The report rounds — `0.253` is three decimals of a micrometre — while the file
+ * carries the value in full, so where the two agree the *file's* number is the
+ * better one. Only when they genuinely differ does the report win, and then it
+ * is the report the numbers were computed at.
+ */
+function comparisonWavelengthNm(system: OpticalSystem, prescription: ZmxPrescription): number {
+  const reported = primaryWavelengthNm(prescription);
+  if (reported === undefined) return system.primaryWavelengthNm;
+  const stated = prescription.general.find((entry) => entry.label.startsWith('Primary Wavelength'));
+  const printed =
+    stated === undefined ? undefined : parsePrescriptionValue(stated.value, prescription.precision);
+  if (printed !== undefined && valueContains(printed, system.primaryWavelengthNm / 1000)) {
+    return system.primaryWavelengthNm;
+  }
+  return reported;
+}
+
+/**
  * Compares a system against a report of the same design.
  *
  * Nothing here mutates either side, and a quantity Isaac cannot produce is
@@ -693,8 +768,7 @@ export function comparePrescription(
   options: CompareOptions = {},
 ): PrescriptionComparison {
   const warnings: string[] = [...prescription.warnings];
-  const wavelengthNm =
-    options.wavelengthNm ?? primaryWavelengthNm(prescription) ?? system.primaryWavelengthNm;
+  const wavelengthNm = options.wavelengthNm ?? comparisonWavelengthNm(system, prescription);
   const checks = new Checks(options.relativeSlack ?? DEFAULT_SLACK);
 
   compareSurfaces(checks, system, prescription, wavelengthNm, warnings);

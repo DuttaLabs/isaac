@@ -29,6 +29,11 @@ ZMX files/Papers/
 # by accident — which is what this rule is for.
 ZMX files/From the web/
 
+# OpticStudio prescription exports made from those files: its output, its
+# formatting, and the designs' own numbers. Read by `npm run compare`, not
+# committed. The reader has a fixture of its own under packages/zemax-io.
+ZMX files/Prescriptions from Zemax/
+
 # Deploy secrets: the shared relay token.
 infra/.env.deploy
 

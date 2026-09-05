@@ -252,13 +252,26 @@ Three things this had to learn, each of which makes everything look broken if mi
   **an agreement is only as strong as the digits it was checked against** while a
   disagreement is a disagreement either way.
 - **Image-space positions are measured from the image surface, with the index divided
-  out**; object-space positions from surface 1, likewise. The cardinal points block
+  out**; object-space positions from surface 1, and **not** divided. The cardinal points block
   states both in prose and the comparison *reads those sentences back* rather than
   trusting a comment — a report that words them differently is warned about instead of
   quietly checked against the wrong frame. It is not only the cardinal points: the
   general block's Back Focal Length and **Exit Pupil Position** are in the same frame
   and never say so. The index is taken by magnitude, for the reason `signedMediaIndices`
-  exists.
+  exists. The two columns are **not** symmetric, which took an immersed *object*
+  space to show: image space is referred to air, object space is left in the
+  medium's own units and its focal length carries the index. And the general
+  block's Effective Focal Length is referred to **object** space, so an odd number
+  of mirrors does not turn it over — it reads `+340.548` where the same report's
+  cardinal block reads `-340.548` and Isaac agrees with the cardinal one. That
+  fits all three exports known: no mirrors (7301707), one (Dyson1959), and two
+  (the Unobscured Gregorian, negative in both). Read a disagreement there as a
+  convention to check rather than a wrong focal length.
+- **Total track is the axial extent, not last vertex minus first.** A mirror sends
+  the later surfaces back the way they came, so the last one is behind the first
+  and the difference is negative. **`MIRROR` in the Glass column is not a medium**
+  either: it is a flag on the surface, and reading it as a material name compares
+  it against whatever the mirror sits in.
 - **A stop is not always what limits the beam, and OpticStudio names the beam.** Its
   *Stop Radius* and *Exit Pupil Diameter* are the beam at those places; Isaac's
   `stopRadius` is the stop's own clear radius and `exitPupil().radius` images the whole
@@ -1502,6 +1515,20 @@ Three.js geometry for an `OpticalSystem` and nothing else: **no React, no render
 - **Paraxial:** `paraxialTrace` runs the y–u recurrence (`n'u' = nu − yφ`, `y += u't`) starting *at surface 1*, skipping the IMAGE surface. A system with no refracting surface throws; mirrors do not, and have not since `signedMediaIndices` arrived.
 
   **There are three focal lengths and only one of them is the EFL.** `−y₁/u'` with the real exit slope is `n'/φ`, the *image-space* focal length — a true distance, from the rear principal plane to the rear focus, measured in whatever the image sits in. `n/φ` is its object-space twin. `effectiveFocalLength` is **`1/φ`**, the same length referred to air, which is what OpticStudio's EFFL prints, what divides the entrance pupil to give the F/#, and what anyone means by "the focal length". The index is divided out by **magnitude**, so the mirror sign survives: image space really does run backwards after an odd reflection, and `|n'| = 1` leaves Hubble and the Gregorian untouched.
+
+  **The object side never reflects, and must not inherit the sign that says image
+  space does.** `effectiveFocalLength` is negative after an odd number of mirrors
+  because image space genuinely runs backwards; the object space was crossed
+  before the light ever met a mirror, so the object-space focal length takes that
+  sign back out. Without it the **front principal plane of a one-mirror system
+  lands on the plane where the magnification is −1** — an *anti*-principal plane,
+  which is a real thing and the wrong one. Found on `Dyson1959.zmx`, whose object
+  and image both sit inside a block of fused silica; OpticStudio puts both
+  principal planes together at 989.720 mm past the first vertex and Isaac put the
+  front one at −35.910, which is exactly where OpticStudio's anti-principal plane
+  is. `paraxial.test.ts` pins it by the **definition** — place the object at the
+  front principal plane and the magnification must be +1 — so the test needs no
+  second program to be right.
 
   All three coincide in air, so nothing in the corpus could tell them apart until `7301707.zmx`, an immersion lithography objective with **water** between its last surface and the wafer, where Isaac reported 5198.311 mm against OpticStudio's 3895.847 — a ratio of 1.334321, water's index at 550 nm to the last digit. The **principal planes** are positions on the axis, so each takes the focal length of the space it lives in rather than the EFL; using the EFL for the front one put it a whole `(n'−n)/φ` into image space, which in air is zero and was therefore invisible too.
 

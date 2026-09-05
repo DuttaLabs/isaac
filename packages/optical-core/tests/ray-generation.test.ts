@@ -281,7 +281,11 @@ function objectSpaceNaSystem(stopSetback: number): OpticalSystem {
 test('an object-space NA is the angle of the ray that reaches the pupil rim', () => {
   for (const setback of [0, 15, 40]) {
     const system = objectSpaceNaSystem(setback);
-    const marginal = generateRay(system, { px: 0, py: 1 }, { field: 0, wavelengthNm: WAVELENGTH_NM });
+    const marginal = generateRay(
+      system,
+      { px: 0, py: 1 },
+      { field: 0, wavelengthNm: WAVELENGTH_NM },
+    );
     const direction = marginal.direction;
     const sine = Math.abs(direction.y) / Math.hypot(direction.y, direction.z);
     assert.ok(

@@ -1,4 +1,4 @@
-import { AIR, type Material, type OpticalSystem } from '@isaac/optical-core';
+import { AIR, isSolid, type OpticalSystem } from '@isaac/optical-core';
 
 /**
  * Which surfaces are the two faces of one piece of glass.
@@ -74,11 +74,6 @@ export interface ElementGap {
   colorIndex: number;
 }
 
-/** Air is index 1. Anything else at the primary wavelength is something solid. */
-export function isGlass(material: Material, wavelengthNm: number): boolean {
-  return Math.abs(material.indexAt(wavelengthNm) - 1) >= 1e-9;
-}
-
 /**
  * Every element in the system, front to back.
  *
@@ -119,7 +114,7 @@ export function findElements(system: OpticalSystem): OpticalElement[] {
   let position = 0;
   while (position < faces.length - 1) {
     const firstIndex = faces[position]!;
-    if (!isGlass(system.surfaceAt(firstIndex).material, wavelengthNm)) {
+    if (!isSolid(system.surfaceAt(firstIndex).material, wavelengthNm)) {
       // Air on the far side, and — because the model refuses a mirror that
       // changes medium — air on the near side too, so one test is both. A
       // reflecting surface here is a mirror on its own, not the back of a solid.
@@ -155,7 +150,7 @@ export function findElements(system: OpticalSystem): OpticalElement[] {
       end += 1;
     } while (
       end < faces.length - 1 &&
-      isGlass(system.surfaceAt(faces[end]!).material, wavelengthNm)
+      isSolid(system.surfaceAt(faces[end]!).material, wavelengthNm)
     );
 
     lenses += 1;

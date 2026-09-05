@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { BufferGeometry } from 'three';
 import {
   AIR,
+  ConstantMaterial,
   N_BK7,
   OpticalSystem,
   Surface,
@@ -524,4 +525,26 @@ test('a face shell sits exactly on the face it stands for', () => {
     );
   }
   scene.dispose();
+});
+
+/**
+ * The third view of the same rule. A fluid has no figure of its own, so there is
+ * no solid to revolve: the water between an immersion objective and the wafer is
+ * drawn as nothing, exactly as air is. If this ever disagreed with the 2-D
+ * section or the lens table, the picture would show a lens the grid does not
+ * name — and there would be no color for it, since the table hands out one
+ * swatch per piece of glass and this is not one.
+ */
+test('a fluid is drawn as nothing, the same as air', () => {
+  const immersed = singlet().withSurfaceAt(
+    2,
+    singlet().surfaceAt(2).with({ material: new ConstantMaterial('WATER', 1.333044) }),
+  );
+
+  assert.equal(buildOpticalScene(singlet(), [], { defaultSemiDiameter: 10 }).elements.length, 1);
+  assert.equal(
+    buildOpticalScene(immersed, [], { defaultSemiDiameter: 10 }).elements.length,
+    1,
+    'the water gap must not become a second solid',
+  );
 });

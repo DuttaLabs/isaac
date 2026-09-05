@@ -37,9 +37,14 @@ export {
   VACUUM,
   N_BK7,
   MATERIAL_CATALOG,
+  FLUID_MEDIA,
+  fluidMedium,
+  isFluid,
+  isSolid,
 } from './model/material.ts';
 export type {
   Material,
+  FluidMedium,
   SellmeierCoefficients,
   SchottDispersionCoefficients,
   ModelGlassOptions,

@@ -397,3 +397,115 @@ export const N_BK7: Material = new SellmeierMaterial('N-BK7', {
 export const MATERIAL_CATALOG: ReadonlyMap<string, Material> = new Map(
   [AIR, VACUUM, N_BK7].map((material) => [material.name, material]),
 );
+
+/**
+ * A medium a lens sits *in* rather than one a lens is made *of*.
+ *
+ * The model has no notion of an element: a lens is *implied* by a surface whose
+ * following medium is not air, so anything with an index other than 1 reads as a
+ * piece of glass. That is wrong for a fluid, and the picture it produces is a
+ * singlet immersed in water counted as a cemented doublet — one element spanning
+ * three rows, two swatches, an "L1" that is half lens and half tank.
+ *
+ * The distinction is not about index and could not be: seawater is 1.340 and
+ * immersion oil is 1.515, squarely inside the range of real glasses. It is about
+ * **whether the medium has a figure of its own**. A lens is a thing you can pick
+ * up, and its two faces are surfaces someone ground; a fluid takes the shape of
+ * whatever contains it, so its "faces" belong to the glass and the detector on
+ * either side of it. Air and vacuum are the same statement at index 1, which is
+ * why they never needed saying.
+ *
+ * The list is a closed one, and every entry is a record in the `MISC` catalog —
+ * where the materials that are not anybody's *product* live. `glass-catalog`'s
+ * `fluids.test.ts` pins these numbers against that catalog, so a regeneration
+ * that moved one would fail rather than quietly stop recognizing it.
+ */
+export interface FluidMedium {
+  /** The catalog's own name for it. */
+  readonly name: string;
+  /** Index at the d line, as the catalog prints it. */
+  readonly nd: number;
+  /** Abbe number, as the catalog prints it. */
+  readonly abbeNumber: number;
+}
+
+export const FLUID_MEDIA: readonly FluidMedium[] = [
+  { name: 'WATER', nd: 1.333044, abbeNumber: 55.794322 },
+  { name: 'SEAWATER', nd: 1.339529, abbeNumber: 57.917652 },
+  // Cargille Type A immersion liquid, nd 1.5150 — the index-matching oil a
+  // microscope objective is coupled to its coverslip with.
+  { name: 'TYPEA', nd: 1.51509, abbeNumber: 41.585023 },
+  // Not a fluid at all, but the same statement: nothing to make a lens from.
+  // The catalog's entry is 0.999728 rather than exactly 1, which is enough to
+  // read as glass without this.
+  { name: 'VACUUM', nd: 0.999728, abbeNumber: 89.195538 },
+];
+
+/**
+ * How close a model glass has to be to a fluid's published numbers to *be* that
+ * fluid.
+ *
+ * Deliberately tight. The nearest solid in every catalog Isaac carries is 0.033
+ * away from Type A oil in nd and 0.126 away from seawater, so this is an
+ * identification with more than an order of magnitude of margin, not a nearest
+ * match — and `fluids.test.ts` asserts that margin rather than assuming it, so a
+ * future catalog entry that collided would stop somebody and make them look.
+ */
+const FLUID_TOLERANCE = { nd: 1e-3, abbeNumber: 0.5 } as const;
+
+/** Case and separators are spelling; `SEA_WATER` and `SEAWATER` are one name. */
+function normalizeMediumName(name: string): string {
+  return name.toUpperCase().replace(/[\s_-]/g, '');
+}
+
+/**
+ * Which fluid this medium is, if it is one.
+ *
+ * Two ways a lens file names one, and both are in the corpus. Most write the
+ * catalog's name — `GLAS WATER` on the last surface of an immersion lithography
+ * objective, with the wafer as the image plane. But a design taken from a paper
+ * carries no glass names at all, only indices: `Liang2002a.zmx` writes the eye's
+ * vitreous humour as a **model glass** at 1.33304403094 / 55.7943215, which is
+ * `MISC`'s WATER to every digit that catalog prints.
+ *
+ * So a model glass — a glass with no name, described by its numbers — is matched
+ * on those numbers. **A glass that has a name is taken at its name**, and never
+ * reinterpreted, which is what keeps a real melt from being mistaken for oil.
+ */
+export function fluidMedium(material: Material): FluidMedium | undefined {
+  const named = normalizeMediumName(material.name);
+  const byName = FLUID_MEDIA.find((fluid) => normalizeMediumName(fluid.name) === named);
+  if (byName !== undefined) {
+    return byName;
+  }
+  if (!(material instanceof ModelGlassMaterial)) {
+    return undefined;
+  }
+  return FLUID_MEDIA.find(
+    (fluid) =>
+      Math.abs(material.nd - fluid.nd) <= FLUID_TOLERANCE.nd &&
+      Math.abs(material.abbeNumber - fluid.abbeNumber) <= FLUID_TOLERANCE.abbeNumber,
+  );
+}
+
+/** True for a medium nothing can be made of: air, vacuum, water, oil. */
+export function isFluid(material: Material): boolean {
+  return material.name === AIR.name || fluidMedium(material) !== undefined;
+}
+
+/**
+ * True when this medium is something an element could be made of — the test for
+ * whether a surface is the *face* of a piece of glass rather than a plane in a
+ * fluid.
+ *
+ * The fluid check runs first, and not only for speed: a catalog fluid carries a
+ * narrow published fit range (water's is 400–700 nm) and `indexAt` refuses to
+ * extrapolate, so asking a tank of water for its index at 1064 nm throws. It is
+ * not a question worth asking about a medium that cannot be an element anyway.
+ */
+export function isSolid(material: Material, wavelengthNm: number): boolean {
+  if (isFluid(material)) {
+    return false;
+  }
+  return Math.abs(material.indexAt(wavelengthNm) - 1) >= 1e-9;
+}

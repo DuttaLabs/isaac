@@ -2,6 +2,7 @@ import {
   Point3,
   apertureHalfExtents,
   isObscuration,
+  isSolid,
   signedMediaIndices,
   surfaceProfileSag,
   surfaceSagAt,
@@ -407,7 +408,7 @@ function touchesGlass(system: OpticalSystem, index: number): boolean {
   const solid = (at: number): boolean =>
     at >= 0 &&
     at < system.surfaces.length &&
-    Math.abs(system.surfaceAt(at).material.indexAt(wavelength) - 1) >= 1e-9;
+    isSolid(system.surfaceAt(at).material, wavelength);
   return solid(index) || solid(index - 1);
 }
 
@@ -594,8 +595,10 @@ export function buildLayout(
     if (surface.type === 'COORDINATE_TRANSFORM') {
       continue;
     }
-    const material = surface.material;
-    if (Math.abs(material.indexAt(system.primaryWavelengthNm) - 1) < 1e-9) {
+    // A fluid fills the gap rather than being a body in it, so nothing is
+    // filled across one: the water under an immersion objective belongs to the
+    // wafer's side of the last surface, not to the lens above it.
+    if (!isSolid(surface.material, system.primaryWavelengthNm)) {
       continue;
     }
     const front = profiles.find((profile) => profile.surfaceIndex === index);

@@ -1,6 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, LatheGeometry, Matrix4, Vector2 } from 'three';
 import { aperturePatch, needsAperturePatch, obscurationGeometry } from './aperture-patch.ts';
 import {
+  isSolid,
   signedMediaIndices,
   surfaceProfileSag,
   type OpticalSystem,
@@ -238,8 +239,11 @@ export function buildOpticalScene(
     const semiDiameter = system.surfaceAt(index).semiDiameter;
     return Number.isFinite(semiDiameter) ? semiDiameter : options.defaultSemiDiameter;
   };
+  // The same test the lens table and the 2-D section use, so the three cannot
+  // disagree about what is a piece of glass — a fluid is drawn as nothing at
+  // all, exactly as air is.
   const isGlass = (index: number): boolean =>
-    Math.abs(system.surfaceAt(index).material.indexAt(system.primaryWavelengthNm) - 1) >= 1e-9;
+    isSolid(system.surfaceAt(index).material, system.primaryWavelengthNm);
   const media = signedMediaIndices(system, system.primaryWavelengthNm);
   const travelAfter = (index: number): number => Math.sign(media[index] ?? 1);
 

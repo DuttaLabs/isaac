@@ -532,6 +532,42 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   left in the walk it would look like the middle of a piece of glass — but it is still *covered* by
   the span, because a tilted rear face is written exactly that way.
 
+  **But a medium with an index is not automatically glass, and a fluid is not an element.**
+  `isSolid` in `optical-core` is the test, and all three consumers take it — the lens table, the
+  2-D section's body fill, and the 3-D lathe — so none of them can draw a solid the others do not.
+  The distinction is not about index and could not be: seawater is 1.340 and Cargille Type A
+  immersion oil is 1.515, squarely inside the range of real glasses. It is about **whether the
+  medium has a figure of its own**. A lens is a thing you can pick up and its faces are surfaces
+  somebody ground; a fluid takes the shape of whatever holds it, so its "faces" belong to the glass
+  and the detector either side of it. Air and vacuum are the same statement at index 1, which is why
+  they never needed saying.
+
+  `FLUID_MEDIA` is the closed list — WATER, SEAWATER, TYPEA, VACUUM — and every entry is a record in
+  the `MISC` catalog, where the materials that are nobody's *product* live. `optical-core` cannot
+  depend on `glass-catalog`, so it carries a copy of their nd and Vd; `glass-catalog`'s
+  `fluids.test.ts` pins that copy against MISC, the same arrangement that keeps the core's N-BK7
+  honest.
+
+  **A fluid is recognized by its numbers as well as by its name**, and it has to be: a design taken
+  from a paper names no glasses at all. `Liang2002a.zmx`, a schematic eye, writes the vitreous
+  humour as a model glass at 1.33304403094 / 55.7943215 — MISC's water to every digit that catalog
+  prints — and read as glass it makes the crystalline lens and the vitreous one cemented doublet
+  ending on the retina. The numeric route applies **only to a model glass**, one that is nothing but
+  an index and an Abbe number; a glass with a real dispersion fit behind it is a melt somebody sells
+  and is taken at its name. The tolerance is 1e-3 in nd and 0.5 in Vd, and the nearest solid in every
+  catalog Isaac carries is 0.0175 and 0.62 away — a test asserts that margin rather than assuming it,
+  so a future catalog entry that closed it would stop somebody and make them look.
+
+  **The rule is about the material, not about the row**, and the corpus is why. Eight fluid gaps
+  across five files, and they sit in all three places: before the image plane (the immersion
+  lithography objective `7301707.zmx`, whose last surface is `GLAS WATER` and whose image plane is
+  the wafer), *between* two lenses (`Yu2024.zmx`, `7301707-spherical.zmx`), and behind the object
+  (`sc_endo1.zmx`, an endoscope looking into water). A positional rule — "whatever touches the image
+  plane is not part of a lens" — would miss two of those three cases and break four files that are
+  right today: `Dyson1959.zmx` images *inside* a solid block of fused silica, and a detector with a
+  window cemented to it is written the same way. An element's span reaching the image row is
+  legitimate; a fluid in it is not.
+
   **A mirror in air is an element too** (`kind: 'MIRROR'`), and comes out of the same walk. It is one
   surface, one row, no gaps: there is no glass in it and no body to fill, so both views draw it as the
   surface it is. What decides it is the medium — a reflecting surface with air across it is a mirror

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AIR, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
+import { AIR, ModelGlassMaterial, N_BK7, OpticalSystem, Surface } from '@isaac/optical-core';
 import {
   colorsInUse,
   hasChosenMirrorColor,
@@ -598,4 +598,98 @@ test('the ends are never dropped from a drawing, whatever is switched off', () =
 
   const hidden = hiddenSurfaceIndices(system, { [element.key]: { hidden: true } });
   assert.deepEqual([...hidden], [1]);
+});
+
+const WATER = GLASS_CATALOG.get('WATER')!;
+const SEAWATER = GLASS_CATALOG.get('SEAWATER')!;
+const TYPE_A_OIL = GLASS_CATALOG.get('TYPEA')!;
+
+/**
+ * The reported fault. A lens with water behind it is a lens in a tank, not a
+ * cemented doublet: the run of glass has to stop at the fluid exactly as it
+ * stops at air, or the element spans three rows and grows a second swatch for a
+ * piece of glass nobody ground.
+ */
+test('a singlet immersed in water is one element, not a doublet', () => {
+  const elements = findElements(
+    system(glassFace('a', 50, 5), glassFace('b', -50, 20, WATER), airFace('c', Infinity, 70)),
+  );
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0]!.firstIndex, 1);
+  assert.equal(elements[0]!.lastIndex, 2);
+  assert.equal(elements[0]!.gaps.length, 1);
+  assert.equal(elementLabel(elements[0]!, {}), 'L1');
+});
+
+/**
+ * The shape of an immersion lithography objective — `7301707.zmx` in the
+ * corpus, whose last surface carries `GLAS WATER` and whose image plane is the
+ * wafer. The same arrangement reaches the eye models, where the vitreous humour
+ * sits in front of the retina, and a microscope coupled to its coverslip with
+ * index-matching oil.
+ */
+test('a fluid between the last lens and the image plane is not part of the lens', () => {
+  for (const fluid of [WATER, SEAWATER, TYPE_A_OIL]) {
+    const elements = findElements(
+      system(glassFace('a', 50, 5), glassFace('b', -50, 2, fluid)),
+    );
+
+    assert.equal(elements.length, 1, fluid.name);
+    assert.equal(elements[0]!.lastIndex, 2, fluid.name);
+    assert.equal(elements[0]!.gaps.length, 1, fluid.name);
+    // The element stops short of the image plane, so IMG keeps its own row.
+    assert.equal(elementAt(elements, 3), undefined, fluid.name);
+  }
+});
+
+/**
+ * `Liang2002a.zmx` writes the eye's vitreous humour as a model glass, because
+ * the design comes from a paper and names no glasses at all. Its numbers are
+ * water's, so it is water — a rule that reads the name alone would miss it.
+ */
+test("a model glass carrying water's numbers is treated as water", () => {
+  const vitreous = new ModelGlassMaterial('___BLANK 1.3330/55.79', 1.33304403094, 55.7943215);
+  const elements = findElements(system(glassFace('a', 50, 5), glassFace('b', -50, 17, vitreous)));
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0]!.gaps.length, 1);
+});
+
+/**
+ * The other half of the rule, and the reason it is about the *material* rather
+ * than about the row. Real glass does reach the image plane — `Dyson1959.zmx`
+ * images inside a solid block of fused silica, and a detector with a window
+ * cemented to it is written the same way. Those are elements and must stay so.
+ */
+test('a solid in contact with the image plane is still part of its element', () => {
+  const elements = findElements(system(glassFace('a', 50, 5), glassFace('b', -50, 2, F2)));
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0]!.firstIndex, 1);
+  assert.equal(elements[0]!.lastIndex, 3);
+  assert.equal(elements[0]!.gaps.length, 2);
+  assert.equal(elementRowSpan(elements[0]!), 3);
+});
+
+/** A mirror standing in water is a mirror, the same as one standing in air. */
+test('a mirror in a fluid is still a mirror in its own right', () => {
+  const elements = findElements(
+    system(
+      glassFace('a', 50, 5, WATER),
+      new Surface({
+        id: 'm',
+        type: 'STANDARD',
+        radius: -200,
+        thickness: -30,
+        semiDiameter: 10,
+        material: WATER,
+        reflective: true,
+      }),
+    ),
+  );
+
+  assert.equal(elements.length, 1);
+  assert.equal(elements[0]!.kind, 'MIRROR');
+  assert.equal(elements[0]!.gaps.length, 0);
 });

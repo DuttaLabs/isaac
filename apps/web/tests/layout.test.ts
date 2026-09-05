@@ -9,6 +9,7 @@ import {
   type Material,
 } from '@isaac/optical-core';
 import { buildLayout, sag } from '../src/lib/layout.ts';
+import { GLASS_CATALOG } from '../src/lib/materials.ts';
 import { VIEW_PLANES } from '../src/lib/view-plane.ts';
 
 const WAVELENGTH_NM = 587.5618;
@@ -106,6 +107,31 @@ test('glass between two surfaces makes a body; air makes none', () => {
     DEFAULT_SEMI_DIAMETER,
   );
   assert.equal(air.bodies.length, 0, 'an air space is not an element');
+});
+
+/**
+ * The section must agree with the lens table about what a piece of glass is, or
+ * the drawing shows a solid where the grid shows none. A fluid fills the gap
+ * rather than being a body in it — the water under an immersion objective is on
+ * the wafer's side of the last surface, and filling it would draw a lens nobody
+ * made, in a color the table has no swatch for.
+ */
+test('a fluid fills a gap without making a body of it', () => {
+  for (const name of ['WATER', 'SEAWATER', 'TYPEA']) {
+    const fluid = GLASS_CATALOG.get(name)!;
+    const layout = buildLayout(
+      element({
+        frontRadius: 50,
+        backRadius: -50,
+        thickness: 6,
+        frontSemiDiameter: 10,
+        material: fluid,
+      }),
+      [],
+      DEFAULT_SEMI_DIAMETER,
+    );
+    assert.equal(layout.bodies.length, 0, `${name} was filled as a body`);
+  }
 });
 
 test('the ground edges run rim to rim, and slope when the rims differ', () => {

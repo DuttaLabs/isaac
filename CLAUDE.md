@@ -304,9 +304,10 @@ read 393 surfaces from a 65-surface lens. `OBJ`, `STO` and `IMA` are **positions
 names** — `'STO'.replace('STO','')` is `''` and `Number('')` is 0, so a stop read by
 stripping its label lands on the object plane.
 
-Verified against six real exports — 1454 checks agree and 13 disagree, and every
-one of those 13 is named: the schematic eye's curved retina (12), and Yu2024's
-field type 2, which the reader refuses. A 65-surface immersion lithography
+Verified against six real exports — 1454 checks agree and 14 disagree, and every
+one of those 14 is named: the schematic eye's curved retina (12), Yu2024's field
+type 2, which the reader refuses, and the Dyson's exit pupil, 8.8e-7 out against
+a report that says it traces rays where Isaac's pupil is paraxial. A 65-surface immersion lithography
 objective and its spherical variant, a Dyson, an endoscope looking into water and
 a schematic eye at 1064 nm all pass on every surface, glass, index and cardinal
 point. `tests/fixtures/prescription.txt` is a fixture for the

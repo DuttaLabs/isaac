@@ -7,6 +7,7 @@ import {
   Point3,
   Ray,
   normalizeAperture,
+  surfaceProfileSag,
   Surface,
   type SurfaceApertureConfig,
   Vector3,
@@ -380,4 +381,61 @@ test('a tilted surface has no shape but its tangents', () => {
     () => new Surface({ id: 's', type: 'STANDARD', thickness: 5, tiltTangents: { x: 0, y: 1 } }),
     /only meaningful on a TILTED surface/,
   );
+});
+
+/**
+ * **A curved image surface is met where it is, not at a plane through its
+ * vertex.** The obvious case is a retina — every schematic eye has one — and a
+ * curved detector and a field flattener's last face are others. It matters for
+ * the spot diagram before anything else: a ray landing 0.006 mm short of the
+ * vertex plane arrives at a different height there, and on a fast eye model that
+ * is most of the blur.
+ *
+ * Nothing had to be added for this — `intersectSurface` does not care which type
+ * a surface is — but nothing tested it either, and the lens grid refused to let
+ * anyone type the radius until now, so it was reachable only through a file or
+ * the help assistant.
+ */
+test('rays meet a curved image surface on the curve, not at its vertex', () => {
+  const radius = -20;
+  const system = new OpticalSystem({
+    name: 'curved detector',
+    wavelengthsNm: [587.5618],
+    fields: [{ angleDeg: 0 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 40,
+        semiDiameter: 15,
+        material: AIR,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', radius, thickness: 0, semiDiameter: 15 }),
+    ],
+  });
+
+  const vertexZ = system.axialPositionAt(2);
+  for (const height of [0, 4, 8]) {
+    const result = traceRay(
+      system,
+      new Ray(new Point3(0, height, -10), new Vector3(0, 0, 1), { wavelengthNm: 587.5618 }),
+    );
+    const landing = result.intersections[result.intersections.length - 1]!.point;
+    // The sag of a sphere at the height the ray actually arrives at.
+    const sag = surfaceProfileSag(system.imageSurface.shape, Math.hypot(landing.x, landing.y));
+    assert.ok(
+      Math.abs(landing.z - (vertexZ + sag)) < 1e-9,
+      `ray at ${height} landed at z ${landing.z}, not on the surface at ${vertexZ + sag}`,
+    );
+    if (height > 0) {
+      assert.ok(
+        Math.abs(landing.z - vertexZ) > 1e-6,
+        `ray at ${height} landed on the vertex plane, so the curvature was ignored`,
+      );
+    }
+  }
 });

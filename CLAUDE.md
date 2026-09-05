@@ -587,6 +587,23 @@ The marginal ray is also **produced undeviated from its first contact to the pup
   be turned over to something else. It is also what makes the analyses still to come cheap: a new plot
   type is another entry in `PANELS`, and the dropdown offers it with nothing else changed.
 
+- **The image plane is a surface, and its row is editable like any other.** A
+  curved image is a real thing to model — a retina above all, and a curved
+  detector or a field flattener's last face besides — and nothing below the UI
+  ever prevented it: the model takes a radius and a conic on an `IMAGE` surface,
+  `intersectSurface` lands rays on the real curve rather than on a plane through
+  the vertex, both layout views draw the profile, and `edits.ts` accepts the edit.
+  Only the lens grid refused, which is how the help assistant could set a curved
+  retina that nobody could type. Two cells stay fixed, and both by *position*
+  rather than by squeamishness: the **name**, since `IMG` is what the position
+  means; and the **type and stop**, because the model fixes the last surface as
+  `IMAGE` and allows a stop only on `STANDARD` or `PARAXIAL`, so either control
+  could only ever be refused. Unlocking those is the `OBJECT`/`IMAGE`-as-positions
+  refactor — which is also what an *aspheric* retina waits on, a polynomial
+  needing the `EVEN_ASPHERE` type. The thickness and the medium are editable too,
+  and not merely harmlessly: a `.zmx` carries both on the image row and
+  OpticStudio reads them — `7301707-spherical.zmx` writes `WATER` there, and that
+  is the whole difference between it and `7301707.zmx`.
 - **Every row is numbered, with no exceptions.** The Surface column shows a surface's own number —
   the object is 0 and the image is whatever the last one comes to, which is how a `.zmx` refers to
   them and how Zemax numbers them. Zemax also *names* three of those rows in that column, `OBJ`,

@@ -831,7 +831,37 @@ export function LensDataEditor({
               // design's and still shown, but editing a surface that is not in
               // the picture invites changing something whose effect cannot be
               // seen. Switch it back on and the row is live again.
-              const isFixed = isObject || isImage || isSwitchedOut;
+              // **The image plane is a surface, and a curved one is a real thing to
+              // model.** A retina is the obvious case; a curved detector and a
+              // field flattener's last face are others. Nothing below the UI ever
+              // stopped it — the model takes a radius and a conic on an `IMAGE`
+              // surface, `intersectSurface` lands rays on the real curve rather
+              // than on a plane through the vertex, both layout views draw the
+              // profile, and `edits.ts` accepts the edit. Only this table
+              // refused, which is how the help assistant could set a curved
+              // retina that the grid would not let anyone type.
+              //
+              // So the row is now editable like any other, with two exceptions,
+              // and both are structural rather than squeamish:
+              //
+              //   - **Its name.** `IMG` is what the position means, not a label
+              //     somebody chose.
+              //   - **Its type, and whether it is the stop.** The model fixes the
+              //     last surface as `IMAGE` and allows a stop only on `STANDARD`
+              //     or `PARAXIAL`, so either control could only ever be refused —
+              //     and a control that always fails is worse than one that is
+              //     plainly not offered. Unlocking them is the
+              //     `OBJECT`/`IMAGE`-as-positions refactor, which is also what an
+              //     *aspheric* retina waits on, a polynomial needing the
+              //     `EVEN_ASPHERE` type.
+              //
+              // Its thickness and its medium are editable too, and not merely
+              // harmlessly: a `.zmx` carries both on the image row and
+              // OpticStudio reads them. `7301707-spherical.zmx` writes `WATER`
+              // there, and that is the difference between it and `7301707.zmx`.
+              const isFixed = isObject || isSwitchedOut;
+              /** Fixed by the row's *position* in the system rather than by its values. */
+              const isStructural = isObject || isImage || isSwitchedOut;
               const modelParameters = modelGlassText(surface.material);
               // Every surface is its own number, with no exceptions: the object
               // is 0 and the image is whatever the last one comes to. Zemax names
@@ -902,7 +932,7 @@ export function LensDataEditor({
                   <td data-column="stop" className={cellClass(index, 'stop', 'stop-cell')}>
                     <StopSign
                       checked={surface.isStop}
-                      disabled={isFixed}
+                      disabled={isStructural}
                       ariaLabel={`Make surface ${label} the aperture stop`}
                       onChange={() => apply(setStop(system, index))}
                     />
@@ -911,7 +941,7 @@ export function LensDataEditor({
                   <td data-column="type" className={cellClass(index, 'type')}>
                     <SurfaceTypeCell
                       type={surface.type}
-                      fixed={isFixed}
+                      fixed={isStructural}
                       ariaLabel={`Type of surface ${label}`}
                       onChange={(next) => apply(setSurfaceType(system, index, next))}
                     />
@@ -919,7 +949,7 @@ export function LensDataEditor({
 
                   <td data-column="label" className={cellClass(index, 'label', 'text-column')}>
                     <TextCell
-                      disabled={isFixed}
+                      disabled={isStructural}
                       value={surface.comment ?? ''}
                       placeholder="—"
                       ariaLabel={`Label for surface ${label}`}
@@ -931,7 +961,10 @@ export function LensDataEditor({
                   {/* A coordinate transform meets no ray, so it can have no
                       aperture — the model refuses one. The cell is blank rather
                       than a button that would only ever be rejected. */}
-                  <td data-column="aperture" className={cellClass(index, 'aperture', 'aperture-column')}>
+                  <td
+                    data-column="aperture"
+                    className={cellClass(index, 'aperture', 'aperture-column')}
+                  >
                     {isTransform ? (
                       <span className="cell-empty">–</span>
                     ) : (
@@ -1080,7 +1113,7 @@ export function LensDataEditor({
                       value={surface.thickness}
                       ariaLabel={`Thickness after surface ${label}`}
                       title="Distance to the next surface. The object may be Infinity."
-                      disabled={isImage || isSwitchedOut}
+                      disabled={isSwitchedOut}
                       onCommit={(next) => apply(updateSurface(system, index, { thickness: next }))}
                     />
                   </td>
@@ -1098,7 +1131,7 @@ export function LensDataEditor({
                         material={surface.material}
                         reflective={surface.reflective}
                         ariaLabel={`Material after surface ${label}`}
-                        disabled={isImage || isParaxial || isSwitchedOut}
+                        disabled={isParaxial || isSwitchedOut}
                         onCommit={(material) =>
                           apply(
                             surface.reflective
@@ -1125,7 +1158,7 @@ export function LensDataEditor({
                       <ModelGlassCell
                         text={modelParameters}
                         ariaLabel={`Model glass parameters of surface ${label}`}
-                        disabled={isImage}
+                        disabled={isParaxial || isSwitchedOut}
                         onCommit={(material) => apply(updateSurface(system, index, { material }))}
                       />
                     )}

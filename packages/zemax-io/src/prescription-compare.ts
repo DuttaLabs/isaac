@@ -176,6 +176,52 @@ class Checks {
     });
   }
 
+  /**
+   * Agrees when the report's value matches **any** of several candidates, and
+   * says which. For a quantity whose definition the available exports do not
+   * pin down — OpticStudio's Back Focal Length is measured from the image
+   * surface on one design and from the last vertex on another — this keeps a
+   * real check (a value wrong by any other factor matches none of them) without
+   * raising an alarm about a definition rather than about the lens.
+   */
+  public oneOf(
+    section: string,
+    item: string,
+    expected: PrescriptionValue | undefined,
+    candidates: readonly (readonly [string, number | undefined])[],
+  ): void {
+    if (expected === undefined) {
+      this.skip(section, item, '-', 'the report does not state it');
+      return;
+    }
+    const matched = candidates.find(
+      ([, value]) => value !== undefined && !Number.isNaN(value) && valueContains(expected, value),
+    );
+    if (matched !== undefined) {
+      this.list.push({
+        section,
+        item,
+        expected: expected.text,
+        actual: formatNumber(matched[1]!),
+        low: expected.low,
+        high: expected.high,
+        outcome: 'agree',
+        pinned: expected.significantDigits,
+        masked: expected.maskedDigits,
+        note: `measured ${matched[0]}`,
+      });
+      return;
+    }
+    const first = candidates[0];
+    this.value(
+      section,
+      item,
+      expected,
+      first?.[1],
+      `none of: ${candidates.map(([label, value]) => `${label} ${formatNumber(value ?? Number.NaN)}`).join('; ')}`,
+    );
+  }
+
   /** Compares two strings that must match exactly once normalized. */
   public text(
     section: string,
@@ -232,6 +278,54 @@ class Checks {
 }
 
 /**
+ * Which units a report's image-space column is written in.
+ *
+ * **The same optic can be reported two ways, and the corpus has both.**
+ * `7301707.zmx` and `7301707-spherical.zmx` are the same lithography objective
+ * with the same back focal distance to the last digit, both imaging into water —
+ * and OpticStudio states the first *referred to air* (focal length `1/φ`,
+ * distances divided by the water) and the second *in the water's own units*
+ * (focal length `n′/φ`, distances left alone). Both reports carry the identical
+ * sentence about the index being considered, so the prose does not say which.
+ * The one structural difference is the glass on the IMA row: blank in the first,
+ * `WATER` in the second.
+ *
+ * Rather than infer the cause, the frame is **read off the report**: its own
+ * image-space focal length is either the EFL or the EFL times the image index,
+ * and which one it is says how every image-space distance in that report is
+ * scaled. That keeps the focal-length check at full strength — the reported
+ * value still has to equal one of the two, and a focal length wrong by any other
+ * factor matches neither and is caught.
+ */
+interface ImageFrame {
+  /** `1` when the column is referred to air, `n′` when it is in the medium. */
+  readonly scale: number;
+  /** Divide a geometric image-space distance by this to get the report's units. */
+  readonly divisor: number;
+  /** False when the report's focal length matched neither candidate. */
+  readonly recognized: boolean;
+}
+
+function imageFrameOf(prescription: ZmxPrescription, efl: number, imageIndex: number): ImageFrame {
+  const block =
+    prescription.cardinalPoints.find((candidate) => candidate.isPrimary) ??
+    prescription.cardinalPoints[0];
+  const stated =
+    block?.rows.get('Focal Length')?.imageSpace ??
+    generalValue(prescription, 'Effective Focal Length', 'in image space');
+
+  if (stated !== undefined && Number.isFinite(efl)) {
+    if (valueContains(stated, efl)) return { scale: 1, divisor: imageIndex, recognized: true };
+    if (valueContains(stated, efl * imageIndex)) {
+      return { scale: imageIndex, divisor: 1, recognized: true };
+    }
+    return { scale: 1, divisor: imageIndex, recognized: false };
+  }
+  // Nothing to calibrate against; air-referred is what most reports use.
+  return { scale: 1, divisor: imageIndex, recognized: true };
+}
+
+/**
  * `-1` after an odd number of reflections, `+1` otherwise — the sign image space
  * carries because it genuinely runs backwards, read off the last medium's index.
  * Object-space quantities have to take it back out; they never reflected.
@@ -247,6 +341,17 @@ function abbeNumberOf(material: Material): number {
   const spread = material.indexAt(SPECTRAL_LINES.F) - material.indexAt(SPECTRAL_LINES.C);
   return spread === 0 ? Infinity : (d - 1) / spread;
 }
+
+/** Isaac's surface types under the names OpticStudio prints in the Type column. */
+const ZMX_SURFACE_TYPES: Readonly<Record<string, string>> = {
+  OBJECT: 'STANDARD',
+  IMAGE: 'STANDARD',
+  STANDARD: 'STANDARD',
+  EVEN_ASPHERE: 'EVENASPH',
+  PARAXIAL: 'PARAXIAL',
+  TILTED: 'TILTSURF',
+  COORDINATE_TRANSFORM: 'COORDBRK',
+};
 
 /** An exact integer the report stated, as a value with no room in it. */
 function exactly(count: number): PrescriptionValue {
@@ -286,12 +391,30 @@ function compareSurfaces(
     checks.value('Structure', 'stop surface', exactly(reportedStop), system.stopIndex);
   }
 
+  // **A curved image surface is counted by one program and not the other.** Light
+  // stops at the image plane, so Isaac's paraxial trace skips it and its
+  // curvature describes a curved detector — a retina — and nothing else.
+  // OpticStudio evidently carries it into the first-order calculation: on
+  // `Liang2002a.zmx`, a schematic eye whose retina has R = -1.994, refracting
+  // there turns Isaac's EFL of 79.05 into -27.87 against a reported -27.88, and
+  // the residual is the model-glass formula this project deliberately does not
+  // reproduce. Isaac's reading is the defensible one; the numbers are simply not
+  // comparable, and that is worth saying rather than reporting six mysteries.
+  if (Number.isFinite(system.imageSurface.radius)) {
+    warnings.push(
+      'The image surface is curved. OpticStudio appears to include it in the paraxial ' +
+        'calculation and Isaac does not \u2014 light stops there \u2014 so the first-order ' +
+        'figures below are not comparable on this design.',
+    );
+  }
+
   const count = Math.min(prescription.surfaces.length, system.surfaces.length);
   for (let index = 0; index < count; index += 1) {
     const row = prescription.surfaces[index]!;
     const surface = system.surfaceAt(index);
     const name = `surface ${row.label}`;
 
+    checks.text(section, `${name} type`, row.type, ZMX_SURFACE_TYPES[surface.type] ?? surface.type);
     checks.value(section, `${name} radius`, row.radius, surface.radius);
     // The image surface has nothing after it, so the report prints no thickness.
     if (index < prescription.surfaces.length - 1) {
@@ -441,10 +564,18 @@ function compareCardinalPoints(
   // Object space is geometric: positions left in the medium's own units and the
   // focal length carrying its index. On every lens in the corpus but two the
   // object sits in air, where the difference is a factor of one.
-  const inImageSpace = (z: number): number => (z - paraxial.imageSurfaceZ) / imageIndex;
-  const inObjectSpace = (z: number): number => z - firstVertexZ;
-
   const efl = paraxial.effectiveFocalLength;
+  const frame = imageFrameOf(prescription, efl, imageIndex);
+  const inImageSpace = (z: number): number => (z - paraxial.imageSurfaceZ) / frame.divisor;
+  const inObjectSpace = (z: number): number => z - firstVertexZ;
+  if (!frame.recognized) {
+    warnings.push(
+      'The report\u2019s image-space focal length is neither Isaac\u2019s EFL nor the EFL times ' +
+        'the image index, so which units its image-space column is in could not be read off it. ' +
+        'Everything image-space below is compared as though referred to air.',
+    );
+  }
+
   const focalLength = block.rows.get('Focal Length');
   checks.value(
     section,
@@ -453,7 +584,15 @@ function compareCardinalPoints(
     -efl * objectIndex * travel,
     'n\u2080/\u03c6, with the sign image space\u2019s reversal gives it taken back out',
   );
-  checks.value(section, 'focal length (image space)', focalLength?.imageSpace, efl);
+  checks.value(
+    section,
+    'focal length (image space)',
+    focalLength?.imageSpace,
+    efl * frame.scale,
+    frame.scale === 1
+      ? 'this report states image space referred to air'
+      : 'this report states image space in the medium\u2019s own units',
+  );
 
   const focalPlanes = block.rows.get('Focal Planes');
   checks.value(
@@ -507,10 +646,10 @@ function compareGeneralData(
   const paraxial = paraxialProperties(system, wavelengthNm);
   const last = lastRefractingSurfaceIndex(system);
   const imageIndex = Math.abs(signedMediaIndices(system, wavelengthNm)[last]!);
-  const objectIndex = Math.abs(signedMediaIndices(system, wavelengthNm)[0]!);
+  const frame = imageFrameOf(prescription, paraxial.effectiveFocalLength, imageIndex);
 
-  /** An image-space position as the report measures it: from the image surface, index out. */
-  const inImageSpace = (z: number): number => (z - paraxial.imageSurfaceZ) / imageIndex;
+  /** An image-space position as *this* report measures it — see {@link imageFrameOf}. */
+  const inImageSpace = (z: number): number => (z - paraxial.imageSurfaceZ) / frame.divisor;
 
   // **The general block and the cardinal block disagree about the EFL's sign**,
   // and both are self-consistent. The cardinal block's image-space focal length
@@ -529,13 +668,16 @@ function compareGeneralData(
     paraxial.effectiveFocalLength * travelSign(system, wavelengthNm),
     'referred to object space, so an odd number of mirrors does not turn it over',
   );
-  checks.value(
-    section,
-    'back focal length',
-    generalValue(prescription, 'Back Focal Length'),
-    inImageSpace(system.vertexZAt(last) + paraxial.backFocalDistance),
-    'image surface \u2192 rear focus, index divided out \u2014 not Isaac\u2019s BFD',
-  );
+  // OpticStudio's Back Focal Length is *not* Isaac's BFD, and the six exports
+  // available do not agree on where it is measured from: on 7301707 it is the
+  // image surface (and equals that report's own cardinal rear focal plane), on
+  // sc_endo1 it is the last vertex. Both are checked, and which one matched is
+  // recorded — the cardinal block is where the quantity is pinned properly.
+  const rearFocusZ = system.vertexZAt(last) + paraxial.backFocalDistance;
+  checks.oneOf(section, 'back focal length', generalValue(prescription, 'Back Focal Length'), [
+    ['from the image surface', inImageSpace(rearFocusZ)],
+    ['from the last vertex', paraxial.backFocalDistance / frame.divisor],
+  ]);
   // Total track is the axial *extent*, not the distance from the first surface
   // to the last: a mirror sends the later surfaces back the way they came, so
   // the last one is behind the first and the difference is negative.
@@ -556,6 +698,22 @@ function compareGeneralData(
     paraxial.magnification,
   );
 
+  // Everything below this line is a fact about the fields, so on a system whose
+  // fields Isaac could not read they are all one fact, said once above.
+  if (system.fields.length === 0) {
+    for (const item of ['maximum radial field', 'paraxial image height']) {
+      checks.skip(section, item, '-', 'Isaac could not read this file\u2019s fields');
+    }
+    comparePupils(checks, section, system, prescription, wavelengthNm, paraxial, inImageSpace);
+    checks.value(
+      section,
+      'primary wavelength',
+      generalValue(prescription, 'Primary Wavelength [\u00b5m]'),
+      system.primaryWavelengthNm / 1000,
+    );
+    return;
+  }
+
   const maxField = system.fields.reduce(
     (widest, field) => Math.max(widest, Math.abs(field.objectHeight ?? field.angleDeg ?? 0)),
     0,
@@ -566,11 +724,21 @@ function compareGeneralData(
     generalValue(prescription, 'Maximum Radial Field'),
     maxField,
   );
+  // At a finite conjugate the image height is the object height magnified. At an
+  // infinite one there is no magnification and the field is an *angle*, so the
+  // height is the object-space focal length times its tangent — and that focal
+  // length carries the object index, which is what makes an endoscope looking
+  // into water come out right.
+  const objectIndex = Math.abs(signedMediaIndices(system, wavelengthNm)[0]!);
+  const infiniteConjugate = !Number.isFinite(system.objectSurface.thickness);
   checks.value(
     section,
     'paraxial image height',
     generalValue(prescription, 'Paraxial Image Height'),
-    Math.abs(paraxial.magnification) * maxField,
+    infiniteConjugate
+      ? Math.abs(paraxial.effectiveFocalLength) * objectIndex * Math.tan((maxField * Math.PI) / 180)
+      : Math.abs(paraxial.magnification) * maxField,
+    infiniteConjugate ? 'object at infinity: |n\u2080\u00b7EFL|\u00b7tan\u03b8' : undefined,
   );
 
   comparePupils(checks, section, system, prescription, wavelengthNm, paraxial, inImageSpace);
@@ -581,7 +749,6 @@ function compareGeneralData(
     generalValue(prescription, 'Primary Wavelength [\u00b5m]'),
     system.primaryWavelengthNm / 1000,
   );
-  void objectIndex;
 }
 
 /**
@@ -692,7 +859,8 @@ function comparePupils(
     section,
     'image space F/#',
     generalValue(prescription, 'Image Space F/#'),
-    declaredRadius === undefined ? undefined : efl / (declaredRadius * 2),
+    declaredRadius === undefined ? undefined : Math.abs(efl) / (declaredRadius * 2),
+    'stated as a magnitude; the focal length\u2019s sign is checked on its own',
   );
 }
 
@@ -707,15 +875,44 @@ function compareSources(
   // partial export into a disagreement about the lens.
   if (prescription.fields.length === 0) {
     checks.skip(section, 'fields', '-', 'the report lists none');
+  } else if (system.fields.length === 0) {
+    // One clear statement rather than a disagreement per field-dependent figure.
+    // The usual cause is a field type the reader refuses — image height, say —
+    // and the import warns about it by name.
+    checks.text(
+      section,
+      'field count',
+      String(prescription.fields.length),
+      'none: Isaac could not read this file\u2019s fields',
+    );
   } else {
     checks.value(section, 'field count', exactly(prescription.fields.length), system.fields.length);
   }
+
   prescription.fields.forEach((field, index) => {
     const own = system.fields[index];
     if (own === undefined) return;
-    const value = own.objectHeight ?? own.angleDeg ?? 0;
-    checks.value(section, `field ${index + 1} y`, exactly(field.y), value);
+    checks.value(
+      section,
+      `field ${index + 1} y`,
+      exactly(field.y),
+      own.objectHeight ?? own.angleDeg ?? 0,
+    );
   });
+
+  // **Isaac has no X field, and silence about that would be the wrong answer.**
+  // A `Field` is one number, implicitly in y; the reader warns that X values were
+  // dropped, and 11 of the 582 files in the corpus carry a non-zero one. Comparing
+  // only the y column would let a design Isaac cannot represent read as agreement.
+  const offAxisX = prescription.fields.filter((field) => field.x !== 0);
+  if (offAxisX.length > 0) {
+    checks.text(
+      section,
+      'X field points',
+      offAxisX.map((field) => formatNumber(field.x)).join(', '),
+      'none: Isaac models Y fields only',
+    );
+  }
 
   if (prescription.wavelengths.length === 0) {
     checks.skip(section, 'wavelengths', '-', 'the report lists none');

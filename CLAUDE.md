@@ -267,6 +267,23 @@ Three things this had to learn, each of which makes everything look broken if mi
   fits all three exports known: no mirrors (7301707), one (Dyson1959), and two
   (the Unobscured Gregorian, negative in both). Read a disagreement there as a
   convention to check rather than a wrong focal length.
+- **The same optic is reported in two different units, and the prose does not say
+  which.** `7301707.zmx` and `7301707-spherical.zmx` are one lithography objective
+  with the same back focal distance to the last digit, both imaging into water;
+  the first is stated *referred to air* (focal length `1/φ`, distances divided by
+  the water) and the second *in the water's own units* (`n′/φ`, distances left
+  alone). Both carry the identical sentence about the index being considered. So
+  the frame is read off the report's own image-space focal length, which is either
+  the EFL or the EFL times the image index — and that keeps the check strong,
+  since a focal length wrong by any other factor matches neither.
+- **A curved image surface is counted by one program and not the other.** Light
+  stops at the image plane, so Isaac's paraxial trace skips it and its curvature
+  describes a curved detector and nothing else. OpticStudio evidently carries it
+  into the first-order calculation: on `Liang2002a.zmx`, a schematic eye whose
+  retina has R = −1.994, refracting there turns Isaac's EFL of 79.05 into −27.87
+  against a reported −27.88, the residual being the model-glass formula this
+  project deliberately does not reproduce. Isaac's reading is the defensible one
+  and the numbers are simply not comparable, which the comparison says out loud.
 - **Total track is the axial extent, not last vertex minus first.** A mirror sends
   the later surfaces back the way they came, so the last one is behind the first
   and the difference is negative. **`MIRROR` in the Glass column is not a medium**
@@ -287,8 +304,12 @@ read 393 surfaces from a 65-surface lens. `OBJ`, `STO` and `IMA` are **positions
 names** — `'STO'.replace('STO','')` is `''` and `Number('')` is 0, so a stop read by
 stripping its label lands on the object plane.
 
-Verified against one real export (a 65-surface immersion lithography objective): 462
-checks agree, none disagree. `tests/fixtures/prescription.txt` is a fixture for the
+Verified against six real exports — 1454 checks agree and 13 disagree, and every
+one of those 13 is named: the schematic eye's curved retina (12), and Yu2024's
+field type 2, which the reader refuses. A 65-surface immersion lithography
+objective and its spherical variant, a Dyson, an endoscope looking into water and
+a schematic eye at 1064 nm all pass on every surface, glass, index and cardinal
+point. `tests/fixtures/prescription.txt` is a fixture for the
 *format* and carries one deliberately wrong coefficient, so the test proves a
 disagreement is caught rather than only that agreement is reported; the tests that pin
 a *convention* build their report by hand from an immersed singlet whose answers are

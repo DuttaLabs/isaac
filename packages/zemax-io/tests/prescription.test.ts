@@ -304,12 +304,43 @@ test('the focal length compared is the one referred to air', () => {
   assert.equal(focal?.expected, '200');
 });
 
-test('the image-space focal length would be caught if it were reported', () => {
-  // 300 is n′/φ, which is a real distance and the wrong answer to "what is the
-  // focal length". Isaac reported it for a year and 535 tests agreed, because
-  // every one of them was written in air.
-  const comparison = immersedChecks({ focalLengthImage: '300' });
+test('a focal length that is neither reading is caught', () => {
+  // The two legitimate readings are 200 (referred to air) and 300 (`n'/\u03c6`, in
+  // the liquid). Anything else is a disagreement, which is what keeps this check
+  // strong despite having to accept both.
+  const comparison = immersedChecks({ focalLengthImage: '250' });
   assert.ok(disagreements(comparison).includes('focal length (image space)'));
+  assert.ok(
+    comparison.warnings.some((warning) =>
+      /neither Isaac\u2019s EFL nor the EFL times/.test(warning),
+    ),
+  );
+});
+
+/**
+ * **The same optic is reported two ways and both are correct**, which took two
+ * exports of one lithography objective to discover: `7301707.zmx` states its
+ * image space referred to air — focal length `1/\u03c6`, distances divided by the
+ * water — and `7301707-spherical.zmx` states it in the water's own units, focal
+ * length `n'/\u03c6` and distances left alone. Both reports carry the identical
+ * sentence about the index being considered, so the frame has to be read off the
+ * numbers rather than the prose.
+ */
+test('both ways of stating image space are accepted, and scale the positions with them', () => {
+  const referredToAir = immersedChecks();
+  assert.deepEqual(disagreements(referredToAir), []);
+
+  // In the liquid's own units every image-space length is 1.5x the air-referred
+  // one: the focal length, and the principal plane 200 mm of liquid back.
+  const inTheLiquid = immersedChecks({ focalLengthImage: '300', principalImage: '-300' });
+  assert.deepEqual(disagreements(inTheLiquid), []);
+
+  // And the two are not interchangeable: air-referred numbers in a report the
+  // focal length says is in the medium do not pass.
+  assert.ok(
+    disagreements(immersedChecks({ focalLengthImage: '300' })).includes('rear principal plane'),
+    'a medium-referred focal length must scale the positions with it',
+  );
 });
 
 test('an image-space position is measured from the image surface, index out', () => {

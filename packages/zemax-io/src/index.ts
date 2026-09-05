@@ -28,3 +28,35 @@ export {
 export type { ZmxImportOptions, ZmxImportResult, ZmxGlassReference } from './import.ts';
 export { zmxTokenRole } from './import.ts';
 export type { ZmxTokenRole } from './import.ts';
+
+// Reading OpticStudio's System/Prescription Data report, and checking a system
+// against one. Tool-side: `apps/web` does not use these.
+export {
+  parsePrescription,
+  parsePrescriptionValue,
+  inferMaskedDecimals,
+  generalEntry,
+  generalValue,
+  primaryWavelengthNm,
+  valueContains,
+  valueMidpoint,
+  DEFAULT_PRESCRIPTION_PRECISION,
+} from './prescription.ts';
+export type {
+  ZmxPrescription,
+  PrescriptionValue,
+  PrescriptionPrecision,
+  PrescriptionEntry,
+  PrescriptionSurface,
+  PrescriptionField,
+  PrescriptionWavelength,
+  PrescriptionCardinalRow,
+  PrescriptionCardinalPoints,
+} from './prescription.ts';
+export { comparePrescription } from './prescription-compare.ts';
+export type {
+  PrescriptionCheck,
+  PrescriptionComparison,
+  CheckOutcome,
+  CompareOptions,
+} from './prescription-compare.ts';

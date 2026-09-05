@@ -18,6 +18,7 @@
     "deploy:relay": "./infra/deploy.sh",
     "deploy:web": "./infra/deploy-web.sh",
     "help:usage": "node infra/usage.mjs",
+    "compare": "node --experimental-strip-types scripts/compare-prescription.ts",
     "server:logs": "ssh subrata@172.234.157.52 'sudo journalctl -u isaac-session -n 60 --no-pager -o cat'",
     "server:follow": "ssh subrata@172.234.157.52 'sudo journalctl -u isaac-session -f -o cat'"
   },

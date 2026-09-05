@@ -23,6 +23,11 @@ TypeScript is pinned at the root (`typescript@^7`). Before that pin the repo sil
 - Run the UI: `npm run dev` from the root (Vite, http://localhost:5173) — `npm run dev --workspace @isaac/web -- --host`. The `--host` binds every interface rather than loopback, so the app is reachable from a phone or tablet on the same network at the LAN URL Vite prints. That also means **anyone on the network can reach the dev server**, which serves out of the project directory — fine at home, not on a shared or public network. Note that a LAN address is not a *secure context* the way `localhost` is, so `showSaveFilePicker` and the Window Management API are absent there: Save falls back to a plain download, which is exactly the fallback path in `lib/save-file.ts`, and the second window is unavailable. `npm run build --workspace @isaac/web` is the only bundling in the repo.
 - Tests use the built-in `node:test` runner + `node:assert` — no test framework is installed.
 - Cross-package imports (`@isaac/optical-core` from `zemax-io`) work through the workspace symlink; run `npm install` at the root after adding a package so the link exists.
+- **Checking Isaac against OpticStudio**: `npm run compare -- <lens.zmx> <prescription.txt>`
+  reads a System/Prescription Data export and compares every surface, aspheric
+  coefficient, first-order figure and cardinal point against the same design read
+  by Isaac. Exits non-zero on a disagreement, so it can gate a change. `--all`
+  lists every check, `--json` emits them. See "Checking against a prescription".
 - **Deploying** (see `infra/`): `npm run deploy:relay` ships `apps/session-server` to
   the Linode; `npm run deploy:web` builds `apps/web` and ships it to
   `isaacoptics.com`; `npm run deploy` does both, relay first — if the protocol
@@ -219,6 +224,63 @@ Three decisions worth keeping:
   and `zemax-io` must not grow a glass database to find out — so the catalogs are a `glassCatalogs`
   option. `apps/web` derives them from `GLASS_CATALOG_NAMES`, itself derived from the records rather
   than listed, so a file can never name a library the app does not resolve against.
+
+**Checking against a prescription.** `parsePrescription` (`src/prescription.ts`) reads
+OpticStudio's **System/Prescription Data** report, and `comparePrescription`
+(`src/prescription-compare.ts`) checks an `OpticalSystem` against one. Neither is used
+by `apps/web`; they exist because **Isaac's own tests can only check Isaac against
+Isaac's understanding**, so a convention held wrongly by the code and its tests
+together is invisible to all of them at once. That is not hypothetical — it is
+exactly how the effective focal length was wrong on immersed systems for a year with
+535 passing tests. A second program's arithmetic is the only thing that finds it.
+
+Three things this had to learn, each of which makes everything look broken if missed:
+
+- **A masked value is a range, not a number.** Under a licence that does not permit
+  full disclosure the report replaces trailing digits with `X` — `974.011X`,
+  `-3.585XXXe-15` — so a comparison can only ask whether Isaac's number falls
+  *inside*. Parsing up to the `X`s invents precision the report withheld. Two limits
+  set the interval, and both are read off the report rather than assumed: the mask
+  begins at a fixed decimal place (three, in all 1743 masked values of the one export
+  measured, whatever their magnitude — so `inferMaskedDecimals` counts it), and the
+  rendering carries about seven significant figures, which cuts in first on a large
+  value. `-109987.5` is a radius of `-109987.496020` printed to seven figures and so
+  to *one* decimal, unmasked; reading its slack as three decimals calls the true value
+  a disagreement. Conversely a suppressed trailing zero is not a missing digit —
+  `1188.66` is `1188.660` with the zero dropped, and giving it a half-unit range would
+  pin nothing. `PrescriptionCheck.pinned` therefore travels with every check, because
+  **an agreement is only as strong as the digits it was checked against** while a
+  disagreement is a disagreement either way.
+- **Image-space positions are measured from the image surface, with the index divided
+  out**; object-space positions from surface 1, likewise. The cardinal points block
+  states both in prose and the comparison *reads those sentences back* rather than
+  trusting a comment — a report that words them differently is warned about instead of
+  quietly checked against the wrong frame. It is not only the cardinal points: the
+  general block's Back Focal Length and **Exit Pupil Position** are in the same frame
+  and never say so. The index is taken by magnitude, for the reason `signedMediaIndices`
+  exists.
+- **A stop is not always what limits the beam, and OpticStudio names the beam.** Its
+  *Stop Radius* and *Exit Pupil Diameter* are the beam at those places; Isaac's
+  `stopRadius` is the stop's own clear radius and `exitPupil().radius` images the whole
+  stop. The two coincide only on a system that floats its aperture by the stop, which
+  is why it went unnoticed until a design declaring `ENPD 1000` with a stop drawn 29.93
+  across made all three figures differ by the same 6.45%. The beam radius at the stop
+  is `entrancePupilRadius / |entrancePupil().magnification|`, and it is derived in the
+  comparison rather than added to the engine.
+
+The section boundaries matter as much as the parsing: a surface row's shape also
+matches `EDGE THICKNESS DATA` and everything after it, which is how a first attempt
+read 393 surfaces from a 65-surface lens. `OBJ`, `STO` and `IMA` are **positions, not
+names** — `'STO'.replace('STO','')` is `''` and `Number('')` is 0, so a stop read by
+stripping its label lands on the object plane.
+
+Verified against one real export (a 65-surface immersion lithography objective): 462
+checks agree, none disagree. `tests/fixtures/prescription.txt` is a fixture for the
+*format* and carries one deliberately wrong coefficient, so the test proves a
+disagreement is caught rather than only that agreement is reported; the tests that pin
+a *convention* build their report by hand from an immersed singlet whose answers are
+derived on paper, because every lens in the corpus sits in air, where all three focal
+lengths coincide and both conventions are invisible.
 
 Two things are refused rather than approximated: a system **mixing angle fields with object-height
 fields** (a file has one field type for the whole system, and a silent choice would read half the

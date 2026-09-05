@@ -23,6 +23,12 @@ ZMX files/myZMXfiles/
 # material, kept on disk for testing Isaac against real designs, not pushed.
 ZMX files/Papers/
 
+# The same, downloaded rather than extracted from a paper: patent designs, other
+# projects' repositories, and OpticStudio exports made from them. Third-party
+# material under its own licences, and a `git add -A` away from being published
+# by accident — which is what this rule is for.
+ZMX files/From the web/
+
 # Deploy secrets: the shared relay token.
 infra/.env.deploy
 

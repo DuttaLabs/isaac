@@ -1,0 +1,4 @@
+# OpticStudio writes its reports with CRLF, and the prescription fixture is a
+# fixture for that format — so store its bytes as they are rather than letting
+# git normalize the line endings the reader has to cope with.
+packages/zemax-io/tests/fixtures/prescription.txt -text

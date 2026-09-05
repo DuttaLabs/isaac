@@ -1,0 +1,96 @@
+System/Prescription Data
+
+File : C:\optics\doublet.zmx
+Title: 
+Date : 5/9/2026
+
+
+GENERAL LENS DATA:
+
+Surfaces                : 	4
+Stop                    : 	1
+System Aperture         : 	Entrance Pupil Diameter = 	20
+Glass Catalogs          : 	SCHOTT
+Effective Focal Length  : 	100	(in air at system temperature and pressure)
+Effective Focal Length  : 	100	(in image space)
+Back Focal Length       : 	0
+Total Track             : 	106.376
+Image Space F/#         : 	5
+Stop Radius             : 	10
+Paraxial Image Height   : 	0
+Paraxial Magnification  : 	0
+Entrance Pupil Diameter : 	20
+Entrance Pupil Position : 	0
+Exit Pupil Diameter     : 	20.681XX
+Exit Pupil Position     : 	-103.407X
+Field Type              : 	Angle in degrees
+Maximum Radial Field    : 	0
+Primary Wavelength [µm] : 	0.589
+Lens Units              : 	Millimeters
+ 
+Fields          : 1
+Field Type              : 	Angle in degrees
+ #  	   X-Value     	  Y-Value     	   Weight
+ 1 	      0.000000 	      0.000000 	      1.000000
+ 
+Wavelengths     : 3
+Units: µm
+ #       	Value       	Weight
+ 1 	      0.486000 	      1.000000
+ 2 	      0.589000 	      1.000000
+ 3 	      0.656000 	      1.000000
+ 
+SURFACE DATA SUMMARY:
+
+Surf       	Type        	Radius        	Thickness           	Glass      	Clear Diam          	Conic        	Comment
+ OBJ	 STANDARD	       Infinity	            Infinity	                     	                   0	            0	 
+ STO	 STANDARD	       92.847XX	                   6	                  BK7	                  30	            0	 
+   2	 STANDARD	      -30.716XX	                   3	                   F2	                  30	            0	 
+   3	 STANDARD	      -78.197XX	            97.376XX	                     	                  30	            0	 
+ IMA	 STANDARD	       Infinity	                    	                     	          0.016XXXXX	            0	 
+ 
+
+SURFACE DATA DETAIL:
+
+Surface OBJ STANDARD 
+
+Surface STO STANDARD 
+
+Surface   2 STANDARD 
+
+Surface   3 EVENASPH 
+Coefficient on r^ 2      :                0
+Coefficient on r^ 4      :    1.234XXXXe-08
+Coefficient on r^ 6      :                0
+Coefficient on r^ 8      :                0
+Coefficient on r^10      :                0
+Coefficient on r^12      :                0
+Coefficient on r^14      :                0
+Coefficient on r^16      :                0
+
+Surface IMA STANDARD 
+ 
+EDGE THICKNESS DATA:
+
+Surf       	Glass         	Edge
+ OBJ 	     0.000000
+   1 	     4.936XXX
+   2 	     5.128XXX
+   3 	    97.376XX
+ IMA 	     0.000000
+ 
+CARDINAL POINTS:
+
+Object space positions are measured with respect to surface 1.
+Image space positions are measured with respect to the image surface.
+The index in both the object space and image space is considered.
+
+                                 	Object Space           	Image Space
+W = 	0.589000	(Primary)
+Focal Length          : 	                -100 	                 100
+Focal Planes          : 	           -96.705XX 	                   0
+Principal Planes      : 	            3.294XXX 	                -100
+ 
+FILES USED:
+
+doublet.zmx

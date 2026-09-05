@@ -54,6 +54,33 @@ different planes; two **Ray fan** panels can show different fields. Input panels
 (Source object, Optical system) always agree with each other, because there is
 one design.
 
+## Fields
+
+**A field can be stated three ways**, chosen in the Fields row of the Source
+object panel. They describe the same points in different words, and switching
+between them converts the numbers rather than reinterpreting them.
+
+- **Angle** — degrees off the axis. Needs an object at infinity.
+- **Object height** — a height on the object plane, in system units. Needs a
+  finite object distance.
+- **Paraxial image height** — a height in the *image* plane, in system units.
+  This is how eye models are usually written, a retinal height being what a
+  clinician measures. It works at either conjugate, so switching the object
+  between infinity and a finite distance leaves these alone.
+
+Choosing Angle or Object height moves the object conjugate to the one that kind
+needs, because the engine will not launch an angle from a finite object or a
+height from an infinite one.
+
+An image height says where the chief ray *lands*, so Isaac solves for the
+object-space field that puts it there. That solve is exact rather than
+approximate, and the height is measured at the **paraxial image plane** rather
+than at the image surface — so it means the same thing on a design that is
+deliberately out of focus, which for an eye is the normal case.
+
+Every field is a **Y** value. Isaac does not model X fields; a file carrying them
+imports with the X values dropped and says so in its warnings.
+
 ## The lens grid
 
 One row per surface. Surface 0 is the object; the last is the image.
@@ -102,6 +129,17 @@ the water under an immersion objective belongs to the wafer's side of the last
 surface rather than to the lens above it. Isaac recognizes them by name, and also
 by their numbers where a design taken from a paper writes water as an index and
 an Abbe number instead of naming it.
+
+**The image surface is a surface, and can be curved.** Type a radius on the last
+row like any other — a retina is the obvious reason, and a curved detector or a
+field flattener's last face are others. Rays land on the curve rather than on a
+plane through its vertex, both layouts draw it curved, and the spot diagram
+measures where the rays actually arrive. Its conic, semi-diameter, aperture,
+thickness and medium are editable too. Three things on that row are not: its
+**name**, which is fixed by position, and its **surface type** and **stop**
+radio, because the last surface must be the image surface and the stop must be a
+standard or paraxial one. That last pair is also why an *aspheric* image surface
+is not possible yet — a polynomial needs the even-asphere type.
 
 **The yellow ring in the Element cell switches an element out of the light.**
 Nothing moves — the surfaces stay where they are — but the element becomes air
@@ -174,6 +212,9 @@ column — rather than a type of its own.
 Apertures: circular, rectangular and elliptical, each as a clear aperture or an
 obscuration; floating; and a spider. Any of them may be decentered.
 
+Fields: angles, object heights, or **paraxial image heights** — Zemax field
+types 0, 1 and 2. A curved image surface is modeled and traced.
+
 Analysis: sequential real ray tracing, and first-order/paraxial properties
 including pupils and principal planes.
 
@@ -214,7 +255,12 @@ light analysis, and no lens catalog of stock parts.
 It cannot read: diffraction gratings, user-defined surfaces, `SCBD` per-surface
 tilts (a fold written through the Tilt/Decenter *properties tab* rather than as
 coordinate-break rows — Isaac warns about these rather than tracing them wrong),
-polygon apertures, and non-sequential files.
+polygon apertures, gradient-index glass, and non-sequential files.
+
+**Fields are Y only.** A file with X field points imports with them dropped and
+warns. And **real image height** — Zemax field type 3 — is refused rather than
+read as a paraxial image height, because inverting it needs a traced ray and
+guessing would put the field points somewhere the file did not ask for.
 
 Ray aiming is **paraxial**. A ray aimed at the pupil rim can miss the stop edge
 by the residual aberration and come back blocked; real iterative ray aiming is

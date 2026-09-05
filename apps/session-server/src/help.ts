@@ -150,9 +150,15 @@ const TOOLS = [
         column: {
           type: 'string',
           description: 'Which cell of that row, when the answer is about one value.',
+          // The same list as HIGHLIGHT_COLUMNS in the app's lib/help.ts, and it
+          // has to be written twice: this endpoint is deployed apart from the
+          // app and cannot import from it. The app filters what it does not
+          // know, so a column added here alone points at the row and no cell —
+          // which is the right way round for the two to be out of step, but
+          // they are meant to be added together.
           enum: [
             'stop', 'type', 'label', 'aperture', 'radius', 'conic',
-            'asphere', 'focal', 'thickness', 'material', 'semiDiameter',
+            'asphere', 'focal', 'thickness', 'material', 'modelGlass', 'semiDiameter',
           ],
         },
       },

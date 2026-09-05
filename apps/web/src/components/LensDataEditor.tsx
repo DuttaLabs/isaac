@@ -1120,7 +1120,7 @@ export function LensDataEditor({
 
                   {/* The parameters of a glass given by numbers rather than by
                       name; blank for air and for anything in the catalog. */}
-                  <td>
+                  <td data-column="modelGlass" className={cellClass(index, 'modelGlass')}>
                     {modelParameters === undefined ? (
                       <EmptyCell reason="Set the material to MODEL to give a glass by index and Abbe number." />
                     ) : (

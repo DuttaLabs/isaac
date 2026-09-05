@@ -60,11 +60,22 @@ One row per surface. Surface 0 is the object; the last is the image.
 
 Columns, left to right: **Element**, **Surface**, **Stop**, **Surface Type**,
 **Label**, **Aperture**, **Radius**, **Conic**, **Thickness**, **Semi-diameter**,
-**Material**, and the parameter columns.
+**Material**, **Model glass**, and the parameter columns.
 
 - **Thickness** is the distance to the *next* surface.
-- **Material** is the medium *after* the surface. Type a glass name, or
-  `MIRROR` to make the surface reflect.
+- **Material** is the medium *after* the surface. Type a catalog glass name,
+  `MODEL` for a glass given by its numbers, or `MIRROR` to make the surface
+  reflect. Leave it blank for air. The cell has a dropdown listing all three.
+- **Model glass** is where you type a glass the way a patent gives one — an
+  index and an Abbe number rather than a name, as `1.5168 / 64.17`. Most designs
+  taken from patents and papers have no glass names in them at all, which is what
+  this column is for. Set the Material cell to `MODEL` first and the column opens
+  on that row; it stays blank for air and for any named catalog glass. A third
+  number is ΔPg,F, the deviation from the normal line, and is usually left off.
+  Separators are loose — a slash, a comma or a space all work. `MODEL` typed over
+  a named glass converts it, keeping that glass's own index and Abbe number, so
+  turning N-BK7 into a model glass gives back 1.5168 / 64.17. An Abbe number of 0
+  means an index with no dispersion.
 - **Radius** is positive when the center of curvature is toward +Z. `Infinity`
   is a plane.
 - **Semi-diameter is how far the surface is drawn, and stops nothing.** Only an
@@ -83,6 +94,14 @@ element — a cemented doublet is one element spanning three rows, with a swatch
 per glass. Lenses are numbered L1, L2 …, mirrors M1, M2 …, so adding a fold
 mirror does not renumber the lenses. Click a swatch to recolor; the name is
 editable text.
+
+**A fluid is not part of a lens.** Water, seawater, immersion oil and vacuum are
+media a lens sits *in*, not media a lens is made *of*, so a run of glass stops at
+one exactly as it stops at air. A singlet with water behind it is a singlet, and
+the water under an immersion objective belongs to the wafer's side of the last
+surface rather than to the lens above it. Isaac recognizes them by name, and also
+by their numbers where a design taken from a paper writes water as an index and
+an Abbe number instead of naming it.
 
 **The yellow ring in the Element cell switches an element out of the light.**
 Nothing moves — the surfaces stay where they are — but the element becomes air

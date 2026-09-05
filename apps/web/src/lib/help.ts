@@ -117,7 +117,7 @@ export type HelpAction =
  */
 export const HIGHLIGHT_COLUMNS = [
   'stop', 'type', 'label', 'aperture', 'radius', 'conic',
-  'asphere', 'focal', 'thickness', 'material', 'semiDiameter',
+  'asphere', 'focal', 'thickness', 'material', 'modelGlass', 'semiDiameter',
 ] as const;
 
 export type HighlightColumn = (typeof HIGHLIGHT_COLUMNS)[number];

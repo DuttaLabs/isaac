@@ -187,3 +187,30 @@ test('every column the assistant may name is one the table actually has', () => 
     );
   }
 });
+
+/**
+ * And the server's half against this one.
+ *
+ * The endpoint is deployed apart from the app and cannot import from it, so the
+ * list is written twice — which failed the first time it was extended: the
+ * Model glass column was given a `data-column` here while the tool schema went
+ * on offering the model eleven names, so the one cell the change existed for
+ * was the one it could never ask for. Neither half is wrong on its own, and
+ * nothing at runtime says a word. Reading the schema is ugly and it is the only
+ * thing that would have caught it.
+ */
+test("the server offers the model exactly the columns the app knows how to mark", () => {
+  const schema = readFileSync(
+    new URL('../../session-server/src/help.ts', import.meta.url),
+    'utf8',
+  );
+  const declared = schema.slice(schema.indexOf("name: 'highlight_surface'"));
+  const enumeration = declared.slice(declared.indexOf('enum: ['), declared.indexOf('],'));
+  const offered = [...enumeration.matchAll(/'([A-Za-z]+)'/g)].map((match) => match[1]);
+
+  assert.deepEqual(
+    offered,
+    [...HIGHLIGHT_COLUMNS],
+    'highlight_surface offers a different set of columns than the app can mark',
+  );
+});

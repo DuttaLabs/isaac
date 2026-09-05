@@ -308,3 +308,115 @@ test('an afocal system has no principal planes to report', () => {
   assert.ok(!Number.isFinite(properties.frontPrincipalPlaneZ));
   assert.ok(!Number.isFinite(properties.rearPrincipalPlaneZ));
 });
+
+/**
+ * One refracting surface with a liquid behind it, where every answer is known
+ * by hand.
+ *
+ * A single spherical surface of radius R between media n and n′ has power
+ * φ = (n′ − n)/R, and **both** its principal planes sit at the vertex. With
+ * R = 100 and n′ = 1.5 that is φ = 0.005, so the effective focal length is
+ * 1/φ = 200, the image-space focal length is n′/φ = 300 — and the rear focus is
+ * genuinely 300 behind the vertex, because that distance is measured in the
+ * liquid.
+ *
+ * Isaac used to report 300 as the focal length. The three coincide in air, so
+ * nothing in the corpus could tell them apart until an immersion lithography
+ * objective turned up with water between its last surface and the wafer, where
+ * Isaac said 5198.311 mm against OpticStudio's 3895.847 — exactly water's index
+ * apart. See `paraxialProperties` for which is which.
+ */
+test('the focal length is 1/φ even when the image space is not air', () => {
+  const liquid = new ConstantMaterial('DEMO-LIQUID', 1.5);
+  const system = new OpticalSystem({
+    name: 'immersed',
+    wavelengthsNm: [587.5618],
+    fields: [{ angleDeg: 0 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 100,
+        thickness: 300,
+        semiDiameter: 20,
+        material: liquid,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 20 }),
+    ],
+  });
+
+  const properties = paraxialProperties(system);
+
+  // 1/φ — the air-equivalent, which is what a designer means by "focal length"
+  // and what OpticStudio's EFFL prints.
+  assert.ok(
+    Math.abs(properties.effectiveFocalLength - 200) < 1e-9,
+    `EFL ${properties.effectiveFocalLength}, expected 200`,
+  );
+  assert.ok(Math.abs(properties.power - 0.005) < 1e-12, `power ${properties.power}`);
+
+  // The rear focus really is n′/φ behind the vertex: that one is a distance in
+  // the liquid, and the index belongs in it.
+  assert.ok(
+    Math.abs(properties.backFocalDistance - 300) < 1e-9,
+    `BFD ${properties.backFocalDistance}, expected 300`,
+  );
+  assert.ok(
+    Math.abs(properties.frontFocalDistance + 200) < 1e-9,
+    `FFD ${properties.frontFocalDistance}, expected -200`,
+  );
+
+  // And both principal planes land on the vertex, which is the check that the
+  // two sides each took the focal length measured in their own space. Using the
+  // EFL for the front one put it 100 mm into image space.
+  assert.ok(
+    Math.abs(properties.frontPrincipalPlaneZ) < 1e-9,
+    `front principal plane ${properties.frontPrincipalPlaneZ}, expected 0`,
+  );
+  assert.ok(
+    Math.abs(properties.rearPrincipalPlaneZ) < 1e-9,
+    `rear principal plane ${properties.rearPrincipalPlaneZ}, expected 0`,
+  );
+});
+
+/**
+ * The index is taken by magnitude, so reflection is untouched.
+ *
+ * `signedMediaIndices` turns the index negative after an odd number of
+ * reflections, and that sign genuinely belongs to the focal length — image space
+ * runs backwards, which is why a Newtonian's EFL is negative. Dividing by the
+ * signed index would have cancelled it and quietly turned every mirror system
+ * positive; dividing by |n′| leaves a system in air exactly where it was.
+ */
+test('dividing out the image index leaves a mirror in air alone', () => {
+  const system = new OpticalSystem({
+    name: 'concave mirror',
+    wavelengthsNm: [587.5618],
+    fields: [{ angleDeg: 0 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 20 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 'm1',
+        type: 'STANDARD',
+        radius: -200,
+        thickness: -100,
+        semiDiameter: 30,
+        material: AIR,
+        reflective: true,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 10 }),
+    ],
+  });
+
+  // f = R/2 = −100, negative because one reflection turns image space round.
+  const properties = paraxialProperties(system);
+  assert.ok(
+    Math.abs(properties.effectiveFocalLength + 100) < 1e-9,
+    `EFL ${properties.effectiveFocalLength}, expected -100`,
+  );
+});

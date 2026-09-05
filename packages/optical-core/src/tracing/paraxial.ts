@@ -103,7 +103,13 @@ export interface ParaxialStart {
 
 export interface ParaxialProperties {
   wavelengthNm: number;
-  /** Effective focal length; `Infinity` for an afocal system. */
+  /**
+   * Effective focal length: `1/φ`, the focal length **referred to air**, which
+   * is what OpticStudio's EFFL reports and what divides the entrance pupil to
+   * give the F/#. It is *not* `−y₁/u′` unless the image space is air — see the
+   * three focal lengths in {@link paraxialProperties}. `Infinity` for an afocal
+   * system.
+   */
   effectiveFocalLength: number;
   /** System power, 1/EFL; zero for an afocal system. */
   power: number;
@@ -205,12 +211,39 @@ export function paraxialProperties(
     throw new RangeError('A system needs at least one refracting surface for paraxial analysis.');
   }
 
-  // Collimated ray in from the left: gives EFL and the back focal distance.
+  // Collimated ray in from the left: gives the focal lengths and the back focal
+  // distance.
   const forward = paraxialTrace(system, { height: 1, angle: 0 }, wavelengthNm);
   const exit = forward[forward.length - 1]!;
-  const effectiveFocalLength =
-    exit.angleAfter === 0 ? Infinity : -forward[0]!.height / exit.angleAfter;
-  const backFocalDistance = exit.angleAfter === 0 ? Infinity : -exit.height / exit.angleAfter;
+  const afocal = exit.angleAfter === 0;
+  const objectIndex = signedMediaIndices(system, wavelengthNm)[0]!;
+
+  // **There are three focal lengths here and only one of them is the EFL.**
+  //
+  // `−y₁/u′` taken with the *real* exit slope is `n′/φ`, the **image-space**
+  // focal length: the true geometric distance from the rear principal plane to
+  // the rear focus. `n/φ` is its object-space counterpart. The **effective**
+  // focal length is `1/φ` — the same length referred to air — and that is the
+  // one everything means by "focal length": it is what divides the entrance
+  // pupil to give the F/#, and what a designer quotes.
+  //
+  // All three coincide whenever the system sits in air, which is why this went
+  // unnoticed until an immersion lithography objective arrived with **water**
+  // between its last surface and the wafer. Isaac reported 5198.311 mm against
+  // OpticStudio's 3895.847 — a ratio of 1.334321, water's index at 550 nm to
+  // the last digit it prints.
+  //
+  // The index is taken by **magnitude**, which is what keeps the mirror
+  // convention intact: `signedMediaIndices` turns the index negative after an
+  // odd number of reflections, and that sign belongs to the focal length —
+  // image space really does run backwards. A reflecting system in air has
+  // `|n′| = 1`, so nothing about Hubble or the Gregorian moves.
+  const imageSpaceFocalLength = afocal ? Infinity : -forward[0]!.height / exit.angleAfter;
+  const effectiveFocalLength = afocal
+    ? Infinity
+    : imageSpaceFocalLength / Math.abs(exit.indexAfter);
+  const objectSpaceFocalLength = afocal ? Infinity : effectiveFocalLength * Math.abs(objectIndex);
+  const backFocalDistance = afocal ? Infinity : -exit.height / exit.angleAfter;
 
   // Collimated ray in from the right (reversed system): gives the front focal distance.
   const frontFocalDistance = computeFrontFocalDistance(system, wavelengthNm);
@@ -223,7 +256,6 @@ export function paraxialProperties(
     magnification = 0;
   } else {
     // Marginal ray from the axial object point: y = 0 at the object, unit slope.
-    const objectIndex = signedMediaIndices(system, wavelengthNm)[0]!;
     const conjugate = paraxialTrace(system, { height: objectThickness, angle: 1 }, wavelengthNm);
     const conjugateExit = conjugate[conjugate.length - 1]!;
     imageDistance =
@@ -235,12 +267,16 @@ export function paraxialProperties(
   }
 
   const lastVertexZ = system.axialPositionAt(last);
-  // The focal points, less one focal length each: F' = P' + EFL by definition,
-  // and F = P − EFL. Both come out non-finite for an afocal system, which the
-  // callers test for rather than being handed a plausible number.
-  const rearPrincipalPlaneZ = lastVertexZ + backFocalDistance - effectiveFocalLength;
+  // The focal points, less one focal length each: F' = P' + f' and F = P − f.
+  // These are *positions on the axis*, so each takes the focal length measured
+  // in the space it lives in — `n'/φ` behind and `n/φ` in front — and not the
+  // air-equivalent EFL, which is a distance in no particular medium. In air the
+  // three are the same number, which is why one served for both until now.
+  // Both come out non-finite for an afocal system, which the callers test for
+  // rather than being handed a plausible number.
+  const rearPrincipalPlaneZ = lastVertexZ + backFocalDistance - imageSpaceFocalLength;
   const frontPrincipalPlaneZ =
-    system.axialPositionAt(1) + frontFocalDistance + effectiveFocalLength;
+    system.axialPositionAt(1) + frontFocalDistance + objectSpaceFocalLength;
 
   return {
     wavelengthNm,

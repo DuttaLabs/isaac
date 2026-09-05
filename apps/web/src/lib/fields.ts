@@ -1,4 +1,4 @@
-import type { Field } from '@isaac/optical-core';
+import { fieldKind, fieldValue, type Field } from '@isaac/optical-core';
 
 /**
  * Field styling for the layout views.
@@ -61,13 +61,22 @@ export function fieldStyle(field: Field | undefined, index: number): FieldStyle 
   };
 }
 
-/** How a field reads on its own, independent of any styling. */
+/**
+ * How a field reads on its own, independent of any styling.
+ *
+ * The three kinds are named apart because they are different quantities, and a
+ * bare number would leave a reader guessing which: `5°` is not `5 height` and
+ * neither is `img 5`, which is a height on the retina rather than on the object.
+ */
 export function fieldLabel(field: Field | undefined): string {
-  if (field?.angleDeg !== undefined) {
-    return `${Number(field.angleDeg.toFixed(4))}°`;
+  if (field === undefined) return 'on axis';
+  const value = Number(fieldValue(field).toFixed(4));
+  switch (fieldKind(field)) {
+    case 'ANGLE':
+      return field.angleDeg === undefined ? 'on axis' : `${value}°`;
+    case 'OBJECT_HEIGHT':
+      return `${value} height`;
+    case 'IMAGE_HEIGHT':
+      return `img ${value}`;
   }
-  if (field?.objectHeight !== undefined) {
-    return `${Number(field.objectHeight.toFixed(4))} height`;
-  }
-  return 'on axis';
 }

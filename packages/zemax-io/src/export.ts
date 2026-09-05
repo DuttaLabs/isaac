@@ -37,8 +37,11 @@
 
 import {
   ModelGlassMaterial,
+  fieldValue,
   isCircularAperture,
+  systemFieldKind,
   type ApertureKind,
+  type FieldKind,
   type LinearUnit,
   type Material,
   type OpticalSystem,
@@ -236,27 +239,31 @@ function headerRecords(system: OpticalSystem, options: ZmxExportOptions): ZmxRec
 }
 
 /**
- * `FTYP`'s first value: 0 for a field angle, 1 for an object height. The model
- * lets a field carry either, so the file's single flag has to describe all of
- * them — a system mixing the two cannot be written, and saying so is better than
+ * `FTYP`'s first value: 0 for a field angle, 1 for an object height, 2 for a
+ * paraxial image height. The file has **one** flag for the whole system, so a
+ * system whose fields disagree cannot be written — and saying so is better than
  * writing a file whose angles would be read back as millimeters.
  */
+const FIELD_TYPE_CODES: Readonly<Record<FieldKind, string>> = {
+  ANGLE: '0',
+  OBJECT_HEIGHT: '1',
+  IMAGE_HEIGHT: '2',
+};
+
 function fieldType(system: OpticalSystem): string {
-  const heights = system.fields.filter((field) => field.objectHeight !== undefined);
-  if (heights.length === 0) {
-    return '0';
-  }
-  if (heights.length !== system.fields.length) {
+  const kind = systemFieldKind(system);
+  if (kind === undefined) {
     throw new ZmxExportError(
-      'This system mixes angle fields with object-height fields. A .zmx file has one field ' +
-        'type for the whole system, so it cannot express both at once.',
+      'This system mixes field types \u2014 angles, object heights and image heights are all ' +
+        'present. A .zmx file has one field type for the whole system, so it cannot express ' +
+        'more than one at once.',
     );
   }
-  return '1';
+  return FIELD_TYPE_CODES[kind];
 }
 
 function fieldValues(system: OpticalSystem): string[] {
-  return system.fields.map((field) => number(field.angleDeg ?? field.objectHeight ?? 0));
+  return system.fields.map((field) => number(fieldValue(field)));
 }
 
 function apertureRecords(system: OpticalSystem): ZmxRecord[] {

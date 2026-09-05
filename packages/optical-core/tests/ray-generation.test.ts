@@ -8,11 +8,17 @@ import {
   Surface,
   Vector3,
   entrancePupilRadius,
+  fieldForImageHeight,
+  generateChiefRay,
   generatePupilGrid,
   generateRay,
   generateRayFan,
   isObjectAtInfinity,
+  paraxialImageHeight,
+  paraxialProperties,
+  traceRay,
   traceRays,
+  withImageAtParaxialFocus,
 } from '../src/index.ts';
 
 const GLASS = new ConstantMaterial('DEMO-GLASS', 1.5);
@@ -304,4 +310,127 @@ test('the NA cone is measured to the pupil, not to the first surface', () => {
     Math.abs(entrancePupilRadius(system) - expected) < 1e-9,
     `pupil radius ${entrancePupilRadius(system)}, expected ${expected}`,
   );
+});
+
+/**
+ * **A field can be stated as a height on the image, which is how eyes are
+ * specified** — a retinal height is what a clinician measures and what an eye
+ * model quotes, and it is Zemax's field type 2.
+ *
+ * It is a statement about where the chief ray *lands*, so launching one means
+ * solving for the object-space field that puts it there. Paraxial optics is
+ * linear in field, so the solve is exact rather than iterative: one probe ray
+ * gives the constant of proportionality. For an object at infinity the linear
+ * quantity is `tan θ` and not θ, which is the easy thing to get wrong — it is
+ * invisible at 1° and 4% out by 20°.
+ */
+function imageHeightSystem(lastThickness = 95): OpticalSystem {
+  return new OpticalSystem({
+    name: 'stated by image height',
+    wavelengthsNm: [WAVELENGTH_NM],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    fields: [{ imageHeight: 0 }, { imageHeight: 8 }, { imageHeight: 17 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 5,
+        semiDiameter: 15,
+        material: GLASS,
+        isStop: true,
+      }),
+      new Surface({
+        id: 's2',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: lastThickness,
+        semiDiameter: 15,
+        material: AIR,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 30 }),
+    ],
+  });
+}
+
+test('an image-height field is the height its chief ray lands at', () => {
+  const system = imageHeightSystem();
+  for (const height of [-17, -3, 0, 8, 17]) {
+    const field = fieldForImageHeight(system, height);
+    assert.ok(
+      Math.abs(paraxialImageHeight(system, field) - height) < 1e-9,
+      `asked for ${height}, the solved field lands at ${paraxialImageHeight(system, field)}`,
+    );
+  }
+});
+
+test('the field angle it solves for follows the tangent, not the degrees', () => {
+  const system = imageHeightSystem();
+  // f·tanθ with f = 100: reading the relation as linear in degrees would put the
+  // 20° point 4% out, and that error grows with field — exactly where an eye
+  // model lives.
+  const focalLength = paraxialProperties(system).effectiveFocalLength;
+  for (const degrees of [1, 20, 40]) {
+    const height = focalLength * Math.tan((degrees * Math.PI) / 180);
+    const solved = fieldForImageHeight(system, height);
+    assert.ok(
+      Math.abs((solved.angleDeg ?? 0) - degrees) < 1e-9,
+      `image height ${height} should be ${degrees}°, solved ${solved.angleDeg}`,
+    );
+  }
+});
+
+test('an image-height field means the same thing however the image plane moves', () => {
+  // A refractive error *is* a defocus, so an eye model is routinely out of focus
+  // on purpose. Measuring the field at the image surface rather than at the
+  // paraxial image would make Quick focus silently change which field points a
+  // design has.
+  const heights = [60, 95, 130].map((thickness) =>
+    paraxialImageHeight(imageHeightSystem(thickness), { angleDeg: 5 }),
+  );
+  for (const height of heights) {
+    assert.ok(Math.abs(height - heights[0]!) < 1e-12, `field height moved with the image plane`);
+  }
+});
+
+test('a ray generated for an image-height field lands where it said', () => {
+  const system = imageHeightSystem();
+  const focused = withImageAtParaxialFocus(system);
+  for (const wanted of [3, 8]) {
+    const chief = generateChiefRay(focused, { field: { imageHeight: wanted } });
+    const result = traceRay(focused, chief);
+    assert.equal(result.status, 'TERMINATED');
+    const landed = result.intersections[result.intersections.length - 1]!.point.y;
+    // A real ray carries the distortion a paraxial one does not, so this is a
+    // sanity bound rather than an identity — it is the difference between
+    // "the solve is right" and "the solve is nonsense".
+    assert.ok(
+      Math.abs(landed - wanted) < 0.02 * Math.abs(wanted) + 1e-9,
+      `asked for image height ${wanted}, the traced chief ray landed at ${landed}`,
+    );
+  }
+});
+
+test('a system with no power cannot state a field as an image height', () => {
+  const afocal = new OpticalSystem({
+    name: 'no power',
+    wavelengthsNm: [WAVELENGTH_NM],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 10 },
+    fields: [{ imageHeight: 1 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: Infinity,
+        thickness: 50,
+        semiDiameter: 15,
+        material: AIR,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 15 }),
+    ],
+  });
+  assert.throws(() => fieldForImageHeight(afocal, 1), /no paraxial image/);
 });

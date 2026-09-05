@@ -62,11 +62,12 @@ export {
   OBSCURING_APERTURE_KINDS,
 } from './model/aperture.ts';
 export type { ApertureKind, SurfaceAperture, SurfaceApertureConfig } from './model/aperture.ts';
-export { OpticalSystem } from './model/optical-system.ts';
+export { OpticalSystem, fieldKind, fieldValue, systemFieldKind } from './model/optical-system.ts';
 export type {
   OpticalSystemConfig,
   LinearUnit,
   Field,
+  FieldKind,
   Aperture,
   ApertureType,
 } from './model/optical-system.ts';
@@ -95,6 +96,9 @@ export type {
 } from './tracing/paraxial.ts';
 export {
   entrancePupilRadius,
+  paraxialImageHeight,
+  fieldForImageHeight,
+  launchableField,
   entrancePupilZ,
   imageSpaceFNumber,
   objectDistance,

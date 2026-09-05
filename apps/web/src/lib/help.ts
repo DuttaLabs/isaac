@@ -25,8 +25,7 @@ import type { Result } from './result.ts';
  * to its default rather than throwing on the import, and a test that only wants
  * `readAction` never has to care where the server is.
  */
-const env =
-  (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
+const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 
 /**
  * Where to ask.
@@ -67,7 +66,7 @@ export interface Exchange {
 export interface ProposedEdit {
   readonly surface: number;
   readonly property:
-    | 'radius' | 'conic' | 'thickness' | 'semiDiameter' | 'material' | 'label' | 'stop' | 'mirror';
+    'radius' | 'conic' | 'thickness' | 'semiDiameter' | 'material' | 'label' | 'stop' | 'mirror';
   readonly value: string;
 }
 
@@ -103,7 +102,11 @@ export type HelpAction =
       readonly intendedEfl: number;
       readonly intendedFNumber: number;
     }
-  | { readonly kind: 'propose_edits'; readonly edits: readonly ProposedEdit[]; readonly why: string };
+  | {
+      readonly kind: 'propose_edits';
+      readonly edits: readonly ProposedEdit[];
+      readonly why: string;
+    };
 
 /**
  * The cells of the lens grid that can be pointed at.
@@ -116,14 +119,31 @@ export type HelpAction =
  * the stylesheet happens to be this week.
  */
 export const HIGHLIGHT_COLUMNS = [
-  'stop', 'type', 'label', 'aperture', 'radius', 'conic',
-  'asphere', 'focal', 'thickness', 'material', 'modelGlass', 'semiDiameter',
+  'stop',
+  'type',
+  'label',
+  'aperture',
+  'radius',
+  'conic',
+  'asphere',
+  'focal',
+  'thickness',
+  'material',
+  'modelGlass',
+  'semiDiameter',
 ] as const;
 
 export type HighlightColumn = (typeof HIGHLIGHT_COLUMNS)[number];
 
 const EDIT_PROPERTIES = new Set([
-  'radius', 'conic', 'thickness', 'semiDiameter', 'material', 'label', 'stop', 'mirror',
+  'radius',
+  'conic',
+  'thickness',
+  'semiDiameter',
+  'material',
+  'label',
+  'stop',
+  'mirror',
 ]);
 
 /**
@@ -146,7 +166,11 @@ export function readAction(value: unknown): HelpAction | undefined {
       // row still lights, which is most of the gesture, and a bad selector
       // would simply mark nothing while claiming to have marked something.
       const named = HIGHLIGHT_COLUMNS.find((known) => known === column);
-      return { kind: 'highlight_surface', surface: action['surface'], ...(named !== undefined && { column: named }) };
+      return {
+        kind: 'highlight_surface',
+        surface: action['surface'],
+        ...(named !== undefined && { column: named }),
+      };
     }
     case 'open_panel':
       return typeof action['panel'] === 'string'
@@ -411,7 +435,9 @@ export function describeSystem(
     .map((field, index) =>
       field.angleDeg !== undefined
         ? `${index}: ${num(field.angleDeg)}°`
-        : `${index}: height ${num(field.objectHeight ?? 0)}`,
+        : field.imageHeight !== undefined
+          ? `${index}: paraxial image height ${num(field.imageHeight)}`
+          : `${index}: object height ${num(field.objectHeight ?? 0)}`,
     )
     .join(', ');
   lines.push(`Fields: ${fields || 'none'}`);
@@ -419,7 +445,9 @@ export function describeSystem(
   if (system.aperture !== undefined) {
     lines.push(`System aperture: ${system.aperture.type} = ${num(system.aperture.value ?? 0)}`);
   }
-  lines.push(`Stop: ${system.stopIndex === undefined ? 'none set' : `surface ${system.stopIndex}`}`);
+  lines.push(
+    `Stop: ${system.stopIndex === undefined ? 'none set' : `surface ${system.stopIndex}`}`,
+  );
   // A folded system's first-order numbers describe its unfolded equivalent, and
   // that caveat has to travel with the numbers or the answer will state them flat.
   lines.push(`Centered (no tilts or decenters): ${system.isCentered ? 'yes' : 'no'}`);
@@ -448,7 +476,9 @@ export function describeSystem(
         num(surface.semiDiameter).padEnd(10),
         (surface.reflective ? 'MIRROR' : surface.material.name).padEnd(12),
         notes.join('; '),
-      ].join('').trimEnd(),
+      ]
+        .join('')
+        .trimEnd(),
     );
   });
 

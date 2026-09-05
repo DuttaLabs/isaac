@@ -4,11 +4,66 @@ import { Surface } from './surface.ts';
 export type LinearUnit = 'mm' | 'cm' | 'm' | 'in';
 
 /** A named off-axis field point, expressed as an object-space angle or height. */
+/**
+ * One field point, stated the way the design states it.
+ *
+ * **Three spellings, and the model keeps whichever the file used.** A `.zmx`
+ * carries one field type for the whole system and Isaac keeps its vocabulary
+ * rather than normalizing, for the reason the coordinate-transform fields are
+ * kept as Zemax names them: a round trip is far easier to keep honest when the
+ * model already speaks the format's language, and a user who typed retinal
+ * heights should see retinal heights, not the angles they happen to work out to.
+ *
+ * Exactly one of the three is set.
+ */
 export interface Field {
   /** Field angle in degrees (for objects at infinity). */
   angleDeg?: number;
   /** Object height in system units (for finite objects). */
   objectHeight?: number;
+  /**
+   * Height in the **paraxial image plane**, in system units.
+   *
+   * The way eyes are specified — a retinal height is the quantity a clinician
+   * measures and an eye model quotes — and Zemax's field type 2. It is a
+   * statement about where the chief ray *lands*, so turning it into a ray means
+   * solving for the object-space field that puts it there; paraxial optics is
+   * linear in field, so that solve is exact rather than iterative. See
+   * `fieldForImageHeight` in `tracing/ray-generation.ts`.
+   *
+   * Zemax's type 3, *real* image height, is the same statement made about a
+   * traced ray rather than a paraxial one, and would need iteration. It is not
+   * modeled, and the reader refuses it rather than quietly treating it as this.
+   */
+  imageHeight?: number;
+}
+
+/** Which quantity a field is stated in. */
+export type FieldKind = 'ANGLE' | 'OBJECT_HEIGHT' | 'IMAGE_HEIGHT';
+
+/** What a field is stated in; `ANGLE` for an empty one, which is the on-axis default. */
+export function fieldKind(field: Field): FieldKind {
+  if (field.objectHeight !== undefined) return 'OBJECT_HEIGHT';
+  if (field.imageHeight !== undefined) return 'IMAGE_HEIGHT';
+  return 'ANGLE';
+}
+
+/**
+ * The number a field carries, whichever kind it is — for the many places that
+ * want "how far off axis is this one" and do not care in what units.
+ */
+export function fieldValue(field: Field): number {
+  return field.angleDeg ?? field.objectHeight ?? field.imageHeight ?? 0;
+}
+
+/**
+ * The one kind a whole system's fields are stated in, or `undefined` when they
+ * disagree — which a `.zmx` cannot express, since the file has a single field
+ * type for all of them.
+ */
+export function systemFieldKind(system: OpticalSystem): FieldKind | undefined {
+  const kinds = new Set(system.fields.map(fieldKind));
+  return kinds.size === 1 ? [...kinds][0] : kinds.size === 0 ? 'ANGLE' : undefined;
 }
 
 export type ApertureType =

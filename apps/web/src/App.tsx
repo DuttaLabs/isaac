@@ -609,16 +609,22 @@ export function App() {
       return;
     }
     if (awaitingRoomState) return;
-    const written = attempt(
-      () => exportZmx(system, { glassCatalogs: GLASS_CATALOG_NAMES }).text,
-    );
+    const written = attempt(() => exportZmx(system, { glassCatalogs: GLASS_CATALOG_NAMES }).text);
     // A system that cannot be written cannot be shared. The panel that can say
     // why already does; failing silently here beats a notice on every keystroke.
     if (!written.ok) return;
     if (written.value === lastSynced.current) return;
     lastSynced.current = written.value;
     session.sendState({ design: written.value, fileName, screen: screenNow });
-  }, [system, fileName, session.status, session.driving, session.sendState, awaitingRoomState, screenNow]);
+  }, [
+    system,
+    fileName,
+    session.status,
+    session.driving,
+    session.sendState,
+    awaitingRoomState,
+    screenNow,
+  ]);
 
   /**
    * Publishes the screen when only the *screen* has changed — a pane split, a
@@ -791,7 +797,9 @@ export function App() {
           // so the grid does not sit lit up for the rest of the session.
           window.setTimeout(() => {
             setHighlightedSurface((current) => (current === action.surface ? undefined : current));
-            setPointedCell((current) => (current?.surface === action.surface ? undefined : current));
+            setPointedCell((current) =>
+              current?.surface === action.surface ? undefined : current,
+            );
           }, 6_000);
           return { ok: true };
         }
@@ -830,7 +838,9 @@ export function App() {
             const efl = checked.value.properties.effectiveFocalLength;
             const fNumber = checked.value.fNumber;
             const off = (got: number, wanted: number): boolean =>
-              Number.isFinite(got) && wanted !== 0 && Math.abs(got - wanted) / Math.abs(wanted) > 0.2;
+              Number.isFinite(got) &&
+              wanted !== 0 &&
+              Math.abs(got - wanted) / Math.abs(wanted) > 0.2;
             if (off(efl, action.intendedEfl)) {
               disagreements.push(
                 `It aimed for a focal length of ${action.intendedEfl} and this traces at ${efl.toFixed(1)}.`,
@@ -1236,9 +1246,9 @@ export function App() {
     if (!field) {
       return 'on axis';
     }
-    return field.angleDeg !== undefined
-      ? `${field.angleDeg}°`
-      : `h = ${field.objectHeight ?? 0} ${system.units}`;
+    if (field.angleDeg !== undefined) return `${field.angleDeg}°`;
+    if (field.imageHeight !== undefined) return `image h = ${field.imageHeight} ${system.units}`;
+    return `h = ${field.objectHeight ?? 0} ${system.units}`;
   };
 
   /**

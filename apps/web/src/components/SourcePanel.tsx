@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import type { ApertureType, Field, OpticalSystem } from '@isaac/optical-core';
+import {
+  fieldForImageHeight,
+  fieldKind,
+  fieldValue,
+  paraxialImageHeight,
+  systemFieldKind,
+  type ApertureType,
+  type Field,
+  type FieldKind,
+  type OpticalSystem,
+} from '@isaac/optical-core';
 import { attempt, type Result } from '../lib/result.ts';
 import { ErrorNote, Panel, type PanelChoice } from './Panel.tsx';
 import { NumericCell } from './NumericCell.tsx';
@@ -53,6 +63,10 @@ export function SourcePanel({
 
   const objectThickness = system.objectSurface.thickness;
   const atInfinity = !Number.isFinite(objectThickness);
+  // A system's fields are all one kind — a `.zmx` has a single field type for
+  // the whole of it — so a mixed list, which only an edit in flight can produce,
+  // shows as what its first field is.
+  const fieldsAre = systemFieldKind(system) ?? fieldKind(system.fields[0] ?? {});
   const aperture = system.aperture;
 
   return (
@@ -90,6 +104,23 @@ export function SourcePanel({
       </div>
 
       <div className="field-row">
+        <label htmlFor="field-kind">Fields</label>
+        <div className="inline">
+          <select
+            id="field-kind"
+            value={fieldsAre}
+            onChange={(event) => apply(setFieldKind(system, event.target.value as FieldKind))}
+          >
+            {Object.entries(FIELD_KIND_LABELS).map(([kind, text]) => (
+              <option key={kind} value={kind}>
+                {text}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="field-row">
         <label htmlFor="aperture-type">Aperture</label>
         <div className="inline">
           <select
@@ -120,8 +151,8 @@ export function SourcePanel({
       </div>
 
       <ListEditor
-        label={atInfinity ? 'Field angles (°)' : 'Object heights'}
-        values={system.fields.map((field) => field.angleDeg ?? field.objectHeight ?? 0)}
+        label={FIELD_LIST_LABELS[fieldsAre]}
+        values={system.fields.map(fieldValue)}
         visible={system.fields.map((_, index) => fieldVisibility[index] ?? true)}
         onVisibleChange={onFieldVisibilityChange}
         cycle={{
@@ -138,9 +169,7 @@ export function SourcePanel({
           apply(
             attempt(() =>
               system.with({
-                fields: values.map((value): Field =>
-                  atInfinity ? { angleDeg: value } : { objectHeight: value },
-                ),
+                fields: values.map((value): Field => fieldOfKind(fieldsAre, value)),
               }),
             ),
           )
@@ -301,11 +330,78 @@ function ListEditor({
   );
 }
 
+/** OpticStudio's own names for the three, so the vocabulary carries over. */
+const FIELD_KIND_LABELS: Readonly<Record<FieldKind, string>> = {
+  ANGLE: 'Angle',
+  OBJECT_HEIGHT: 'Object height',
+  IMAGE_HEIGHT: 'Paraxial image height',
+};
+
+const FIELD_LIST_LABELS: Readonly<Record<FieldKind, string>> = {
+  ANGLE: 'Field angles (°)',
+  OBJECT_HEIGHT: 'Object heights',
+  IMAGE_HEIGHT: 'Image heights',
+};
+
+function fieldOfKind(kind: FieldKind, value: number): Field {
+  if (kind === 'OBJECT_HEIGHT') return { objectHeight: value };
+  if (kind === 'IMAGE_HEIGHT') return { imageHeight: value };
+  return { angleDeg: value };
+}
+
+/**
+ * Changing what the fields are stated in, keeping the points where they are.
+ *
+ * The three describe the same rays in different words, so switching converts
+ * rather than reinterprets — retyping 5° as 5 mm would move every field point.
+ * Angle and object height are related through the object distance; an image
+ * height is related to either through the system's own first order, which is
+ * what `fieldForImageHeight` and `paraxialImageHeight` are for.
+ *
+ * **An angle needs an object at infinity and an object height a finite one**,
+ * which is the engine's rule, so choosing one of those moves the conjugate to
+ * match. An image height needs neither and is left alone by the conjugate
+ * switch — a retinal height means the same thing whether the eye is looking at
+ * a star or at a page.
+ */
+function setFieldKind(system: OpticalSystem, kind: FieldKind): Result<OpticalSystem> {
+  return attempt(() => {
+    const current = systemFieldKind(system);
+    if (current === kind) return system;
+
+    const wavelengthNm = system.primaryWavelengthNm;
+    const heights = system.fields.map(
+      (field) => field.imageHeight ?? paraxialImageHeight(system, field, wavelengthNm),
+    );
+
+    if (kind === 'IMAGE_HEIGHT') {
+      return system.with({ fields: heights.map((value) => ({ imageHeight: value })) });
+    }
+
+    // Angles need an object at infinity and heights need a finite one, so put the
+    // conjugate where the chosen kind can live before converting into it.
+    const wantsInfinity = kind === 'ANGLE';
+    const moved =
+      Number.isFinite(system.objectSurface.thickness) === !wantsInfinity
+        ? system
+        : system.withSurfaceAt(
+            0,
+            system.objectSurface.with({ thickness: wantsInfinity ? Infinity : 200 }),
+          );
+    return moved.with({
+      fields: heights.map((height) => fieldForImageHeight(moved, height, wavelengthNm)),
+    });
+  });
+}
+
 /**
  * Switching conjugate has to convert the field list too: an object at infinity
  * takes angles and a finite object takes heights, and the engine rejects the
  * wrong kind. Angles convert as h = L·tan θ, which preserves the field's size
  * relative to the object plane.
+ *
+ * **Image-height fields are left alone**, since they need neither conjugate: a
+ * retinal height is the same statement whether the eye looks at a star or a page.
  */
 function setConjugate(system: OpticalSystem, toInfinity: boolean): Result<OpticalSystem> {
   return attempt(() => {
@@ -313,6 +409,9 @@ function setConjugate(system: OpticalSystem, toInfinity: boolean): Result<Optica
     const distance = Number.isFinite(currentThickness) ? currentThickness : 200;
 
     const fields = system.fields.map((field): Field => {
+      if (field.imageHeight !== undefined) {
+        return field;
+      }
       if (toInfinity) {
         const height = field.objectHeight ?? 0;
         return { angleDeg: (Math.atan2(height, distance) * 180) / Math.PI };

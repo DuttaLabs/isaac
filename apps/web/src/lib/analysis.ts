@@ -1,5 +1,6 @@
 import {
   entrancePupil,
+  fieldValue,
   entrancePupilRadius,
   exitPupil,
   generateChiefRay,
@@ -16,6 +17,7 @@ import {
   type Pupil,
   type RayTraceResult,
 } from '@isaac/optical-core';
+import { fieldLabel } from './fields.ts';
 import { attempt, type Result } from './result.ts';
 
 /** How a field is addressed when the system may have no field list at all. */
@@ -133,7 +135,7 @@ function fieldExtremes(
     if (field === undefined) {
       continue;
     }
-    const magnitude = Math.abs(field.angleDeg ?? field.objectHeight ?? 0);
+    const magnitude = Math.abs(fieldValue(field));
     if (magnitude < smallest) {
       smallest = magnitude;
       inner = index;
@@ -147,16 +149,7 @@ function fieldExtremes(
 }
 
 function describeField(field: Field | undefined): string {
-  if (field === undefined) {
-    return 'on axis';
-  }
-  if (field.angleDeg !== undefined) {
-    return `${Number(field.angleDeg.toFixed(4))}°`;
-  }
-  if (field.objectHeight !== undefined) {
-    return `${Number(field.objectHeight.toFixed(4))} height`;
-  }
-  return 'on axis';
+  return fieldLabel(field);
 }
 
 /**

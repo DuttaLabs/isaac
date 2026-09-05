@@ -539,3 +539,75 @@ test('the stop, the comment and the surface order all survive', () => {
   assert.equal(back.surfaces[1]!.comment, 'Crown front');
   assert.equal(back.surfaces[3]!.comment, 'Flint rear');
 });
+
+/**
+ * **Field type 2, a paraxial image height, is how eye models state their
+ * fields** — a retinal height is the quantity a clinician measures. The model
+ * keeps whichever spelling the file used rather than normalizing to angles, so
+ * the round trip is the whole point: a user who typed retinal heights must not
+ * reopen the file to find degrees.
+ */
+test('a system whose fields are image heights round-trips as field type 2', () => {
+  const system = new OpticalSystem({
+    name: 'SCHEMATIC EYE',
+    wavelengthsNm: [587.5618],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 4 },
+    fields: [{ imageHeight: 0 }, { imageHeight: 0.5 }, { imageHeight: 1.2 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 'cornea',
+        type: 'STANDARD',
+        radius: 7.8,
+        thickness: 3.6,
+        semiDiameter: 5,
+        material: new ConstantMaterial('AQUEOUS', 1.336),
+        isStop: true,
+      }),
+      new Surface({
+        id: 'lens',
+        type: 'STANDARD',
+        radius: 10.2,
+        thickness: 17,
+        semiDiameter: 5,
+        material: AIR,
+      }),
+      new Surface({ id: 'retina', type: 'IMAGE', radius: -12, thickness: 0, semiDiameter: 5 }),
+    ],
+  });
+
+  const { text } = exportZmx(system);
+  assert.match(text, /^FTYP 2 /m, 'the file must say field type 2');
+
+  const reread = importZmx(text, { allowUnknownGlass: true }).system;
+  assert.deepEqual(
+    reread.fields.map((field) => field.imageHeight),
+    [0, 0.5, 1.2],
+    'image heights must come back as image heights, not as angles',
+  );
+  // And the retina keeps its curvature, which is the other half of an eye.
+  assert.equal(reread.imageSurface.radius, -12);
+});
+
+test('a system mixing field types cannot be written, and says which', () => {
+  const mixed = new OpticalSystem({
+    name: 'MIXED',
+    wavelengthsNm: [587.5618],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 4 },
+    fields: [{ angleDeg: 0 }, { imageHeight: 1 }],
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 's1',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 50,
+        semiDiameter: 5,
+        material: AIR,
+        isStop: true,
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 5 }),
+    ],
+  });
+  assert.throws(() => exportZmx(mixed), /one field type for the whole system/);
+});

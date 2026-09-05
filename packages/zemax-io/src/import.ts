@@ -1138,8 +1138,14 @@ function readPrimaryWavelengthIndex(document: ZmxDocument, warnings: string[]): 
 
 /**
  * `FTYP <field type> <telecentric> <field count> <wavelength count> …`, where
- * field type 0 is an angle in degrees and 1 an object height. Types 2 and 3
- * (paraxial and real image height) describe fields the core cannot express.
+ * field type 0 is an angle in degrees, 1 an object height and 2 a **paraxial
+ * image height** — the way eye models state their fields, a retinal height being
+ * the quantity a clinician measures.
+ *
+ * Type 3 is *real* image height, the same statement made about a traced ray
+ * rather than a paraxial one. It needs iteration to invert and is refused rather
+ * than quietly read as type 2, which would be a plausible-looking lie about
+ * where the field points are.
  */
 function readFields(document: ZmxDocument, warnings: string[]): Field[] {
   const ftyp = findRecord(document.header, 'FTYP');
@@ -1147,9 +1153,11 @@ function readFields(document: ZmxDocument, warnings: string[]): Field[] {
     return [];
   }
   const fieldType = numericValue(ftyp.values[0]) ?? 0;
-  if (fieldType !== 0 && fieldType !== 1) {
+  if (fieldType !== 0 && fieldType !== 1 && fieldType !== 2) {
     warnings.push(
-      `Field type ${fieldType} (image-height fields) is not supported; the imported system has no fields.`,
+      `Field type ${fieldType} (real image height) is not supported; the imported system has no ` +
+        'fields. Inverting it needs a real ray trace, and reading it as a paraxial image height ' +
+        'would put the field points somewhere the file did not ask for.',
     );
     return [];
   }
@@ -1165,9 +1173,11 @@ function readFields(document: ZmxDocument, warnings: string[]): Field[] {
     );
   }
 
-  return yFields
-    .slice(0, count)
-    .map((value) => (fieldType === 0 ? { angleDeg: value } : { objectHeight: value }));
+  return yFields.slice(0, count).map((value) => {
+    if (fieldType === 0) return { angleDeg: value };
+    if (fieldType === 1) return { objectHeight: value };
+    return { imageHeight: value };
+  });
 }
 
 function readFieldValues(document: ZmxDocument, token: string): number[] {

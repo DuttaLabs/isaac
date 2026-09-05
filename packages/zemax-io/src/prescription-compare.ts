@@ -39,6 +39,8 @@
 
 import {
   SPECTRAL_LINES,
+  fieldValue,
+  systemFieldKind,
   surfacePower,
   entrancePupil,
   entrancePupilPlaneZ,
@@ -757,7 +759,7 @@ function compareGeneralData(
   }
 
   const maxField = system.fields.reduce(
-    (widest, field) => Math.max(widest, Math.abs(field.objectHeight ?? field.angleDeg ?? 0)),
+    (widest, field) => Math.max(widest, Math.abs(fieldValue(field))),
     0,
   );
   checks.value(
@@ -773,14 +775,30 @@ function compareGeneralData(
   // into water come out right.
   const objectIndex = Math.abs(signedMediaIndices(system, wavelengthNm)[0]!);
   const infiniteConjugate = !Number.isFinite(system.objectSurface.thickness);
+  // Three field kinds, three ways to the same number. Stated as an image height
+  // it *is* the answer; as an object height it is that magnified; as an angle at
+  // an infinite conjugate it is the object-space focal length times the tangent,
+  // and that focal length carries the object index — which is what an endoscope
+  // looking into water needs.
+  const kind = systemFieldKind(system);
+  const imageHeight =
+    kind === 'IMAGE_HEIGHT'
+      ? maxField
+      : infiniteConjugate
+        ? Math.abs(paraxial.effectiveFocalLength) *
+          objectIndex *
+          Math.tan((maxField * Math.PI) / 180)
+        : Math.abs(paraxial.magnification) * maxField;
   checks.value(
     section,
     'paraxial image height',
     generalValue(prescription, 'Paraxial Image Height'),
-    infiniteConjugate
-      ? Math.abs(paraxial.effectiveFocalLength) * objectIndex * Math.tan((maxField * Math.PI) / 180)
-      : Math.abs(paraxial.magnification) * maxField,
-    infiniteConjugate ? 'object at infinity: |n\u2080\u00b7EFL|\u00b7tan\u03b8' : undefined,
+    imageHeight,
+    kind === 'IMAGE_HEIGHT'
+      ? 'the fields are stated as image heights, so this is one of them'
+      : infiniteConjugate
+        ? 'object at infinity: |n\u2080\u00b7EFL|\u00b7tan\u03b8'
+        : undefined,
   );
 
   comparePupils(checks, section, system, prescription, wavelengthNm, paraxial, inImageSpace);
@@ -935,12 +953,7 @@ function compareSources(
   prescription.fields.forEach((field, index) => {
     const own = system.fields[index];
     if (own === undefined) return;
-    checks.value(
-      section,
-      `field ${index + 1} y`,
-      exactly(field.y),
-      own.objectHeight ?? own.angleDeg ?? 0,
-    );
+    checks.value(section, `field ${index + 1} y`, exactly(field.y), fieldValue(own));
   });
 
   // **Isaac has no X field, and silence about that would be the wrong answer.**

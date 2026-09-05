@@ -1597,6 +1597,35 @@ Three.js geometry for an `OpticalSystem` and nothing else: **no React, no render
   times too small** and every ray traced was near-axial. `ray-generation.test.ts`
   pins it by the definition — generate the marginal ray, and the sine of its angle
   at the object must be the stated NA — so the test needs no second program.
+- **A field is stated three ways, and the model keeps whichever the design used.**
+  `angleDeg` for an object at infinity, `objectHeight` for a finite one, and
+  **`imageHeight` — a height in the paraxial image plane**, which is Zemax's field
+  type 2 and how eye models state their fields, a retinal height being what a
+  clinician measures. Nothing is normalized to angles on the way in: a `.zmx` has
+  one field type for the whole system, and a user who typed retinal heights must
+  not reopen the file to find degrees. `fieldKind`, `fieldValue` and
+  `systemFieldKind` are the accessors; the exporter refuses a system whose fields
+  disagree, since the file cannot say two things at once.
+
+  An image height is a statement about where the chief ray **lands**, so launching
+  one means solving for the object-space field that puts it there.
+  `fieldForImageHeight` does that **exactly, not iteratively**: paraxial optics is
+  linear in field, so one probe ray gives the constant of proportionality. For an
+  object at infinity the linear quantity is **`tan θ`, not θ** — the probe is taken
+  at 45°, where the tangent is one, and the answer comes back through `atan`.
+  Reading it as linear in degrees is invisible at 1° and 4% out by 20°, which is
+  exactly where an eye model lives.
+
+  **The height is measured at the paraxial image plane, not at the image surface.**
+  They are the same plane on a system in focus and not on one deliberately out of
+  it — and for eye work that is the normal case, since a refractive error *is* a
+  defocus. Measuring at the surface would make a stated field depend on where the
+  detector sits, so running Quick focus would silently change which field points
+  the design has.
+
+  Zemax's type 3, *real* image height, is the same statement made about a traced
+  ray, needs iteration to invert, and is **refused** rather than quietly read as
+  type 2.
 - **Ray generation:** normalized pupil coordinates `(px, py)` span the entrance pupil (unit circle = rim). Rays are aimed at the solved entrance-pupil plane when the system has a stop, and at surface 1's vertex plane otherwise. All four aperture types work: `ENTRANCE_PUPIL_DIAMETER`, `OBJECT_SPACE_NA`, `IMAGE_SPACE_FNUM` (from the paraxial EFL, infinite conjugate only), and `FLOAT_BY_STOP` (from the stop's semi-diameter). Objects at infinity take `angleDeg` fields and launch from a plane in front of surface 1; finite objects take `objectHeight` fields and launch from the object plane.
 - **A ray may step backwards, but only where the prescription does.** `MISSED` means the ray never meets the surface, not that it meets it behind itself: a **negative thickness puts the next surface behind the one before it**, which is how a *remote stop* is written — the aperture stop of a telecentric system sits far downstream and the file steps back to where the glass is. `stepsBackward` in `trace.ts` measures the axial step **against the direction of travel**, so it reads the same in a reflecting arm, where thicknesses and travel are both negative and their product is ordinary forward propagation. A backward hit where the prescription steps forward is still `MISSED`, and that half matters too: an image plane buried inside the last lens is nominally ahead, and reporting a hit there hands `quickFocus` a fake perfect score — one axial ray, scoring zero.
 - **Aiming is paraxial (first order).** A ray aimed at the pupil rim can miss the stop edge by the residual aberration and come back `BLOCKED` — see the test that pins this. Closing that gap needs iterative *real* ray aiming, which is deliberately not implemented.

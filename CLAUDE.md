@@ -1627,6 +1627,16 @@ Three.js geometry for an `OpticalSystem` and nothing else: **no React, no render
   ray, needs iteration to invert, and is **refused** rather than quietly read as
   type 2.
 - **Ray generation:** normalized pupil coordinates `(px, py)` span the entrance pupil (unit circle = rim). Rays are aimed at the solved entrance-pupil plane when the system has a stop, and at surface 1's vertex plane otherwise. All four aperture types work: `ENTRANCE_PUPIL_DIAMETER`, `OBJECT_SPACE_NA`, `IMAGE_SPACE_FNUM` (from the paraxial EFL, infinite conjugate only), and `FLOAT_BY_STOP` (from the stop's semi-diameter). Objects at infinity take `angleDeg` fields and launch from a plane in front of surface 1; finite objects take `objectHeight` fields and launch from the object plane.
+- **Optical path length is finite, not positive.** Zero is the launch plane, and
+  for an object at infinity that plane is one Isaac picked — "just in front of the
+  first surface" — so there is nothing physical about it to count up from. A
+  prescription that steps backwards carries the running total below it, and
+  refusing that turned seven sample files into an internal `RangeError` where the
+  tracer should have been reporting an optical outcome. `Yu2024.zmx` is the
+  instructive one: its surface 1 has a thickness of −1, so an on-axis ray landed on
+  exactly 0.00000000 after that step and traced, while a ray at 1° landed on
+  −0.00001031 and threw — a well-formed lens where only the axis worked. 76 of the
+  312 readable corpus files carry a negative thickness.
 - **A ray may step backwards, but only where the prescription does.** `MISSED` means the ray never meets the surface, not that it meets it behind itself: a **negative thickness puts the next surface behind the one before it**, which is how a *remote stop* is written — the aperture stop of a telecentric system sits far downstream and the file steps back to where the glass is. `stepsBackward` in `trace.ts` measures the axial step **against the direction of travel**, so it reads the same in a reflecting arm, where thicknesses and travel are both negative and their product is ordinary forward propagation. A backward hit where the prescription steps forward is still `MISSED`, and that half matters too: an image plane buried inside the last lens is nominally ahead, and reporting a hit there hands `quickFocus` a fake perfect score — one axial ray, scoring zero.
 - **Aiming is paraxial (first order).** A ray aimed at the pupil rim can miss the stop edge by the residual aberration and come back `BLOCKED` — see the test that pins this. Closing that gap needs iterative *real* ray aiming, which is deliberately not implemented.
 - **Ray outcomes:** `traceRay` walks surfaces in order and returns a `RayTraceResult` whose `intersections[]` carry everything a future visualizer needs (points, normals, in/out directions, indices, AoI). Terminal `RayStatus` values: `TERMINATED` (reached IMAGE), `BLOCKED` (aperture), `MISSED` (no intersection), `TIR` (total internal reflection).

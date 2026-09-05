@@ -17,6 +17,10 @@ export interface RayOptions {
   /** Relative radiometric intensity in [0, ∞). Defaults to 1. */
   intensity?: number;
   /** Accumulated optical path length (geometric length × index) in system units. */
+  /**
+   * Optical path length accumulated so far, `Σ n·d`. May be negative where the
+   * prescription steps backwards — see the constructor.
+   */
   opticalPathLength?: number;
   /** Name of the material the ray is currently traveling through. Defaults to `AIR`. */
   medium?: string;
@@ -52,8 +56,22 @@ export class Ray {
     if (!Number.isFinite(intensity) || intensity < 0) {
       throw new RangeError('intensity must be a finite, non-negative number.');
     }
-    if (!Number.isFinite(opticalPathLength) || opticalPathLength < 0) {
-      throw new RangeError('opticalPathLength must be a finite, non-negative number.');
+    // **Finite, but not necessarily positive.** Zero is the launch plane, and for
+    // an object at infinity that plane is somewhere Isaac picked — "just in front
+    // of the first surface" — so there is nothing physical about it to count up
+    // from. A prescription that steps *backwards* then carries the running total
+    // below it: a **remote stop** is written as a negative thickness, and the
+    // surface it puts behind the one before it is reached along a negative
+    // distance, which subtracts.
+    //
+    // `Yu2024.zmx` is the case that found this. Its surface 1 has a thickness of
+    // -1, and an on-axis ray lands on exactly 0.00000000 after that step while a
+    // ray at 1° lands on -0.00001031 — so the axis traced and every other field
+    // threw, from a *lens* that is perfectly well formed. Refusing the negative
+    // value turned a legitimate design into an internal invariant escaping where
+    // the tracer should have been reporting an optical outcome.
+    if (!Number.isFinite(opticalPathLength)) {
+      throw new RangeError('opticalPathLength must be a finite number.');
     }
 
     this.origin = origin;

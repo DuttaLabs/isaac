@@ -6,6 +6,7 @@ import {
   OpticalSystem,
   Point3,
   Ray,
+  generateChiefRay,
   normalizeAperture,
   surfaceProfileSag,
   Surface,
@@ -438,4 +439,82 @@ test('rays meet a curved image surface on the curve, not at its vertex', () => {
       );
     }
   }
+});
+
+/**
+ * **A prescription may step backwards, and then the optical path length goes
+ * down.** Zero is the launch plane, and for an object at infinity that plane is
+ * one Isaac picked — "just in front of the first surface" — so there is nothing
+ * physical about it to count up from. A **remote stop** is written as a negative
+ * thickness, and the surface it puts behind the one before it is reached along a
+ * negative distance.
+ *
+ * `Yu2024.zmx` found this: surface 1 has a thickness of −1, so an on-axis ray
+ * landed on exactly 0.00000000 after that step and traced, while a ray at 1°
+ * landed on −0.00001031 and threw. A well-formed lens, and every field but the
+ * axis came back as an internal invariant rather than an optical outcome.
+ */
+test('a ray that steps backwards keeps tracing, and its path length may go negative', () => {
+  // The launch plane sits one unit ahead of the *pupil*, so for the running total
+  // to go under zero the backward step has to be longer than that — which is the
+  // ordinary case, a remote stop being remote. Here the stop is the first surface,
+  // putting the pupil on it, and the prescription then steps back five.
+  const system = new OpticalSystem({
+    name: 'remote stop',
+    wavelengthsNm: [587.5618],
+    fields: [{ angleDeg: 0 }, { angleDeg: 2 }],
+    aperture: { type: 'ENTRANCE_PUPIL_DIAMETER', value: 6 },
+    surfaces: [
+      new Surface({ id: 'obj', type: 'OBJECT', thickness: Infinity, material: AIR }),
+      new Surface({
+        id: 'stop',
+        type: 'STANDARD',
+        thickness: -5,
+        semiDiameter: 20,
+        material: AIR,
+        isStop: true,
+      }),
+      new Surface({
+        id: 'behind',
+        type: 'STANDARD',
+        thickness: 5,
+        semiDiameter: 20,
+        material: AIR,
+      }),
+      new Surface({
+        id: 'lens',
+        type: 'STANDARD',
+        radius: 50,
+        thickness: 96,
+        semiDiameter: 20,
+        material: new ConstantMaterial('DEMO-GLASS', 1.5),
+      }),
+      new Surface({ id: 'img', type: 'IMAGE', thickness: 0, semiDiameter: 20 }),
+    ],
+  });
+
+  for (const angleDeg of [0, 2]) {
+    const result = traceRay(system, generateChiefRay(system, { field: { angleDeg } }));
+    assert.equal(result.status, 'TERMINATED', `the ${angleDeg}° chief ray did not reach the image`);
+  }
+  // And the model has to allow the value in the first place, which is the
+  // invariant this rests on.
+  assert.doesNotThrow(
+    () =>
+      new Ray(new Point3(0, 0, 0), new Vector3(0, 0, 1), {
+        wavelengthNm: 587.5618,
+        opticalPathLength: -4,
+      }),
+  );
+});
+
+test('an optical path length that is not a number is still refused', () => {
+  assert.throws(
+    () =>
+      new Ray(new Point3(0, 0, 0), new Vector3(0, 0, 1), {
+        wavelengthNm: 550,
+        opticalPathLength: Number.NaN,
+      }),
+    /finite/,
+  );
 });

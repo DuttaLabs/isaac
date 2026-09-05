@@ -242,6 +242,12 @@ export function paraxialImageHeight(
   field: Field,
   wavelengthNm: number = system.primaryWavelengthNm,
 ): number {
+  // A field already stated as an image height *is* the answer, and answering 0
+  // because it carries no angle would be the quiet kind of wrong.
+  if (field.imageHeight !== undefined) {
+    return field.imageHeight;
+  }
+
   const pupilZ = entrancePupilPlaneZ(system, wavelengthNm);
   const firstZ = system.axialPositionAt(1);
 

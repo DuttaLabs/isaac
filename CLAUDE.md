@@ -284,6 +284,14 @@ Three things this had to learn, each of which makes everything look broken if mi
   against a reported −27.88, the residual being the model-glass formula this
   project deliberately does not reproduce. Isaac's reading is the defensible one
   and the numbers are simply not comparable, which the comparison says out loud.
+- **`axialPositionAt`, never `vertexZAt`.** They are two different coordinates and
+  the difference is invisible until a system is folded: the first is how far along
+  the axis a surface is, unfolded, and the second is where it really sits once
+  tilts have bent the axis. First-order optics describes one straight axis, so
+  every distance a prescription states is the unfolded one — which is what
+  `paraxialProperties` itself uses. On `Yolo.zmx` the two differ by 25.352 mm at
+  the last surface, and that was the whole of a rear focal plane compared as
+  −25.684 against a reported −0.332.
 - **Total track is the axial extent, not last vertex minus first.** A mirror sends
   the later surfaces back the way they came, so the last one is behind the first
   and the difference is negative. **`MIRROR` in the Glass column is not a medium**
@@ -304,7 +312,7 @@ read 393 surfaces from a 65-surface lens. `OBJ`, `STO` and `IMA` are **positions
 names** — `'STO'.replace('STO','')` is `''` and `Number('')` is 0, so a stop read by
 stripping its label lands on the object plane.
 
-Verified against fourteen real exports — 2050 checks agree and 22 disagree, with
+Verified against fourteen real exports — 2051 checks agree and 21 disagree, with
 **eight designs clean**: both lithography objectives, Hubble, a Mangin mirror, an
 endoscope looking into water, a 4-aspheric-coefficient design, the Unobscured
 Gregorian, and a schematic-eye relay. What it has found so far: the effective

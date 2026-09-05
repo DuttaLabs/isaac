@@ -632,7 +632,9 @@ function compareCardinalPoints(
     section,
     'rear focal plane',
     focalPlanes?.imageSpace,
-    inImageSpace(system.vertexZAt(lastRefractingSurfaceIndex(system)) + paraxial.backFocalDistance),
+    inImageSpace(
+      system.axialPositionAt(lastRefractingSurfaceIndex(system)) + paraxial.backFocalDistance,
+    ),
     'image surface \u2192 rear focus, index divided out',
   );
 
@@ -699,7 +701,14 @@ function compareGeneralData(
   // image surface (and equals that report's own cardinal rear focal plane), on
   // sc_endo1 it is the last vertex. Both are checked, and which one matched is
   // recorded — the cardinal block is where the quantity is pinned properly.
-  const rearFocusZ = system.vertexZAt(last) + paraxial.backFocalDistance;
+  // **`axialPositionAt`, never `vertexZAt`.** They are two different coordinates
+  // and the difference is invisible until a system is folded: the first is how far
+  // along the axis a surface is, unfolded, and the second is where it really sits
+  // once tilts have bent the axis. First-order optics describes one straight axis,
+  // so every distance here is the unfolded one — which is what `paraxialProperties`
+  // itself uses. On `Yolo.zmx` the two differ by 25.352 mm at the last surface, and
+  // that was the whole of a rear focal plane reported as -25.684 against -0.332.
+  const rearFocusZ = system.axialPositionAt(last) + paraxial.backFocalDistance;
   const lastPowered = lastPoweredSurfaceIndex(system, wavelengthNm);
   checks.oneOf(section, 'back focal length', generalValue(prescription, 'Back Focal Length'), [
     ['from the image surface', inImageSpace(rearFocusZ)],
@@ -708,7 +717,7 @@ function compareGeneralData(
       'from the last powered surface',
       lastPowered === undefined
         ? undefined
-        : (rearFocusZ - system.vertexZAt(lastPowered)) / frame.divisor,
+        : (rearFocusZ - system.axialPositionAt(lastPowered)) / frame.divisor,
     ],
   ]);
   // Total track is the axial *extent*, not the distance from the first surface
@@ -861,8 +870,9 @@ function comparePupils(
       'exit pupil position',
       generalValue(prescription, 'Exit Pupil Position'),
       inImageSpace(pupil.z),
-      'image surface \u2192 exit pupil, index divided out; Isaac\u2019s pupils are paraxial, ' +
-        'so expect a difference where the report was computed by tracing rays',
+      'image surface \u2192 exit pupil, index divided out. Isaac\u2019s pupils are paraxial and, ' +
+        'on a folded system, describe the unfolded equivalent \u2014 so expect a difference ' +
+        'against a report that traced rays through the tilts',
     );
     checks.value(
       section,
